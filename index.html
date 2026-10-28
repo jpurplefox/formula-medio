@@ -10,6 +10,7 @@
     html, body { margin: 0; height: 100%; background: #0b0d12; color: #f2f2f2; font-family: ui-monospace, Menlo, Consolas, monospace; overflow: hidden; }
     #stage { position: relative; width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; margin: 0 auto; top: 50%; transform: translateY(-50%); }
     #view { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+    #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
     .panel { position: absolute; background: rgba(0, 0, 0, 0.55); border-radius: 6px; padding: 8px 12px; text-shadow: 0 1px 0 #000; }
     #left { position: absolute; top: 12px; left: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
     #left .panel { position: static; }
@@ -93,6 +94,7 @@
 <body>
   <div id="stage">
     <canvas id="view"></canvas>
+    <canvas id="overlay"></canvas>
     <div id="left">
       <div id="timing" class="panel">
         <div><b>Posición</b><span id="pos">-</span></div>

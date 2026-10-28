@@ -7,31 +7,31 @@
 import { KERB_W, stationAt, kerbAmount, sampleField } from './track.js';
 import { asphaltTexture, grassTexture, macroNoise, sample, wallTexture } from './textures.js';
 
-const MAX_DIST = 140;
-const FOG_START = 25;
-const FOG_END = 130;
-const Z_NEAR = 0.6;
-const WALL_H = 0.32; // altura de los muros (en celdas)
-const WALL_T = 0.5; // espesor de los muros (en celdas)
-const WALL_STRIPE = 1.2; // largo de cada franja del muro (en celdas)
-const KERB_H = 0.07; // altura del lomo del piano (en celdas)
-const LINE_W = 0.22; // ancho de la línea blanca de borde (en celdas)
-const STRIPE = 1.6; // largo de cada franja del piano (en celdas)
-const GUIDE_W = 0.2; // medio ancho de la trazada ideal (en celdas)
-const RUBBER_W = 0.55; // medio ancho de la goma oscura que dejan los autos sobre la trazada (en celdas)
-const ROAD_TPC = 64; // texeles de asfalto por celda (la textura se repite cada 4 celdas, ~10 m)
-const GRASS_TPC = 32; // texeles de césped por celda
-const GRASS_BAND = 2.2; // ancho de cada franja del corte de césped (en celdas)
-const MACRO_TPC = 2; // muestras de la variación grande por celda (se repite cada 32 celdas, ~80 m)
-const PLANE_LEN = 0.7; // medio ancho del plano de la cámara a distancia 1: campo de visión de unos 70°
+export const MAX_DIST = 140;
+export const FOG_START = 25;
+export const FOG_END = 130;
+export const Z_NEAR = 0.6;
+export const WALL_H = 0.32; // altura de los muros (en celdas)
+export const WALL_T = 0.5; // espesor de los muros (en celdas)
+export const WALL_STRIPE = 1.2; // largo de cada franja del muro (en celdas)
+export const KERB_H = 0.07; // altura del lomo del piano (en celdas)
+export const LINE_W = 0.22; // ancho de la línea blanca de borde (en celdas)
+export const STRIPE = 1.6; // largo de cada franja del piano (en celdas)
+export const GUIDE_W = 0.2; // medio ancho de la trazada ideal (en celdas)
+export const RUBBER_W = 0.55; // medio ancho de la goma oscura que dejan los autos sobre la trazada (en celdas)
+export const ROAD_TPC = 64; // texeles de asfalto por celda (la textura se repite cada 4 celdas, ~10 m)
+export const GRASS_TPC = 32; // texeles de césped por celda
+export const GRASS_BAND = 2.2; // ancho de cada franja del corte de césped (en celdas)
+export const MACRO_TPC = 2; // muestras de la variación grande por celda (se repite cada 32 celdas, ~80 m)
+export const PLANE_LEN = 0.7; // medio ancho del plano de la cámara a distancia 1: campo de visión de unos 70°
 const NCHK = MAX_DIST + 2; // marcas de profundidad por columna para recortar sprites
-const NEAR_RISE = 0.2; // cuánto puede subir el terreno (o un muro) cerca de la cámara (en celdas), para saber dónde arrancar los rayos
+export const NEAR_RISE = 0.2; // cuánto puede subir el terreno (o un muro) cerca de la cámara (en celdas), para saber dónde arrancar los rayos
 const MAX_STEP_GROWTH = 0.025; // a lo lejos, cuánto crece el paso máximo de los rayos por cada celda de distancia
-const MODEL_NEAR = 0.05; // las caras de los modelos se recortan a esta distancia de la cámara (en celdas)
-const SUN = [0.45, 0.6, 0.66]; // hacia dónde está el sol (arriba a la izquierda del mapa, como el sombreado del terreno)
-const SHADOW_SHIFT = 0.35; // cuánto se corre la sombra del auto, alejándose del sol (m)
+export const MODEL_NEAR = 0.05; // las caras de los modelos se recortan a esta distancia de la cámara (en celdas)
+export const SUN = [0.45, 0.6, 0.66]; // hacia dónde está el sol (arriba a la izquierda del mapa, como el sombreado del terreno)
+export const SHADOW_SHIFT = 0.35; // cuánto se corre la sombra del auto, alejándose del sol (m)
 // contorno de la sombra del auto visto desde arriba (m): alerón delantero, cuerpo, alerón trasero
-const SHADOW = [[2.75, -0.95], [2.75, 0.95], [1.9, 1.0], [-2.0, 1.0], [-2.75, 0.55], [-2.75, -0.55], [-2.0, -1.0], [1.9, -1.0]];
+export const SHADOW = [[2.75, -0.95], [2.75, 0.95], [1.9, 1.0], [-2.0, 1.0], [-2.75, 0.55], [-2.75, -0.55], [-2.0, -1.0], [1.9, -1.0]];
 
 export const rgb = (r, g, b) => (0xff000000 | (b << 16) | (g << 8) | r) >>> 0;
 

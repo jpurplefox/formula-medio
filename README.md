@@ -69,11 +69,16 @@ Controles (flechas, WASD o IJKL): I/↑/W acelerar · K/↓/S frenar y marcha at
    (`src/livery.js`: franja, número, sponsors, generada por código en un canvas) en la carrocería, fibra de carbono
    en los alerones, el piso, el halo y la suspensión, y el flanco de las gomas con la franja del compuesto y letras
    que giran con la rueda. Cada cara toma sus coordenadas de textura proyectándose desde arriba o de costado. La vista de cabina usa el mismo modelo, visto desde los ojos del
-   piloto (sin el casco), con el volante dibujado encima. La imagen se calcula a 960×540.
-   Para que alcance, el cielo y el terreno se reparten entre varios **Web Workers** (uno por núcleo, hasta 6;
-   `src/terrainworker.js`): cada uno dibuja una franja de columnas con el mismo `Renderer` y la devuelve, y el hilo
-   principal arma la imagen y dibuja encima los sprites y los autos. Si el navegador no tiene workers de módulos,
-   todo se dibuja en el hilo principal. Las ruedas giran,
+   piloto (sin el casco), con el volante dibujado encima. Las cuentas de cámara usan una imagen virtual de 960×540.
+   **Con WebGL** (`src/glrenderer.js`, lo normal): todo se dibuja en la placa de video, a la resolución de la
+   pantalla (hasta 1920×1080). El terreno es un *shader* que corre una vez por píxel: arma el rayo de la cámara,
+   avanza sobre el mapa de alturas (un paso de unos píxeles, que cerca de los muros se achica según la distancia al
+   borde, así no los saltea) y afina dónde choca; el color del piso es el mismo "shader" de `renderer.js` en GLSL.
+   Autos, árboles, carteles y sombras son triángulos con la misma proyección y la misma profundidad, así el z-buffer
+   de la placa resuelve qué tapa a qué. El volante y el semáforo van en un canvas 2D encima.
+   **Sin WebGL** (o agregando `?cpu` a la dirección) se usa el renderer de procesador: el cielo y el terreno se
+   reparten entre varios **Web Workers** (uno por núcleo, hasta 6; `src/terrainworker.js`), cada uno dibuja una
+   franja de columnas y el hilo principal arma la imagen y dibuja encima los sprites y los autos. Las ruedas giran,
    las delanteras doblan con la dirección, la carrocería sigue la pendiente y se inclina en las curvas, y el auto
    proyecta su sombra sobre el piso.
 3. **Escala y física** (`src/car.js`): cada circuito tiene una escala real en metros por celda, calculada con el

@@ -1,6 +1,7 @@
 import { TRACKS } from '../tracks/index.js';
 import { loadImage, buildTrack, sampleField, stationAt, T } from './track.js';
 import { Renderer, rgb } from './renderer.js';
+import { GLRenderer } from './glrenderer.js';
 import { Car, DEFAULT_PROFILE, LAUNCH_WINDOW, isSolid, lookup } from './car.js';
 import { racingLine } from './racingline.js';
 import { boardTexture, treeTexture } from './sprites.js';
@@ -64,11 +65,20 @@ function applySound() {
 // el navegador sólo deja arrancar el audio después de una tecla o un click
 addEventListener('pointerdown', () => settings.sound && audio.start());
 
+// la imagen se dibuja con la placa de video (WebGL) si se puede; si no (o con ?cpu en la dirección), con el
+// procesador como antes
 const canvas = document.getElementById('view');
-canvas.width = VIEW_W;
-canvas.height = VIEW_H;
-const renderer = new Renderer(canvas);
-const ctx = renderer.ctx;
+let renderer = new URLSearchParams(location.search).has('cpu') ? null : GLRenderer.create(canvas, VIEW_W, VIEW_H);
+if (!renderer) {
+  canvas.width = VIEW_W;
+  canvas.height = VIEW_H;
+  renderer = new Renderer(canvas);
+}
+// encima, en un canvas aparte, lo que se dibuja en 2D: el volante y el semáforo
+const overlay = document.getElementById('overlay');
+overlay.width = VIEW_W;
+overlay.height = VIEW_H;
+const ctx = overlay.getContext('2d');
 
 const $ = (id) => document.getElementById(id);
 const hud = {
@@ -573,6 +583,7 @@ async function drawReplay() {
   playEngines(poses.map((p) => ({ ...p, x: p.x * M, y: p.y * M })), cam, M,
     moving ? Math.cos(pose.angle) * pose.speed : 0, moving ? Math.sin(pose.angle) * pose.speed : 0, cam.mode === 'onboard' ? r.target : -1);
   await renderer.render(track, cam, trackSprites(track), models);
+  ctx.clearRect(0, 0, VIEW_W, VIEW_H);
 
   // cartel: auto que se sigue, su posición en ese momento, cámara y tiempo de carrera
   // la posición en ese momento: lo que recorrió cada uno, descontando cuán atrás largó en la grilla
@@ -661,6 +672,7 @@ async function draw(time) {
   playEngines(g.entries.map((e) => ({ rpm: e.car.rpm, throttle: e.car.throttle, gear: e.car.gear, x: e.car.x * M, y: e.car.y * M, angle: e.car.angle, speed: e.car.speed })),
     cam, M, Math.cos(car.angle) * car.speed, Math.sin(car.angle) * car.speed, cockpitView ? g.entries.indexOf(g.player) : -1);
   await renderer.render(track, cam, sprites, models);
+  ctx.clearRect(0, 0, VIEW_W, VIEW_H);
 
   if (cockpitView) cockpit.draw(ctx, car, shakeY * 0.6);
 
