@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Raycast Racer</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #0b0d12; color: #f2f2f2; font-family: ui-monospace, Menlo, Consolas, monospace; overflow: hidden; }
+    #stage { position: relative; width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; margin: 0 auto; top: 50%; transform: translateY(-50%); }
+    #view { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+    .panel { position: absolute; background: rgba(0, 0, 0, 0.55); border-radius: 6px; padding: 8px 12px; text-shadow: 0 1px 0 #000; }
+    #left { position: absolute; top: 12px; left: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+    #left .panel { position: static; }
+    #timing { line-height: 1.5; font-size: clamp(11px, 1.4vw, 16px); }
+    #timing b { display: inline-block; width: 5.5em; color: #9aa4b2; font-weight: normal; }
+    #speedo { bottom: 12px; right: 12px; text-align: right; display: grid; gap: 4px; justify-items: end; }
+    #speed { font-size: clamp(22px, 4vw, 48px); font-weight: bold; }
+    #speedo small { color: #9aa4b2; }
+    #gear { font-size: clamp(26px, 5vw, 58px); font-weight: bold; color: #ffd400; margin-right: 10px; }
+    #lights { display: flex; gap: 3px; }
+    #lights i { width: clamp(5px, 0.8vw, 10px); aspect-ratio: 1; border-radius: 50%; background: #2a2f38; }
+    #lights i.g { background: #2bd14a; } #lights i.r { background: #ff2a2a; } #lights i.b { background: #3a8bff; }
+    #lights.flash i { background: #3a8bff; }
+    #minimap { position: absolute; top: 12px; right: 12px; width: clamp(120px, 18%, 220px); background: rgba(0, 0, 0, 0.45); border-radius: 6px; }
+    #msg { position: absolute; top: 28%; left: 50%; transform: translate(-50%, -50%); font-size: clamp(16px, 3vw, 34px); font-weight: bold; padding: 6px 16px; background: rgba(0, 0, 0, 0.6); border-radius: 6px; opacity: 0; transition: opacity 0.2s; pointer-events: none; text-align: center; }
+    #msg.show { opacity: 1; }
+    #help { bottom: 12px; left: 12px; font-size: clamp(10px, 1.1vw, 13px); color: #c8ced8; line-height: 1.5; }
+    #help { transition: opacity 0.4s; }
+    #help.hidden { opacity: 0; pointer-events: none; }
+    #help label { color: #ffd400; cursor: pointer; text-decoration: underline; }
+    #file { display: none; }
+    #results { top: 50%; left: 50%; transform: translate(-50%, -50%); display: none; min-width: 16em; font-size: clamp(12px, 1.5vw, 17px); padding: 12px 18px; background: rgba(0, 0, 0, 0.78); }
+    #results.show { display: block; }
+    #tower { font-size: clamp(10px, 1.2vw, 14px); padding: 6px 8px; }
+    #tower table { border-collapse: collapse; }
+    #tower td { padding: 1px 5px; }
+    #tower td:first-child { color: #9aa4b2; text-align: right; }
+    #tower td:last-child { text-align: right; min-width: 4.2em; color: #c8ced8; font-variant-numeric: tabular-nums; }
+    #tower tr.me td { color: #ffd400; font-weight: bold; }
+    #tower i { display: inline-block; width: 0.6em; height: 0.6em; border-radius: 50%; margin-right: 0.4em; }
+    #stage.replay #tower { display: none; }
+    #replay { top: 12px; left: 50%; transform: translateX(-50%); display: none; text-align: center; font-size: clamp(11px, 1.4vw, 16px); white-space: nowrap; }
+    #replay b { color: #ff3b30; letter-spacing: 0.1em; margin-right: 0.6em; }
+    #replay span { margin: 0 0.5em; }
+    #replay i { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 50%; margin-right: 0.4em; }
+    #replay small { display: block; color: #9aa4b2; margin-top: 4px; }
+    #stage.replay #replay { display: block; }
+    #stage.replay #timing, #stage.replay #speedo, #stage.replay #help, #stage.replay #results, #stage.replay #msg { display: none; }
+    #results h3 { margin: 0 0 8px; font-size: 1.2em; color: #ffd400; }
+    #results table { width: 100%; border-collapse: collapse; }
+    #results td { padding: 3px 6px; }
+    #results td:last-child { text-align: right; color: #c8ced8; }
+    #results tr.me td { color: #ffd400; font-weight: bold; }
+    #results i { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 50%; margin-right: 0.5em; vertical-align: middle; }
+    #results p { margin: 10px 0 0; color: #9aa4b2; font-size: 0.85em; text-align: center; }
+    #menu { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: radial-gradient(ellipse at 50% 30%, rgba(30, 40, 60, 0.92), rgba(5, 7, 12, 0.97)); overflow-y: auto; padding: 16px; }
+    #menu.open { display: flex; }
+    .menu-box { width: min(760px, 100%); display: grid; gap: 18px; }
+    #menu h1 { margin: 0; font-size: clamp(26px, 4vw, 40px); letter-spacing: 0.04em; font-style: italic; }
+    #menu h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: #9aa4b2; font-weight: normal; }
+    #menu .row { display: flex; flex-wrap: wrap; gap: 18px 40px; }
+    #menu .hint { margin: 6px 0 0; color: #9aa4b2; font-size: 13px; }
+    #menu .hint label { color: #ffd400; cursor: pointer; text-decoration: underline; }
+    #menu .center { text-align: center; }
+    #menu button { font: inherit; color: #f2f2f2; background: #1a1f2a; border: 1px solid #2c3442; border-radius: 6px; padding: 7px 14px; cursor: pointer; }
+    #menu button:hover { border-color: #56627a; }
+    #menu button.on { border-color: #ffd400; background: #2a2a1a; color: #ffd400; }
+    #menu .seg { display: flex; flex-wrap: wrap; gap: 6px; }
+    #menu .sound { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
+    #menu .sound label { display: flex; align-items: center; gap: 8px; color: #c8ced8; font-size: 14px; }
+    #menu .sound input { width: 110px; accent-color: #ffd400; }
+    #menu.mute .sound label { opacity: 0.4; }
+    #menu .teams { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+    #menu .teams button { display: flex; align-items: center; gap: 8px; text-align: left; padding: 8px; font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+    body:has(#menu.open) #stage > :not(#view) { visibility: hidden; }
+    #menu.trial .race-only { display: none; }
+    /* contrarreloj: sin tabla de posiciones ni puesto */
+    #stage.trial #tower, #stage.trial #timing > div:first-child { display: none; }
+    /* auto visto desde arriba: carrocería, franja del color de acento y casco */
+    #menu .car { position: relative; flex: none; width: 34px; height: 14px; border-radius: 7px 3px 3px 7px; background: linear-gradient(var(--c), var(--c)) center / 100% 60% no-repeat, linear-gradient(90deg, #111 0 18%, transparent 18% 72%, #111 72% 100%); }
+    #menu .car::after { content: ''; position: absolute; left: 4px; right: 4px; top: 6px; height: 2px; background: var(--a); }
+    #menu .car i { position: absolute; left: 14px; top: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--h); z-index: 1; }
+    #menu-start { justify-self: center; font-size: 20px !important; font-weight: bold; padding: 10px 48px !important; background: #d40000 !important; border-color: #ff4b4b !important; }
+    #setup { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.85); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+    #setup.open { display: flex; }
+    #setup-canvas { background: #fff; cursor: crosshair; max-width: calc(100vw - 32px); border-radius: 4px; }
+    #setup-hint { font-size: 18px; }
+    #setup button { font: inherit; padding: 6px 14px; border-radius: 4px; border: 1px solid #555; background: #222; color: #eee; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="view"></canvas>
+    <div id="left">
+      <div id="timing" class="panel">
+        <div><b>Posición</b><span id="pos">-</span></div>
+        <div><b>Vuelta</b><span id="lap">1</span></div>
+        <div><b>Tiempo</b><span id="time">--:--.---</span></div>
+        <div><b>Última</b><span id="last">--:--.---</span></div>
+        <div><b>Mejor</b><span id="best">--:--.---</span></div>
+      </div>
+      <div id="tower" class="panel"></div>
+    </div>
+    <canvas id="minimap"></canvas>
+    <div id="speedo" class="panel">
+      <div id="lights"></div>
+      <div><span id="gear">1</span><span id="speed">0</span> <small>km/h</small></div>
+      <small><span id="rpm">0</span> rpm · <span id="mode">AUTO</span></small>
+    </div>
+    <div id="help" class="panel">
+      R reiniciar · Esc menú · N sonido<br />
+      I/↑/W acelerar · K/↓/S frenar · J L/←→/A D doblar<br />
+      O/X subir cambio · U/Z bajar cambio · M auto/manual · C cámara · G trazada<br />
+      <label for="file">Cargar tu circuito</label> (o arrastrá una imagen)
+    </div>
+    <div id="msg"></div>
+    <div id="results" class="panel"></div>
+    <div id="replay" class="panel"></div>
+  </div>
+  <input id="file" type="file" accept="image/*" />
+
+  <div id="menu">
+    <div class="menu-box">
+      <h1>Raycast Racer</h1>
+      <section>
+        <h2>Modo</h2>
+        <div id="menu-mode" class="seg"></div>
+        <p id="menu-mode-hint" class="hint"></p>
+      </section>
+      <section>
+        <h2>Equipo</h2>
+        <div id="menu-teams" class="teams"></div>
+      </section>
+      <section class="race-only">
+        <h2>Dificultad</h2>
+        <div id="menu-diff" class="seg"></div>
+        <p id="menu-diff-hint" class="hint"></p>
+      </section>
+      <div class="row">
+        <section>
+          <h2>Circuito</h2>
+          <div id="menu-tracks" class="seg"></div>
+          <p class="hint"><label for="file">Cargar tu circuito</label> (o arrastrá una imagen)</p>
+        </section>
+        <section class="race-only">
+          <h2>Vueltas</h2>
+          <div id="menu-laps" class="seg"></div>
+        </section>
+      </div>
+      <section>
+        <h2>Sonido</h2>
+        <div class="sound">
+          <div id="menu-sound" class="seg"></div>
+          <label>General <input id="vol-master" type="range" min="0" max="100" /></label>
+          <label>Motores <input id="vol-engines" type="range" min="0" max="100" /></label>
+          <label>Música <input id="vol-music" type="range" min="0" max="100" /></label>
+        </div>
+        <p class="hint">N prende o apaga el sonido en cualquier momento</p>
+      </section>
+      <button id="menu-start" type="button">Largar</button>
+      <p class="hint center">Enter para largar · Esc durante la carrera vuelve a este menú</p>
+    </div>
+  </div>
+
+  <div id="setup">
+    <div id="setup-hint"></div>
+    <canvas id="setup-canvas"></canvas>
+    <button id="setup-cancel">Cancelar</button>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
