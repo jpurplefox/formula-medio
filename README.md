@@ -189,7 +189,9 @@ Cada rival (`src/ai.js`) es un auto con la misma física que el tuyo, manejado p
 
 Una red neuronal aprende a manejar sola, con la misma física del juego, por etapas:
 1. **Sola en pista** (contrarreloj): aprende a dar la vuelta lo más rápido posible en los 8 circuitos.
-2. **Contra otros autos**: la misma red, compitiendo, para aprender a adelantar y defender. (Pendiente.)
+2. **Contra otros autos** (`rl/race.js`): carreras de 4 autos que aprenden (la misma red, contra sí misma) y de 0 a 6
+   rivales con la IA de siempre a ritmos variados; largan en grilla, en fila o repartidos por la pista. Además de
+   los metros, se castigan los toques entre autos (mucho más al que le pega al de adelante).
 
 **Qué ve** (`src/sensors.js`, 88 números): su auto (velocidad, deslizamiento, giro, volante, pedales, marcha,
 rpm, agarre de cada eje, rebufo), su posición en la pista, cuánto dobla la pista a 20, 40… 450 m (lo que un piloto
@@ -219,9 +221,28 @@ actualización usa 32.768 pasos y las recompensas se normalizan; conviene igual 
 `rl/eval.js` y quedarse con el mejor. Cada episodio larga en cualquier punto de la vuelta, a veces parado o
 cruzado y con ruedas afuera, para que aprenda también a largar y a volver a la pista.
 
+Para medir en carrera: `node rl/race_eval.js models/etapa2.json` (22 autos, la mitad con la red y la mitad con la
+IA de siempre; con `CARS=8` delante, 8 autos): posición media, toques y pasto.
+
 **Etapa 1** (`models/etapa1.json`, 60 millones de pasos, ~35 minutos): completa las vueltas en los 8 circuitos,
 en promedio un 7 % más rápido que la IA de siempre a su mejor ritmo (de 1 % en Monza a 15 % en el Red Bull Ring;
 en Interlagos, 66,2 s contra 70,4 s).
+
+**Etapa 2** (`models/etapa2.json`, 35 millones de pasos más):
+```bash
+rl/.venv/bin/python rl/train.py --race --envs 4 --steps 40000000 --name etapa2 --resume rl/runs/etapa1c/model.zip \
+    --fresh-opponents --critic-warmup 3000000 --lr 1e-4
+```
+Hicieron falta tres cosas para que la etapa 2 no desarmara lo aprendido:
+- `--fresh-opponents`: los pesos que reciben los datos de los rivales nunca se entrenaron en la etapa 1 (siempre
+  eran cero) y quedaron al azar; en cero, la red arranca manejando exactamente igual.
+- `--critic-warmup`: con la recompensa nueva el crítico (la parte que estima cuánto va a ganar) está desajustado y
+  sus errores desarman la parte que maneja; los primeros 3 millones de pasos sólo aprende el crítico.
+- `--lr 1e-4` y pasos más cortos (`target_kl` 0,015).
+Un premio por pasar y por defender le enseñó a zigzaguear y a meterse aunque hubiera contacto: por ahora no se usa.
+
+Contra la etapa 1, en carreras de 22 autos se toca un 18 % menos y pisa un 26 % menos el pasto, con el mismo ritmo
+(posición media 6,9 contra 7,2); con 8 autos, un 29 % menos de toques.
 
 ## Trazada ideal
 

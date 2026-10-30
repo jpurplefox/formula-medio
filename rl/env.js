@@ -152,7 +152,7 @@ export class RaceEnv {
 const clamp = (v) => Math.max(-1, Math.min(1, Number.isFinite(v) ? v : 0));
 
 // punto de la línea central en la posición u de la vuelta (celdas)
-function pointOnCenter(track, u) {
+export function pointOnCenter(track, u) {
   const { n, x, y, st } = track.path;
   const L = st[n];
   u = ((u % L) + L) % L;

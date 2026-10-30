@@ -5,8 +5,10 @@ import { OBS_SIZE, observe } from './sensors.js';
 import { stationAt } from './track.js';
 
 export class Policy {
-  constructor({ obs_size, layers }) {
+  // opponents: si aprendió a mirar a los demás autos (etapa 2); si no, se le pasan en cero, como al entrenar
+  constructor({ obs_size, layers, opponents = false }) {
     if (obs_size !== OBS_SIZE) throw new Error(`La red espera ${obs_size} valores y los sensores dan ${OBS_SIZE}`);
+    this.opponents = opponents;
     this.layers = layers.map((l) => {
       const w = floats(l.w);
       return { w: Array.from({ length: l.out }, (_, i) => w.subarray(i * l.in, (i + 1) * l.in)), b: floats(l.b) };
@@ -46,22 +48,25 @@ function floats(b64) {
 export const DECISION_DT = 1 / 20;
 
 export class NeuralDriver {
-  constructor(policy) {
+  // opponents: si le pasa los demás autos a la red (por defecto, si la red aprendió a mirarlos)
+  constructor(policy, { opponents = policy.opponents } = {}) {
     this.policy = policy;
+    this.opponents = opponents;
     this.obs = new Float32Array(OBS_SIZE);
     this.wait = 0;
     this.u = 0;
     this.input = { throttle: 0, brake: 0, steer: 0 };
   }
 
-  // Misma forma que Driver.drive de ai.js (me: { car }). Por ahora (etapa 1) no mira a los demás autos.
-  drive(dt, track, line, { car }) {
+  // Misma forma que Driver.drive de ai.js: me y others son { car, ... }
+  drive(dt, track, line, { car }, others = []) {
     const u = stationAt(track, car.x, car.y);
     if (u >= 0) this.u = u;
     this.wait -= dt;
     if (this.wait <= 0) {
       this.wait += DECISION_DT;
-      const [steer, pedal] = this.policy.act(observe(track, car, this.u, [], this.obs));
+      const cars = this.opponents ? others.map((o) => o.car) : [];
+      const [steer, pedal] = this.policy.act(observe(track, car, this.u, cars, this.obs));
       this.input = { steer, throttle: Math.max(0, pedal), brake: Math.max(0, -pedal) };
     }
     return this.input;

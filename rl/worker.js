@@ -1,46 +1,79 @@
 // Proceso de Node que simula varios entornos y habla con Python (rl/racing_env.py) por stdin/stdout.
 //
-//   node rl/worker.js <cantidad de entornos> <circuitos separados por coma> <semilla>
+//   node rl/worker.js solo  <entornos> <circuitos separados por coma> <semilla>
+//   node rl/worker.js race  <carreras> <circuitos> <semilla> <agentes por carrera> [red de los rivales]
+//
+// "solo" es la etapa 1 (un auto por entorno); "race" la etapa 2 (rl/race.js: varios agentes por carrera).
+// Para Python cada agente es un entorno más: en total, entornos × agentes.
 //
 // Al arrancar escribe una línea JSON ({ obs_size, envs }) y espera órdenes. Cada orden empieza con un byte:
-//   0 = paso: le siguen las acciones (float32, 2 por entorno). Responde con un bloque binario
+//   0 = paso: le siguen las acciones (float32, 2 por agente). Responde con un bloque binario
 //       (observaciones, recompensas, terminado, cortado; float32) y una línea JSON con lo que pasó en cada
-//       entorno que terminó una vuelta o un episodio (y la última observación de ese episodio).
+//       agente que terminó una vuelta o un episodio (y la última observación de ese episodio).
 //       Los que terminan arrancan otro episodio solos: la observación que se devuelve ya es la del nuevo.
 //   1 = reset: reinicia todos y responde con el bloque binario de las observaciones.
 
 import { OBS_SIZE } from '../src/sensors.js';
 import { RaceEnv } from './env.js';
+import { RaceSim } from './race.js';
 
-const [n, ids, seed] = process.argv.slice(2);
-const N = Number(n);
-const envs = Array.from({ length: N }, (_, k) => new RaceEnv({ trackIds: ids.split(','), seed: Number(seed) * 1000 + k }));
+const [mode, n, ids, seed, agents, opponent] = process.argv.slice(2);
+const trackIds = ids.split(',');
+
+// Etapa 1 con la misma forma que una carrera: un solo agente
+class Solo {
+  constructor(seed) {
+    this.env = new RaceEnv({ trackIds, seed });
+    this.agents = 1;
+  }
+
+  reset() {
+    return [Float32Array.from(this.env.reset())];
+  }
+
+  step(actions) {
+    const r = this.env.step(actions[0], actions[1]);
+    const obs = Float32Array.from(r.obs);
+    return [{ ...r, obs, next: r.done ? Float32Array.from(this.env.reset()) : undefined }];
+  }
+}
+
+const sims = Array.from({ length: Number(n) }, (_, k) => mode === 'race'
+  ? new RaceSim({ trackIds, agents: Number(agents), seed: Number(seed) * 1000 + k, opponent: opponent || null })
+  : new Solo(Number(seed) * 1000 + k));
+const N = sims.reduce((a, s) => a + s.agents, 0);
 const obs = new Float32Array(N * OBS_SIZE);
 const out = new Float32Array(N * (OBS_SIZE + 3));
 
 function resetAll() {
-  envs.forEach((e, k) => obs.set(e.reset(), k * OBS_SIZE));
+  let k = 0;
+  for (const sim of sims) for (const o of sim.reset()) obs.set(o, OBS_SIZE * k++);
   process.stdout.write(Buffer.from(obs.buffer));
 }
 
 function stepAll(actions) {
   const infos = [];
-  envs.forEach((e, k) => {
-    let r = e.step(actions[2 * k], actions[2 * k + 1]);
-    const ended = r.done || r.truncated;
-    const info = {};
-    if (r.info.lap) info.lap = [r.info.track, r.info.lap];
-    if (ended) {
-      info.episode = r.info.episode;
-      info.terminal = Array.from(r.obs);
-      r = { ...r, obs: e.reset() };
-    }
-    if (Object.keys(info).length) infos.push([k, info]);
-    out.set(r.obs, k * OBS_SIZE);
-    out[N * OBS_SIZE + k] = r.reward;
-    out[N * (OBS_SIZE + 1) + k] = ended ? 1 : 0;
-    out[N * (OBS_SIZE + 2) + k] = r.truncated ? 1 : 0;
-  });
+  let k = 0;
+  for (const sim of sims) {
+    const results = sim.step(actions.subarray(2 * k, 2 * (k + sim.agents)));
+    // si la carrera terminó (se cortó por tiempo), arranca otra y esas son las observaciones nuevas
+    const fresh = results.some((r) => r.truncated) ? sim.reset() : null;
+    results.forEach((r, j) => {
+      const ended = r.done || r.truncated;
+      const info = {};
+      if (r.info.lap) info.lap = [r.info.track, r.info.lap];
+      if (ended) {
+        info.episode = r.info.episode;
+        info.terminal = Array.from(r.obs);
+      }
+      if (Object.keys(info).length) infos.push([k, info]);
+      out.set(fresh ? fresh[j] : r.next ?? r.obs, k * OBS_SIZE);
+      out[N * OBS_SIZE + k] = r.reward;
+      out[N * (OBS_SIZE + 1) + k] = ended ? 1 : 0;
+      out[N * (OBS_SIZE + 2) + k] = r.truncated ? 1 : 0;
+      k++;
+    });
+  }
   process.stdout.write(Buffer.from(out.buffer));
   process.stdout.write(JSON.stringify(infos) + '\n');
 }

@@ -16,16 +16,22 @@ TRACKS = ["interlagos", "monza", "albertpark", "barcelona", "montreal", "spa", "
 
 
 class Worker:
-    def __init__(self, envs: int, tracks: list[str], seed: int):
-        self.n = envs
+    """mode "solo": envs autos sueltos (etapa 1); "race": envs carreras de `agents` autos que aprenden (etapa 2),
+    con rivales que no aprenden (algunos manejados por la red `opponent`)."""
+
+    def __init__(self, envs: int, tracks: list[str], seed: int, mode: str = "solo", agents: int = 4, opponent: str = ""):
+        args = [mode, str(envs), ",".join(tracks), str(seed)]
+        if mode == "race":
+            args += [str(agents), opponent]
         self.proc = subprocess.Popen(
-            ["node", str(ROOT / "rl" / "worker.js"), str(envs), ",".join(tracks), str(seed)],
+            ["node", str(ROOT / "rl" / "worker.js"), *args],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             cwd=ROOT,
         )
         hello = json.loads(self.proc.stdout.readline())
         self.obs_size = hello["obs_size"]
+        self.n = hello["envs"]  # agentes en total
 
     def _read(self, count: int) -> np.ndarray:
         data = self.proc.stdout.read(count * 4)
@@ -60,13 +66,13 @@ class Worker:
 
 
 class RacingVecEnv(VecEnv):
-    def __init__(self, workers: int = 8, envs_per_worker: int = 16, tracks: list[str] = TRACKS, seed: int = 0):
-        self.workers = [Worker(envs_per_worker, tracks, seed * 100 + w) for w in range(workers)]
+    def __init__(self, workers: int = 8, envs_per_worker: int = 16, tracks: list[str] = TRACKS, seed: int = 0, **mode):
+        self.workers = [Worker(envs_per_worker, tracks, seed * 100 + w, **mode) for w in range(workers)]
         obs_size = self.workers[0].obs_size
         observation_space = spaces.Box(-3.0, 3.0, shape=(obs_size,), dtype=np.float32)
         action_space = spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float32)
-        super().__init__(workers * envs_per_worker, observation_space, action_space)
-        self.per = envs_per_worker
+        self.per = self.workers[0].n
+        super().__init__(workers * self.per, observation_space, action_space)
         self._actions = None
         self.laps: list[tuple[str, float]] = []  # vueltas completas desde la última vez que se leyeron
 
