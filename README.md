@@ -24,8 +24,8 @@ Antes de largar hay un **menú** (que se acuerda de lo último que elegiste):
   los otros equipos y tu compañero.
 - **Dificultad:** Fácil, Normal, Difícil o Experto: el ritmo de los rivales (en Interlagos, de vueltas de ~75–80 s
   en Fácil a ~69–70 s en Experto).
-- **Circuito:** Interlagos (con alturas reales), Monza, Albert Park, Barcelona, Montreal, Spa, Silverstone o
-  Red Bull Ring (estos todavía planos), o cargar uno propio; y **vueltas** (1, 3, 5 o 10; dificultad y vueltas son sólo para carrera).
+- **Circuito:** Interlagos, Monza, Albert Park, Barcelona, Montreal, Spa, Silverstone o Red Bull Ring, todos con
+  alturas reales, o cargar uno propio; y **vueltas** (1, 3, 5 o 10; dificultad y vueltas son sólo para carrera).
 - **Sonido:** prendido o apagado y volumen general, de los motores y de la música del menú.
 
 **Enter** larga y **Esc** vuelve al menú durante la carrera.
@@ -281,7 +281,12 @@ promedia las 5 vueltas más rápidas de una carrera y guarda la altura según la
 python3 tools/elevation.py Interlagos 2023 tracks/interlagos.elevation.json
 ```
 
-El nombre del circuito es el `circuit_short_name` de OpenF1. En el juego, la vuelta se escala para que las
+El nombre del circuito es el `circuit_short_name` de OpenF1 (Interlagos, Monza, Melbourne, Catalunya, Montreal,
+Spa-Francorchamps, Silverstone, Spielberg). Si la API corta por exceso de pedidos (429), el script espera y reintenta.
+
+La línea de largada del dibujo no siempre cae exactamente donde OpenF1 empieza la vuelta. Los perfiles de los
+circuitos nuevos (carrera 2025) se alinearon comparando las curvas del trazado real con las del dibujo y rotando
+las alturas lo que hacía falta (entre 0,4 % y 4,7 % de vuelta; queda anotado en `source`). En el juego, la vuelta se escala para que las
 pendientes sean las reales; `elevationScale` en `tracks/index.js` permite exagerarlas o suavizarlas.
 
 ## Agregar un circuito

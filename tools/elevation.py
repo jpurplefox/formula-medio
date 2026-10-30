@@ -11,6 +11,7 @@ Uso:
 import json
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
@@ -23,8 +24,16 @@ LAPS = 5
 
 def get(endpoint: str, **params: object) -> list[dict]:
     query = urllib.parse.urlencode(params, safe="<>=")
-    with urllib.request.urlopen(f"{API}/{endpoint}?{query}", timeout=60) as r:
-        data = json.load(r)
+    for attempt in range(6):
+        try:
+            with urllib.request.urlopen(f"{API}/{endpoint}?{query}", timeout=60) as r:
+                data = json.load(r)
+            break
+        except urllib.error.HTTPError as e:
+            # 429: pedimos demasiado rápido; esperamos cada vez más y reintentamos
+            if e.code != 429 or attempt == 5:
+                raise
+            time.sleep(5 * 2**attempt)
     time.sleep(0.4)  # respetamos el límite de pedidos de la API
     return data
 

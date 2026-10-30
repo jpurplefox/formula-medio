@@ -37,7 +37,7 @@ export const TRACKS = [
     name: 'Monza',
     image: 'tracks/monza.webp',
     widthMeters: 14,
-    lengthMeters: 5793,
+    elevation: 'tracks/monza.elevation.json',
     scale: 2, // más fino que Interlagos: con 3 las chicanas quedan muy suavizadas
     threshold: 90,
     widen: 1,
@@ -50,7 +50,7 @@ export const TRACKS = [
     name: 'Albert Park',
     image: 'tracks/Australia.webp',
     widthMeters: 14,
-    lengthMeters: 5278,
+    elevation: 'tracks/albertpark.elevation.json',
     scale: 4, // la imagen es casi el doble de grande que las otras
     threshold: 90,
     widen: 1,
@@ -63,7 +63,7 @@ export const TRACKS = [
     name: 'Barcelona',
     image: 'tracks/barcelona.png',
     widthMeters: 14,
-    lengthMeters: 4657,
+    elevation: 'tracks/barcelona.elevation.json',
     scale: 3,
     threshold: 90,
     widen: 1,
@@ -77,7 +77,7 @@ export const TRACKS = [
     name: 'Montreal',
     image: 'tracks/canada.jpeg',
     widthMeters: 12,
-    lengthMeters: 4361,
+    elevation: 'tracks/montreal.elevation.json',
     scale: 0.4, // imagen chica: se agranda (con 0,5 la calle de boxes queda pegada a la recta)
     threshold: 100,
     widen: 1,
@@ -91,7 +91,7 @@ export const TRACKS = [
     name: 'Spa',
     image: 'tracks/spa.png',
     widthMeters: 13,
-    lengthMeters: 7004,
+    elevation: 'tracks/spa.elevation.json',
     scale: 0.6, // imagen chica: se agranda
     threshold: 90,
     widen: 1,
@@ -106,7 +106,7 @@ export const TRACKS = [
     name: 'Silverstone',
     image: 'tracks/silverstone.svg',
     widthMeters: 15,
-    lengthMeters: 5891,
+    elevation: 'tracks/silverstone.elevation.json',
     scale: 0.75,
     threshold: 90,
     widen: 1,
@@ -121,7 +121,7 @@ export const TRACKS = [
     name: 'Red Bull Ring',
     image: 'tracks/austria.png',
     widthMeters: 13,
-    lengthMeters: 4318,
+    elevation: 'tracks/redbullring.elevation.json',
     scale: 0.4, // imagen chica: se agranda
     threshold: 80, // las flechas rojas no son pista
     widen: 1,
