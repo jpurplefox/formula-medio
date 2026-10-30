@@ -18,12 +18,14 @@ export function loadImage(src) {
 
 // elevation (opcional): perfil de alturas generado por tools/elevation.py
 export function buildTrack(img, def, elevation = null) {
-  const scale = def.scale ?? 3;
-  const W = Math.ceil(img.width / scale);
-  const H = Math.ceil(img.height / scale);
+  return buildTrackFromMask(imageMask(img, def), def, elevation);
+}
 
+// Lo mismo, a partir de la máscara de la imagen (imageMask) ya calculada: no necesita el navegador,
+// así también se puede armar el circuito en Node (para entrenar la IA, ver rl/)
+export function buildTrackFromMask({ W, H, road: dark }, def, elevation = null) {
   // 1) De la imagen sacamos sólo el recorrido: la línea central y el ancho de la pista
-  const raw = roadFromImage(img, def, W, H);
+  const raw = cleanRoad(dark, def, W, H);
   const path = traceCenterline(raw, startLine(raw, def, W, H), W, H, def.smooth ?? 3);
 
   // Escala real: cuántos metros mide una celda, según el largo real de la vuelta
@@ -58,11 +60,15 @@ export function buildTrack(img, def, elevation = null) {
   return {
     W, H, meters, runoff, halfWidth, tiles, road, sdf, station, lat, length, kerbLeft, kerbRight, height,
     path: { n: path.n, x: path.x, y: path.y, st }, // línea central: puntos y su posición acumulada
-    progress, maxProgress, line, spawn, trees, boards, scale, name: def.name,
+    progress, maxProgress, line, spawn, trees, boards, scale: def.scale ?? 3, name: def.name,
   };
 }
 
-function roadFromImage(img, def, W, H) {
+// Píxeles oscuros de la imagen reducida (1 = puede ser pista): la única parte que necesita el navegador
+export function imageMask(img, def) {
+  const scale = def.scale ?? 3;
+  const W = Math.ceil(img.width / scale);
+  const H = Math.ceil(img.height / scale);
   const threshold = def.threshold ?? 90;
   // Reducimos la imagen: cada píxel resultante es el promedio de scale×scale píxeles
   const c = document.createElement('canvas');
@@ -90,11 +96,16 @@ function roadFromImage(img, def, W, H) {
   ctx.restore();
   const px = ctx.getImageData(0, 0, W, H).data;
 
-  let road = new Uint8Array(W * H);
+  const road = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) {
     const lum = 0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2];
     road[i] = lum < threshold ? 1 : 0;
   }
+  return { W, H, road };
+}
+
+function cleanRoad(dark, def, W, H) {
+  let road = dark;
   // Líneas finas pegadas al trazado (calle de boxes, variantes viejas, el mástil de la bandera): se borran
   // achicando todo `open` celdas y volviendo a agrandarlo; la pista, que es más gruesa, sobrevive
   if (def.open) road = openThin(road, W, H, def.open);

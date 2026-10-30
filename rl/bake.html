@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Exportar circuitos</title>
+<!-- Arma la máscara de cada circuito (la parte que necesita el navegador) y la guarda en rl/tracks/,
+     para que el entorno de entrenamiento arme los circuitos en Node. Abrir con serve.py corriendo. -->
+<pre id="log">Exportando…</pre>
+<script type="module">
+  import { TRACKS } from '../tracks/index.js';
+  import { imageMask, loadImage } from '../src/track.js';
+  import { packMask } from './mask.js';
+
+  const log = document.getElementById('log');
+  const lines = [];
+  for (const def of TRACKS) {
+    const mask = imageMask(await loadImage('../' + def.image), def);
+    const res = await fetch(`tracks/${def.id}.mask`, { method: 'PUT', body: packMask(mask) });
+    lines.push(`${def.id}: ${mask.W}×${mask.H} ${res.ok ? 'ok' : 'error ' + res.status}`);
+    log.textContent = lines.join('\n');
+  }
+  log.textContent += '\nListo';
+</script>

@@ -185,6 +185,44 @@ Cada rival (`src/ai.js`) es un auto con la misma física que el tuyo, manejado p
 - **A la par:** si el otro le lleva más de media trompa y no lo está pasando, cede y se ubica detrás.
 - Si un rival se queda trabado, vuelve a la pista sobre la trazada.
 
+## IA entrenada con aprendizaje por refuerzo (`rl/`)
+
+Una red neuronal aprende a manejar sola, con la misma física del juego, por etapas:
+1. **Sola en pista** (contrarreloj): aprende a dar la vuelta lo más rápido posible en los 8 circuitos.
+2. **Contra otros autos**: la misma red, compitiendo, para aprender a adelantar y defender. (Pendiente.)
+
+**Qué ve** (`src/sensors.js`, 88 números): su auto (velocidad, deslizamiento, giro, volante, pedales, marcha,
+rpm, agarre de cada eje, rebufo), su posición en la pista, cuánto dobla la pista a 20, 40… 450 m (lo que un piloto
+sabe de memoria), 19 rayos que miden la distancia al borde de la pista de -90° a +90°, y los 6 rivales más
+cercanos (posición, velocidad relativa y hacia dónde apuntan; en la etapa 1 quedan en cero).
+**Qué decide**: volante y pedal (de frenar a fondo a acelerar a fondo), 20 veces por segundo, progresivos.
+**Qué la premia** (`rl/env.js`): los metros que avanza sobre la línea central; la castigan el pasto, los golpes
+contra el muro y quedarse quieta o ir para atrás. Cada episodio larga en un punto cualquiera de un circuito al azar.
+
+Cómo se entrena: Python con PyTorch y stable-baselines3 (algoritmo PPO) le pasa las acciones a varios procesos de
+Node (`rl/worker.js`) que simulan 128 autos a la vez; en una Mac M4 Pro van unos 30.000 pasos por segundo.
+
+```bash
+python3 -m venv rl/.venv && rl/.venv/bin/pip install torch stable-baselines3 gymnasium tensorboard
+```
+
+1. Exportar los circuitos (la parte que necesita el navegador): con `serve.py` corriendo, abrir
+   `http://localhost:8123/rl/bake.html` (guarda las máscaras en `rl/tracks/`).
+2. Entrenar: `rl/.venv/bin/python rl/train.py --steps 30000000 --name etapa1` (las curvas, con
+   `rl/.venv/bin/tensorboard --logdir rl/runs`).
+3. Exportar la red a JSON: `rl/.venv/bin/python rl/export.py rl/runs/etapa1/model.zip models/etapa1.json`.
+4. Medirla contra la IA de siempre: `node rl/eval.js models/etapa1.json`.
+5. Verla en el juego: `http://localhost:8123/?ia=models/etapa1.json` (los rivales manejan con la red).
+
+Para que el entrenamiento no se desarme (PPO es inestable), la tasa de aprendizaje baja de a poco hasta 0, cada
+actualización usa 32.768 pasos y las recompensas se normalizan; conviene igual medir los puntos de control con
+`rl/eval.js` y quedarse con el mejor. Cada episodio larga en cualquier punto de la vuelta, a veces parado o
+cruzado y con ruedas afuera, para que aprenda también a largar y a volver a la pista.
+
+**Etapa 1** (`models/etapa1.json`, 60 millones de pasos, ~35 minutos): completa las vueltas en los 8 circuitos,
+en promedio un 7 % más rápido que la IA de siempre a su mejor ritmo (de 1 % en Monza a 15 % en el Red Bull Ring;
+en Interlagos, 66,2 s contra 70,4 s).
+
 ## Trazada ideal
 
 `src/racingline.js` calcula, al cargar el circuito, la trazada curva por curva como la hacen los pilotos: se llega

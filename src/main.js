@@ -12,6 +12,7 @@ import { Cockpit } from './cockpit.js';
 import { CAMERA_MODES, CAMERA_NAMES, Recorder, replayCamera, tvCameras } from './replay.js';
 import { DIFFICULTIES, LAP_OPTIONS, TEAMS, car as teamCar, rivalCars, rivalPaces } from './teams.js';
 import { EngineAudio } from './audio.js';
+import { NeuralDriver, Policy } from './policy.js';
 
 const VIEW_W = 960;
 const VIEW_H = 540;
@@ -259,6 +260,9 @@ function pollPad() {
 let game = null;
 let lastGame = null; // la última carrera, para conservar el mejor tiempo y el fantasma al volver del menú
 let carProfile = DEFAULT_PROFILE;
+// Con ?ia=models/etapa1.json en la dirección, los rivales manejan con la red entrenada (rl/) en vez de ai.js
+const NEURAL_URL = new URLSearchParams(location.search).get('ia');
+let neuralPolicy = null;
 let manualGears = false;
 
 function resetGame(track) {
@@ -280,7 +284,8 @@ function resetGame(track) {
   const rivals = others.map((o, i) => {
     const t = o.team, c = new Car(slots[i].x, slots[i].y, slots[i].angle, carProfile);
     return {
-      name: `${t.name} #${o.number}`, code: t.code, number: o.number, color: t.color, car: c, driver: new Driver(paces[i], i + 1), race: newRace(track, c),
+      name: `${t.name} #${o.number}`, code: t.code, number: o.number, color: t.color, car: c, race: newRace(track, c),
+      driver: neuralPolicy ? new NeuralDriver(neuralPolicy) : new Driver(paces[i], i + 1),
       model: modelFor(o), spin: 0, dist: 0, gridBack: slots[i].back,
       // en la grilla cada rival acelera hasta unas vueltas propias y reacciona al semáforo con su tiempo
       revTarget: LAUNCH_WINDOW[0] - 300 + Math.random() * 1500, react: 0.12 + Math.random() * 0.22,
@@ -1168,6 +1173,7 @@ setupCanvas.addEventListener('click', (e) => {
 // al abrir: el perfil del auto y el circuito elegido la última vez, y el menú
 (async () => {
   carProfile = await fetch(CAR_PROFILE).then((r) => r.json()).catch(() => DEFAULT_PROFILE);
+  if (NEURAL_URL) neuralPolicy = await Policy.load(NEURAL_URL).catch((err) => (console.warn('No se pudo cargar la red:', err), null));
   if (!TRACKS.some((t) => t.id === settings.track)) settings.track = TRACKS[0].id;
   audio.setVolumes({ master: settings.volMaster, engines: settings.volEngines, music: settings.volMusic });
   openMenu();
