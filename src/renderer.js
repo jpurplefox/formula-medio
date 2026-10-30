@@ -18,7 +18,7 @@ export const KERB_H = 0.07; // altura del lomo del piano (en celdas)
 export const LINE_W = 0.22; // ancho de la línea blanca de borde (en celdas)
 export const STRIPE = 1.6; // largo de cada franja del piano (en celdas)
 export const GUIDE_W = 0.2; // medio ancho de la trazada ideal (en celdas)
-export const RUBBER_W = 0.55; // medio ancho de la goma oscura que dejan los autos sobre la trazada (en celdas)
+export const RUBBER_W = 0.9; // medio ancho de la goma oscura que dejan los autos sobre la trazada (en celdas)
 export const ROAD_TPC = 64; // texeles de asfalto por celda (la textura se repite cada 4 celdas, ~10 m)
 export const GRASS_TPC = 32; // texeles de césped por celda
 export const GRASS_BAND = 2.2; // ancho de cada franja del corte de césped (en celdas)
@@ -28,6 +28,7 @@ const NCHK = MAX_DIST + 2; // marcas de profundidad por columna para recortar sp
 export const NEAR_RISE = 0.2; // cuánto puede subir el terreno (o un muro) cerca de la cámara (en celdas), para saber dónde arrancar los rayos
 const MAX_STEP_GROWTH = 0.025; // a lo lejos, cuánto crece el paso máximo de los rayos por cada celda de distancia
 export const MODEL_NEAR = 0.05; // las caras de los modelos se recortan a esta distancia de la cámara (en celdas)
+export const BODY_PIVOT_Z = 0.3; // m: altura del eje sobre el que rola y cabecea la carrocería (centro de rolido)
 export const SUN = [0.45, 0.6, 0.66]; // hacia dónde está el sol (arriba a la izquierda del mapa, como el sombreado del terreno)
 export const SHADOW_SHIFT = 0.35; // cuánto se corre la sombra del auto, alejándose del sol (m)
 // contorno de la sombra del auto visto desde arriba (m): alerón delantero, cuerpo, alerón trasero
@@ -133,7 +134,10 @@ export class Renderer {
     this.rubber = null; // por dónde pasa la trazada (offset por celda), para oscurecer el asfalto con goma
   }
 
-  // models: autos 3D, cada uno { model, x, y, z, angle, pitch, roll, steer, spin, alpha, shadow, hide, meters }
+  // models: autos 3D, cada uno { model, x, y, z, angle, pitch, roll, dive, steer, spin, head, alpha, shadow, hide, meters }
+  // (pitch: la pendiente, inclina todo el auto; roll y dive: rolido y cabeceo de la carrocería sobre la suspensión)
+  // (steer: ángulo de las ruedas delanteras; head: hacia dónde gira la cabeza el piloto, en rad, + a la derecha;
+  // wear y shine: desgaste y brillo de las gomas, 0..1, sólo con WebGL)
   // (hide: la etiqueta de las piezas que no se dibujan, por ejemplo el casco visto desde adentro)
   // zoom: 1 = campo de visión normal; 2 = la mitad de ancho (todo se ve el doble de grande), como un teleobjetivo
   setZoom(zoom) {
@@ -477,12 +481,17 @@ export class Renderer {
     const k = 1 / m.meters; // metros → celdas
     const ca = Math.cos(m.angle), sa = Math.sin(m.angle);
     const cp = Math.cos(m.pitch || 0), sp = Math.sin(m.pitch || 0);
-    const cr = Math.cos(m.roll || 0), sr = Math.sin(m.roll || 0);
-    // ejes del auto en el mundo: adelante (con la pendiente), derecha y arriba (con el rolido)
+    // ejes del auto en el mundo: adelante y arriba (con la pendiente) y derecha
     const Fx = ca * cp, Fy = sa * cp, Fz = sp;
-    const R0x = -sa, R0y = ca, U0x = -ca * sp, U0y = -sa * sp, U0z = cp;
-    const Rx = R0x * cr + U0x * sr, Ry = R0y * cr + U0y * sr, Rz = U0z * sr;
-    const Ux = U0x * cr - R0x * sr, Uy = U0y * cr - R0y * sr, Uz = U0z * cr;
+    const Rx = -sa, Ry = ca, Rz = 0;
+    const Ux = -ca * sp, Uy = -sa * sp, Uz = cp;
+    // la carrocería (todo menos las ruedas) rola y cabecea sobre la suspensión, alrededor de BODY_PIVOT_Z
+    const cr = Math.cos(m.roll || 0), sr = Math.sin(m.roll || 0), cd = Math.cos(m.dive || 0), sd = Math.sin(m.dive || 0);
+    const lean = (lx, ly, lz, z0 = BODY_PIVOT_Z) => {
+      const z = lz - z0;
+      const y1 = ly * cr - z * sr, z1 = ly * sr + z * cr;
+      return [lx * cd + z1 * sd, y1, z0 + z1 * cd - lx * sd];
+    };
     // a coordenadas de cámara: d = profundidad, s = a la derecha, u = arriba; ta, tb = coordenadas en la textura
     const toCam = (X, Y, Z, ta = 0, tb = 0) => {
       const dx = X - cam.x, dy = Y - cam.y;
@@ -512,7 +521,7 @@ export class Renderer {
     const polys = [];
     let bx0 = w, by0 = h, bx1 = -1, by1 = -1;
     const cs = Math.cos(m.spin || 0), ss = Math.sin(m.spin || 0);
-    const st = (m.steer || 0) * 0.35, cst = Math.cos(st), sst = Math.sin(st);
+    const st = m.steer || 0, cst = Math.cos(st), sst = Math.sin(st);
     // la rueda gira sobre su eje y, si es delantera, dobla con la dirección (sirve para puntos y para normales)
     const turn = (wh, lx, ly, lz) => {
       const ax = lx - wh.x, az = lz - wh.z;
@@ -525,13 +534,19 @@ export class Renderer {
       }
       return [lx, ly, lz];
     };
+    // la cabeza gira alrededor del cuello
+    const ch = Math.cos(m.head || 0), sh = Math.sin(m.head || 0);
+    const look = (hd, lx, ly, lz) => {
+      const bx = lx - hd.x, by = ly - hd.y;
+      return [hd.x + bx * ch - by * sh, hd.y + bx * sh + by * ch, lz];
+    };
     for (const part of m.model) {
       if (part.tag && part.tag === m.hide) continue;
-      const wh = part.wheel;
+      const wh = part.wheel, hd = part.head;
       const n = part.verts.length;
       const wx = new Float64Array(n), wy = new Float64Array(n), wz = new Float64Array(n);
       for (let i = 0; i < n; i++) {
-        const [lx, ly, lz] = wh ? turn(wh, ...part.verts[i]) : part.verts[i];
+        const [lx, ly, lz] = wh ? turn(wh, ...part.verts[i]) : lean(...(hd ? look(hd, ...part.verts[i]) : part.verts[i]));
         wx[i] = m.x + (Fx * lx + Rx * ly + Ux * lz) * k;
         wy[i] = m.y + (Fy * lx + Ry * ly + Uy * lz) * k;
         wz[i] = m.z + (Fz * lx + Rz * ly + Uz * lz) * k;
@@ -541,6 +556,10 @@ export class Renderer {
         // normal de la cara (viene del modelo, apuntando hacia afuera) llevada al mundo, y centro de la cara
         let [lx, ly, lz] = face.n;
         if (wh) [lx, ly, lz] = turn({ x: 0, y: 0, z: 0, front: wh.front }, lx, ly, lz);
+        else {
+          if (hd) [lx, ly, lz] = look({ x: 0, y: 0 }, lx, ly, lz);
+          [lx, ly, lz] = lean(lx, ly, lz, 0);
+        }
         const nx = Fx * lx + Rx * ly + Ux * lz, ny = Fy * lx + Ry * ly + Uy * lz, nz = Fz * lx + Rz * ly + Uz * lz;
         let fx = 0, fy = 0, fz = 0;
         for (const i of idx) { fx += wx[i]; fy += wy[i]; fz += wz[i]; }

@@ -3,7 +3,8 @@
 //   Son el mismo dibujo; en uno de los dos los textos van espejados, así se leen bien de los dos lados.
 // - Arriba: el auto visto desde arriba (x a lo largo, y a lo ancho).
 // Todo se dibuja en metros, con la misma escala en las dos direcciones (LIVERY_S texeles por metro).
-// Además: el flanco de las gomas, con la franja de color del compuesto y letras que giran con la rueda.
+// Además: el flanco de las gomas, con la franja de color del compuesto y letras que giran con la rueda,
+// la banda de rodadura, de caucho gastado, y la cara de la llanta, con sus rayos.
 
 import { canvasTexture } from './textures.js';
 
@@ -84,12 +85,14 @@ function drawSide(g, row, color, accent, number, mirror) {
   label(g, 'RAYCAST', X(-2.585), Y(0.88), 0.11, right, color);
 }
 
-// Visto desde arriba: franja blanca por el centro, número en la trompa (para leerlo desde atrás),
+// Visto desde arriba: franja blanca por el centro, número en la trompa (se lee mirando el auto de frente, como en
+// los de verdad),
 // sponsor sobre la cubierta del motor y en el flap del alerón trasero, puntas blancas en el alerón delantero.
 function drawTop(g, color, accent, number) {
   const S = LIVERY_S;
   const X = (x) => (x + HALF_L) * S, Y = (y) => TOP + (y + HALF_W) * S;
-  const up = [0, 1, -1, 0]; // texto girado: se lee mirando hacia adelante
+  const up = [0, 1, -1, 0]; // texto girado: se lee desde atrás, mirando hacia adelante
+  const down = [0, -1, 1, 0]; // y al revés: se lee desde adelante
   g.fillStyle = color;
   g.fillRect(0, TOP, SIZE, 2 * HALF_W * S);
   g.fillStyle = accent;
@@ -102,7 +105,7 @@ function drawTop(g, color, accent, number) {
   g.beginPath();
   g.arc(X(1.75), Y(0), 0.12 * S, 0, Math.PI * 2);
   g.fill();
-  label(g, number, X(1.75), Y(0), 0.13, up, '#111111');
+  label(g, number, X(1.75), Y(0), 0.13, down, '#111111');
   // sponsor sobre la cubierta del motor
   label(g, 'RAYCAST', X(-1.45), Y(0), 0.1, up, accent, '#111111');
   // flap del alerón trasero
@@ -128,6 +131,9 @@ export function liveryTexture(color, accent, number) {
 
 export const SIDEWALL_SIZE = 256;
 export const SIDEWALL_S = 128 / 0.37; // texeles por metro: la rueda (radio 0,36 m) ocupa casi todo el cuadrado
+export const TREAD_SIZE = 256;
+export const RIM_SIZE = 256;
+export const RIM_S = 128 / 0.235; // texeles por metro: la cara de la llanta (radio 0,229 m) ocupa casi todo el cuadrado
 
 // Flanco de la goma: caucho oscuro, franja del compuesto y letras alrededor
 export function sidewallTexture(compound = '#e0262b') {
@@ -140,23 +146,118 @@ export function sidewallTexture(compound = '#e0262b') {
   g.strokeStyle = compound;
   g.lineWidth = 0.022 * S;
   g.beginPath();
-  g.arc(m, m, 0.26 * S, 0, Math.PI * 2);
+  g.arc(m, m, 0.245 * S, 0, Math.PI * 2);
   g.stroke();
   // letras siguiendo el círculo, de los dos lados
   g.fillStyle = '#d8d8dc';
   g.font = `bold ${Math.round(0.045 * S)}px ${FONT}`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  const word = 'RAYCAST';
+  const word = 'FIRELLO'; // el proveedor de neumáticos
   for (const base of [-Math.PI / 2, Math.PI / 2]) {
     for (let i = 0; i < word.length; i++) {
       const a = base + (i - (word.length - 1) / 2) * 0.17;
       g.save();
-      g.translate(m + Math.cos(a) * 0.31 * S, m + Math.sin(a) * 0.31 * S);
+      g.translate(m + Math.cos(a) * 0.282 * S, m + Math.sin(a) * 0.282 * S);
       g.rotate(a + Math.PI / 2);
       g.fillText(word[i], 0, 0);
       g.restore();
     }
   }
+  return canvasTexture(c);
+}
+
+// Banda de rodadura: x alrededor de la rueda (se repite, así que todo lo que se dibuja se repite del otro lado),
+// y a lo ancho, de un flanco al otro pasando por los hombros. Caucho con grano fino, la zona que pisa un poco más
+// clara y opaca, hombros más oscuros y marcas de goma arrastrada a lo largo de la vuelta, que dejan ver que gira.
+export function treadTexture() {
+  const N = TREAD_SIZE;
+  const c = document.createElement('canvas');
+  c.width = c.height = N;
+  const g = c.getContext('2d');
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  // a lo ancho: hombros oscuros, banda más clara
+  const across = g.createLinearGradient(0, 0, 0, N);
+  across.addColorStop(0, '#202024');
+  across.addColorStop(0.2, '#2b2b30');
+  across.addColorStop(0.3, '#34343a');
+  across.addColorStop(0.7, '#34343a');
+  across.addColorStop(0.8, '#2b2b30');
+  across.addColorStop(1, '#202024');
+  g.fillStyle = across;
+  g.fillRect(0, 0, N, N);
+  // marcas de goma a lo largo de la vuelta, más que nada sobre la zona que pisa
+  for (let i = 0; i < 90; i++) {
+    const x = rand() * N, y = N * (0.22 + rand() * 0.56), len = 8 + rand() * 50, h = 1 + rand() * 3;
+    g.fillStyle = rand() < 0.6 ? `rgba(70,70,76,${0.25 + rand() * 0.3})` : `rgba(14,14,16,${0.3 + rand() * 0.3})`;
+    for (const dx of [0, -N]) g.fillRect(x + dx, y, len, h);
+  }
+  // grano fino
+  const img = g.getImageData(0, 0, N, N), d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const k = (rand() - 0.5) * 10;
+    d[i] += k;
+    d[i + 1] += k;
+    d[i + 2] += k;
+  }
+  g.putImageData(img, 0, 0);
+  return canvasTexture(c);
+}
+
+// Cara de la llanta, vista de costado y centrada: el borde del aro, diez rayos de metal en pares que salen del cubo
+// y, entre los rayos, el hueco oscuro con el disco de freno ranurado detrás.
+export function rimTexture() {
+  const N = RIM_SIZE, m = N / 2, S = RIM_S;
+  const c = document.createElement('canvas');
+  c.width = c.height = N;
+  const g = c.getContext('2d');
+  const disc = (r, fill) => {
+    g.beginPath();
+    g.arc(m, m, r * S, 0, Math.PI * 2);
+    g.fillStyle = fill;
+    g.fill();
+  };
+  // fondo: el hueco entre los rayos
+  g.fillStyle = '#0d0d0f';
+  g.fillRect(0, 0, N, N);
+  // disco de freno, con ranuras curvas
+  disc(0.17, '#2c2c30');
+  disc(0.09, '#0d0d0f');
+  g.strokeStyle = '#19191c';
+  g.lineWidth = 0.006 * S;
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * Math.PI * 2;
+    g.beginPath();
+    g.arc(m + Math.cos(a) * 0.13 * S, m + Math.sin(a) * 0.13 * S, 0.035 * S, a + 0.6, a + 2.2);
+    g.stroke();
+  }
+  // rayos: de a pares, más anchos en el cubo y finos hacia el aro, con un filo claro de un lado
+  const spoke = (a, w0, w1, fill) => {
+    const p = (r, w) => [m + (Math.cos(a) * r - Math.sin(a) * w) * S, m + (Math.sin(a) * r + Math.cos(a) * w) * S];
+    g.beginPath();
+    g.moveTo(...p(0.05, -w0));
+    g.lineTo(...p(0.215, -w1));
+    g.lineTo(...p(0.215, w1));
+    g.lineTo(...p(0.05, w0));
+    g.closePath();
+    g.fillStyle = fill;
+    g.fill();
+  };
+  for (let i = 0; i < 5; i++) {
+    for (const d of [-0.16, 0.16]) {
+      const a = (i / 5) * Math.PI * 2 + d;
+      spoke(a, 0.022, 0.012, '#4f535b');
+      spoke(a + 0.025, 0.014, 0.007, '#8d929c');
+    }
+  }
+  // aro (el borde interior de la llanta) y cubo
+  g.strokeStyle = '#6f747d';
+  g.lineWidth = 0.02 * S;
+  g.beginPath();
+  g.arc(m, m, 0.218 * S, 0, Math.PI * 2);
+  g.stroke();
+  disc(0.065, '#5a5e66');
+  disc(0.05, '#3b3e44');
   return canvasTexture(c);
 }

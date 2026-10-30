@@ -63,12 +63,23 @@ Controles (flechas, WASD o IJKL): I/↑/W acelerar · K/↓/S frenar y marcha at
    titilen a lo lejos; el césped tiene franjas de corte, y sobre la trazada ideal el asfalto está oscurecido por la goma.
    Los árboles y los carteles son sprites. Los autos (el tuyo, los rivales y el fantasma) son **modelos 3D** de unas mil caras,
    armados en código con secciones redondeadas, tubos y cilindros (`src/carmodel.js`: trompa, pontones, alerones
-   de varios elementos, halo, espejos, suspensión, casco y ruedas con llanta) y dibujados por un rasterizador propio
+   de varios elementos, halo, espejos, suspensión, piloto con casco, visera, alerón y collar HANS, y ruedas con llanta de rayos) y dibujados por un rasterizador propio
    dentro del mismo renderer: misma cámara, sombreado plano según el sol, z-buffer entre sus piezas y recorte contra
    el terreno, así las lomas y los muros los tapan. Tienen texturas con corrección de perspectiva: la decoración
    (`src/livery.js`: franja, número, sponsors, generada por código en un canvas) en la carrocería, fibra de carbono
-   en los alerones, el piso, el halo y la suspensión, y el flanco de las gomas con la franja del compuesto y letras
-   que giran con la rueda. Cada cara toma sus coordenadas de textura proyectándose desde arriba o de costado. La vista de cabina usa el mismo modelo, visto desde los ojos del
+   en los alerones, el piso, el halo y la suspensión, y el flanco de las gomas con la franja del compuesto y la marca FIRELLO
+   que gira con la rueda. El piloto gira la cabeza: sigue al auto de adelante si está cerca y dentro de ±10° de su
+   rumbo; si no, mira el vértice de la próxima curva (el punto más lento de la trazada en los próximos 140 m);
+   si no hay curva, de frente. Las gomas tienen los hombros redondeados (el perfil va de la banda plana al flanco en un
+   cuarto de círculo) y la banda lleva caucho gastado con marcas de goma arrastrada, que dejan ver que gira. Con
+   WebGL las gomas se gastan durante la carrera: largan lisas y brillantes, el brillo se va antes de terminar la
+   primera vuelta y las marcas aparecen de a poco hasta estar completas al empezar la última. Con WebGL todo el
+   auto se ilumina con normales suavizadas, así lo redondeado (halo, gomas, carrocería) no se ve en facetas. Las
+   tomas de los pontones tienen un labio redondeado alrededor de la abertura oscura, inclinadas hacia atrás.
+   Los brazos de la suspensión son perfiles ovalados y chatos; los espejos, una cáscara redondeada con el vidrio
+   hundido en un marco, que con WebGL refleja el entorno como un espejo convexo. La llanta tiene un aro de metal que
+   sobresale, la cara hundida con diez rayos de a pares y el disco de freno ranurado detrás (dibujados en una
+   textura que gira con la rueda) y la tuerca central del color de los detalles del equipo. Cada cara toma sus coordenadas de textura proyectándose desde arriba o de costado. La vista de cabina usa el mismo modelo, visto desde los ojos del
    piloto (sin el casco), con el volante dibujado encima. Las cuentas de cámara usan una imagen virtual de 960×540.
    **Con WebGL** (`src/glrenderer.js`, lo normal): todo se dibuja en la placa de video, a la resolución de la
    pantalla (hasta 1440×810). El terreno es un *shader* que corre una vez por píxel: arma el rayo de la cámara,
@@ -82,13 +93,18 @@ Controles (flechas, WASD o IJKL): I/↑/W acelerar · K/↓/S frenar y marcha at
    **Sin WebGL** (o agregando `?cpu` a la dirección) se usa el renderer de procesador: el cielo y el terreno se
    reparten entre varios **Web Workers** (uno por núcleo, hasta 6; `src/terrainworker.js`), cada uno dibuja una
    franja de columnas y el hilo principal arma la imagen y dibuja encima los sprites y los autos. Las ruedas giran,
-   las delanteras doblan con la dirección, la carrocería sigue la pendiente y se inclina en las curvas, y el auto
+   las delanteras doblan lo que hace falta para el giro del auto (mucho despacio, apenas a fondo), todo el auto sigue la pendiente y la carrocería (no las ruedas, que quedan apoyadas) se mueve sobre la
+   suspensión: se inclina hacia afuera en las curvas según la aceleración de costado (hasta 1,5°) y baja la trompa
+   al frenar (hasta 1,1°), con un resorte amortiguado; desde la cabina, el cabeceo mueve la vista, y el auto
    proyecta su sombra sobre el piso.
 3. **Escala y física** (`src/car.js`): cada circuito tiene una escala real en metros por celda, calculada con el
    largo real de la vuelta (de la telemetría, o `lengthMeters`). El auto se comporta según un **perfil medido con
    telemetría real** (ver abajo): aceleración y desaceleración por velocidad, frenada y agarre lateral que crecen
    con la velocidad (carga aerodinámica), y una caja de 8 marchas con RPM, corte y luces de cambio.
-   Además: pasto que frena, choques y gravedad en las pendientes.
+   Además: pasto que frena, choques y gravedad en las pendientes, y **rebufo**: detrás de otro auto (hasta 45 m
+   y dentro de su estela, de 1,6 m de costado) hay menos resistencia del aire, hasta un 30 % pegado a él. Eso da
+   unos 13 km/h más al final de una recta de 600 m, gana 0,3 s y sube la velocidad punta hasta el corte de 8.ª.
+   Vale para vos y para los rivales.
 4. **Choques** (`src/collision.js`): con impulsos, como un motor de física 2D. Además de la velocidad de marcha,
    cada auto tiene una velocidad de costado y un giro que le dejan los golpes, y que las gomas van frenando (más
    rápido cuanto más agarre). Entre autos, cada uno es un rectángulo de 5,6 × 2 m: se detecta el choque con el test
@@ -155,7 +171,8 @@ Cada rival (`src/ai.js`) es un auto con la misma física que el tuyo, manejado p
 por el lado de afuera, se toca el vértice (el punto más cerrado) del lado de adentro y se sale abriendo de nuevo
 (en las eses, de vértice a vértice), con un suavizado final que saca los zigzags. Después calcula la velocidad
 máxima en cada punto con el perfil del auto: lo que aguanta el agarre en la curva, cuánto hay que frenar antes y cuánto acelera el motor después.
-En el juego se pinta sobre el asfalto y cambia de color según tu velocidad: **verde** se puede acelerar,
+En el juego es una cinta semitransparente que flota un poco sobre el asfalto, con los bordes difusos (sin WebGL,
+se pinta sobre el piso), y cambia de color según tu velocidad: **verde** se puede acelerar,
 **amarillo** mantener o levantar, **rojo** hay que frenar. **G** la muestra u oculta.
 
 ## Perfil del auto desde la telemetría de F1

@@ -12,13 +12,16 @@ import { KERB_W, kerbAmount, stationAt } from './track.js';
 import { asphaltTexture, grassTexture, macroNoise, wallTexture } from './textures.js';
 import {
   FOG_END, FOG_START, GRASS_BAND, GRASS_TPC, GUIDE_W, KERB_H, LINE_W, MACRO_TPC, MAX_DIST, MODEL_NEAR, NEAR_RISE, PLANE_LEN,
-  ROAD_TPC, RUBBER_W, SHADOW, SHADOW_SHIFT, STRIPE, SUN, WALL_H, WALL_STRIPE, WALL_T, Z_NEAR,
+  BODY_PIVOT_Z, ROAD_TPC, RUBBER_W, SHADOW, SHADOW_SHIFT, STRIPE, SUN, WALL_H, WALL_STRIPE, WALL_T, Z_NEAR,
 } from './renderer.js';
 import { sampleField } from './track.js';
+import { lineFrame, pointAt } from './ai.js';
 
 const FAR = MAX_DIST + 10; // lo más lejos que se guarda en el z-buffer (en celdas)
 const MAX_SCALE = 1.5; // como mucho, 1,5 veces los píxeles virtuales (1440×810): más no se nota y calienta la máquina
 const LINE_TEX_W = 1024; // ancho de las texturas con datos por celda de la línea central
+const GUIDE_LIFT = 0.1; // cuánto flota la ayuda de trazada sobre la pista (celdas; el lomo de los pianos es KERB_H)
+const GUIDE_ALPHA = 0.6; // opacidad de la ayuda de trazada en el centro
 const ATTRIBS = ['aPos', 'aUV', 'aNormal', 'aColor', 'aTex', 'aWheel', 'aSmooth', 'aGloss'];
 const STRIDE = 17; // floats por vértice de los autos
 const CREASE = 0.7; // coseno del ángulo hasta el que las caras vecinas se suavizan para el reflejo (~45°)
@@ -57,7 +60,7 @@ void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
 const TERRAIN_FS = `#version 300 es
 precision highp float;
 precision highp sampler2D;
-uniform sampler2D uField, uStation, uLine, uGuide, uAsphalt, uGrass, uWall, uMacro;
+uniform sampler2D uField, uStation, uLine, uAsphalt, uGrass, uWall, uMacro;
 uniform vec2 uMap;
 uniform int uLineN;
 uniform float uRunoff;
@@ -73,7 +76,7 @@ const float MAX_DIST = ${glsl(MAX_DIST)}, NEAR = ${glsl(MODEL_NEAR)}, FAR = ${gl
 ${DEPTH}
 const float WALL_H = ${glsl(WALL_H)}, WALL_T = ${glsl(WALL_T)}, WALL_STRIPE = ${glsl(WALL_STRIPE)};
 const float KERB_W = ${glsl(KERB_W)}, KERB_H = ${glsl(KERB_H)}, LINE_W = ${glsl(LINE_W)}, STRIPE = ${glsl(STRIPE)};
-const float GUIDE_W = ${glsl(GUIDE_W)}, RUBBER_W = ${glsl(RUBBER_W)};
+const float RUBBER_W = ${glsl(RUBBER_W)};
 const float ROAD_TPC = ${glsl(ROAD_TPC)}, GRASS_TPC = ${glsl(GRASS_TPC)}, GRASS_BAND = ${glsl(GRASS_BAND)}, MACRO_TPC = ${glsl(MACRO_TPC)};
 const vec3 KERB_RED = vec3(200.0, 30.0, 30.0) / 255.0, KERB_WHITE = vec3(235.0) / 255.0, EDGE_WHITE = vec3(225.0) / 255.0;
 const vec3 LINE_BLACK = vec3(20.0) / 255.0, LINE_WHITE = vec3(245.0) / 255.0, WALL_TOP = vec3(150.0, 150.0, 155.0) / 255.0;
@@ -87,7 +90,6 @@ float kerbBump(vec4 f) {
 }
 vec3 shade(vec3 c, float k) { return min(c * k, vec3(1.0)); }
 vec4 lineData(int i) { i = (i % uLineN + uLineN) % uLineN; return texelFetch(uLine, ivec2(i % ${LINE_TEX_W}, i / ${LINE_TEX_W}), 0); }
-vec3 guideColor(int i) { i = (i % uLineN + uLineN) % uLineN; return texelFetch(uGuide, ivec2(i % ${LINE_TEX_W}, i / ${LINE_TEX_W}), 0).rgb; }
 
 // posición sobre la línea central (como stationAt de track.js): interpolada, salvo donde salta
 float stationAt(vec2 p) {
@@ -137,11 +139,6 @@ vec3 ground(vec2 p, float fw, float s, float k, float st, float side, float lit)
   if (al > -0.7 && al < 0.7) {
     float l = -a2.x * uStart.w + a2.y * uStart.z;
     if (abs(l) < uStartHalf) road = shade(mod(floor((al + 0.7) * 2.0) + floor((l + 200.0) * 2.0), 2.0) > 0.5 ? LINE_WHITE : LINE_BLACK, lit);
-  }
-  if ((uFlags & 1) != 0 && s > 0.0 && st >= 0.0) {
-    int u = int(st);
-    float dd = abs(side - lineData(u).b);
-    if (dd < GUIDE_W + fw) road = mix(road, shade(guideColor(u), lit), 0.8 * min(1.0, (GUIDE_W + fw - dd) / (2.0 * fw)));
   }
   if (s > LINE_W + fw) return road;
   vec3 kerbC = EDGE_WHITE;
@@ -243,8 +240,10 @@ in vec3 aPos, aNormal, aColor, aSmooth;
 in vec2 aUV;
 in float aTex, aWheel, aGloss;
 uniform vec4 uWheels[4];
-uniform vec2 uSpin, uSteer; // coseno y seno
+uniform vec2 uSpin, uSteer, uHead; // coseno y seno
+uniform vec3 uNeck; // pivote de la cabeza
 uniform vec3 uPos, uF, uR, uU;
+uniform vec4 uBody; // carrocería: coseno y seno del rolido (+: el costado derecho sube) y del cabeceo (+: la trompa baja)
 uniform float uK;
 ${PROJECT}
 out vec3 vColor;
@@ -254,9 +253,24 @@ out float vLight, vDepth, vBack, vGloss;
 out vec3 vNormal, vView;
 vec3 spin(vec3 n) { return vec3(n.x * uSpin.x + n.z * uSpin.y, n.y, -n.x * uSpin.y + n.z * uSpin.x); }
 vec3 steer(vec3 n) { return vec3(n.x * uSteer.x - n.y * uSteer.y, n.x * uSteer.y + n.y * uSteer.x, n.z); }
+vec3 look(vec3 n) { return vec3(n.x * uHead.x - n.y * uHead.y, n.x * uHead.y + n.y * uHead.x, n.z); }
+// la carrocería rola sobre el eje largo y cabecea sobre el eje de costado, a la altura del centro de rolido
+vec3 lean(vec3 n) {
+  n = vec3(n.x, n.y * uBody.x - n.z * uBody.y, n.y * uBody.y + n.z * uBody.x);
+  return vec3(n.x * uBody.z + n.z * uBody.w, n.y, n.z * uBody.z - n.x * uBody.w);
+}
+const vec3 BODY_PIVOT = vec3(0.0, 0.0, ${glsl(BODY_PIVOT_Z)});
 void main() {
   vec3 p = aPos, n = aNormal, sm = aSmooth;
-  if (aWheel > 0.5) {
+  // el vidrio de los espejos es convexo: la normal se abre hacia los bordes (aUV va de -1 a 1 sobre el vidrio),
+  // así el reflejo cambia de un lado al otro y abarca más
+  if (aGloss > 1.5) sm = normalize(sm + vec3(0.0, aUV.x, aUV.y) * 0.45);
+  if (aWheel > 4.5) {
+    // la cabeza del piloto gira alrededor del cuello
+    p = uNeck + look(p - uNeck);
+    n = look(n);
+    sm = look(sm);
+  } else if (aWheel > 0.5) {
     // la rueda gira sobre su eje y, si es delantera, dobla con la dirección
     vec4 wh = uWheels[int(aWheel + 0.5) - 1];
     p = wh.xyz + spin(p - wh.xyz);
@@ -268,14 +282,23 @@ void main() {
       sm = steer(sm);
     }
   }
+  // todo menos las ruedas (que quedan apoyadas en el piso) se mueve con la suspensión
+  if (aWheel < 0.5 || aWheel > 4.5) {
+    p = BODY_PIVOT + lean(p - BODY_PIVOT);
+    n = lean(n);
+    sm = lean(sm);
+  }
   vec3 world = uPos + (uF * p.x + uR * p.y + uU * p.z) * uK;
-  vec3 nw = uF * n.x + uR * n.y + uU * n.z;
   vNormal = uF * sm.x + uR * sm.y + uU * sm.z;
+  // se ilumina con la normal suavizada, así lo redondeado (halo, gomas, carrocería) no se ve en facetas;
+  // las aristas marcadas siguen marcadas (CREASE)
+  vec3 face = uF * n.x + uR * n.y + uU * n.z;
+  vec3 nw = vNormal;
   vView = world - uCam;
   vGloss = aGloss;
   float sun = -nw.x * ${glsl(SUN[0])} - nw.y * ${glsl(SUN[1])} + nw.z * ${glsl(SUN[2])};
   vLight = 0.5 + 0.6 * max(0.0, sun) + 0.12 * nw.z;
-  vBack = dot(nw, world - uCam) >= 0.0 ? 1.0 : 0.0; // cara que mira para el otro lado
+  vBack = dot(face, world - uCam) >= 0.0 ? 1.0 : 0.0; // cara que mira para el otro lado
   vColor = aColor;
   vUV = aUV;
   vTex = int(aTex + 0.5);
@@ -284,8 +307,8 @@ void main() {
 
 const MODEL_FS = `#version 300 es
 precision highp float;
-uniform sampler2D uLivery, uCarbon, uSidewall;
-uniform float uAlpha;
+uniform sampler2D uLivery, uCarbon, uSidewall, uTread, uRim;
+uniform float uAlpha, uWear, uShine; // gomas: cuánto se gastaron y cuánto brillo de nuevas les queda (0..1)
 in vec3 vColor;
 in vec2 vUV;
 flat in int vTex;
@@ -296,6 +319,7 @@ ${FOG}
 const vec3 SKY_TOP = vec3(70.0, 130.0, 210.0) / 255.0;
 const vec3 SUN_DIR = normalize(vec3(${glsl(-SUN[0])}, ${glsl(-SUN[1])}, ${glsl(SUN[2])}));
 const vec3 ASPHALT = vec3(0.17, 0.18, 0.19), TREES = vec3(0.2, 0.3, 0.19);
+const vec3 NEW_TREAD = vec3(0.15, 0.15, 0.17); // banda de una goma nueva: lisa, sin marcas
 
 // Lo que se refleja en la dirección r: un entorno inventado pero parecido al del circuito. Abajo asfalto que se
 // aclara hacia el horizonte; en el horizonte una franja de árboles de alto irregular; arriba el cielo con el mismo
@@ -310,15 +334,19 @@ vec3 env(vec3 r) {
 
 void main() {
   if (vBack > 0.5) discard;
-  vec3 c = vTex == 1 ? texture(uLivery, vUV).rgb : vTex == 2 ? texture(uCarbon, vUV).rgb : vTex == 3 ? texture(uSidewall, vUV).rgb : vColor;
+  vec3 c = vTex == 1 ? texture(uLivery, vUV).rgb : vTex == 2 ? texture(uCarbon, vUV).rgb
+    : vTex == 3 ? texture(uSidewall, vUV).rgb : vTex == 4 ? mix(NEW_TREAD, texture(uTread, vUV).rgb, uWear) : vTex == 5 ? texture(uRim, vUV).rgb : vColor;
   c = min(c * vLight, vec3(1.0));
-  if (vGloss > 0.0) {
+  // la banda de las gomas nuevas brilla hasta que se gasta un poco
+  float gloss = vTex == 4 ? 0.5 * uShine : vGloss;
+  if (gloss > 0.0) {
     // barniz: refleja poco de frente y mucho de costado (Fresnel), y un brillo chico y fuerte donde rebota el sol
     vec3 v = normalize(vView), n = normalize(vNormal);
     float facing = clamp(-dot(n, v), 0.0, 1.0);
     vec3 r = reflect(v, n);
-    float k = vGloss * min(0.75, 0.12 + 0.88 * pow(1.0 - facing, 5.0));
-    float sun = pow(max(dot(r, SUN_DIR), 0.0), 150.0) * 1.4 * vGloss;
+    // espejo (gloss 2): refleja casi todo, también de frente
+    float k = gloss > 1.5 ? 0.85 : gloss * min(0.75, 0.12 + 0.88 * pow(1.0 - facing, 5.0));
+    float sun = pow(max(dot(r, SUN_DIR), 0.0), 150.0) * 1.4 * min(gloss, 1.0);
     c = mix(c, env(r), k) + vec3(1.0, 0.97, 0.9) * sun;
   }
   outColor = vec4(fog(min(c, vec3(1.0)), vDepth), uAlpha);
@@ -344,6 +372,36 @@ void main() {
   vec4 c = texture(uTex, vUV);
   if (c.a < 0.5) discard;
   outColor = vec4(fog(c.rgb, vDepth), 1.0);
+}`;
+
+// ---------- ayuda de trazada ----------
+// Una cinta que flota un poco sobre la pista, a lo largo de la trazada ideal. Cada vértice toma su color (verde,
+// amarillo o rojo según haga falta frenar) de la textura de la guía, que se actualiza en cada cuadro;
+// el color se interpola entre celdas y los bordes se desvanecen, así no se ve pixelada.
+const GUIDE_VS = `#version 300 es
+in vec3 aPos;
+in vec2 aUV; // x: posición sobre la línea central (celda); y: de -1 a 1, de un borde al otro
+uniform sampler2D uGuide;
+uniform int uLineN;
+${PROJECT}
+out vec3 vColor;
+out float vDepth, vEdge;
+void main() {
+  int i = (int(aUV.x + 0.5) % uLineN + uLineN) % uLineN;
+  vColor = texelFetch(uGuide, ivec2(i % ${LINE_TEX_W}, i / ${LINE_TEX_W}), 0).rgb;
+  vEdge = aUV.y;
+  gl_Position = project(aPos, vDepth);
+}`;
+
+const GUIDE_FS = `#version 300 es
+precision highp float;
+in vec3 vColor;
+in float vDepth, vEdge;
+out vec4 outColor;
+${FOG}
+void main() {
+  float a = ${glsl(GUIDE_ALPHA)} * (1.0 - pow(abs(vEdge), 3.0));
+  outColor = vec4(fog(vColor, vDepth), a);
 }`;
 
 const SHADOW_FS = `#version 300 es
@@ -381,6 +439,8 @@ export class GLRenderer {
     this.models = this.program(MODEL_VS, MODEL_FS);
     this.sprites = this.program(FLAT_VS, SPRITE_FS);
     this.shadows = this.program(FLAT_VS, SHADOW_FS);
+    this.guides = this.program(GUIDE_VS, GUIDE_FS);
+    this.guideMeshes = new WeakMap();
     this.aniso = gl.getExtension('EXT_texture_filter_anisotropic');
 
     // un triángulo que cubre toda la pantalla, para el terreno
@@ -547,7 +607,7 @@ export class GLRenderer {
 
   // ---------- geometría de un auto, armada una vez ----------
   // cada cara (un polígono convexo) se parte en triángulos; cada vértice lleva posición, normal, color, coordenadas
-  // de textura, qué textura usa (0 ninguna, 1 decoración, 2 carbono, 3 flanco), a qué rueda pertenece, una normal
+  // de textura, qué textura usa (0 ninguna, 1 decoración, 2 carbono, 3 flanco, 4 banda, 5 llanta), a qué rueda pertenece, una normal
   // suavizada (para que el reflejo corra parejo sobre las curvas y no se vean las facetas) y cuánto brilla
   modelGeometry(model) {
     let g = this.modelCache.get(model);
@@ -557,14 +617,19 @@ export class GLRenderer {
     const wheels = [];
     const texs = {};
     let helmetStart = -1;
+    let neck = { x: 0, y: 0, z: 0 };
     const parts = [...model.filter((p) => p.tag !== 'helmet'), ...model.filter((p) => p.tag === 'helmet')];
     for (const part of parts) {
       if (part.tag === 'helmet' && helmetStart < 0) helmetStart = data.length / STRIDE;
+      // a qué rueda pertenece (1 a 4), o 5 si es la cabeza del piloto
       let w = 0;
       if (part.wheel) {
         let k = wheels.indexOf(part.wheel);
         if (k < 0) k = wheels.push(part.wheel) - 1;
         w = k + 1;
+      } else if (part.head) {
+        w = 5;
+        neck = part.head;
       }
       // caras de la pieza que tocan cada vértice
       const touching = part.verts.map(() => []);
@@ -585,10 +650,10 @@ export class GLRenderer {
           return s.map((c) => c / l);
         });
         const gloss = face.gloss ?? 0;
-        // la textura se reconoce por su tamaño: decoración 1024, carbono 64, flanco de goma 256
+        // qué textura es lo dice el modelo (slot: 1 decoración, 2 carbono, 3 flanco, 4 banda, 5 llanta)
         let tid = 0;
         if (face.tex) {
-          tid = { 1024: 1, 64: 2, 256: 3 }[face.tex.size] || 0;
+          tid = face.slot || 0;
           texs[tid] = face.tex;
         }
         const size = face.tex ? face.tex.size : 1;
@@ -618,7 +683,7 @@ export class GLRenderer {
     this.attrib(m, 'aSmooth', 3, STRIDE, 13);
     this.attrib(m, 'aGloss', 1, STRIDE, 16);
     gl.bindVertexArray(null);
-    g = { vao, count, helmetStart: helmetStart < 0 ? count : helmetStart, wheels, texs };
+    g = { vao, count, helmetStart: helmetStart < 0 ? count : helmetStart, wheels, neck, texs };
     this.modelCache.set(model, g);
     return g;
   }
@@ -652,7 +717,6 @@ export class GLRenderer {
     this.bind(0, t.field, tp, 'uField');
     this.bind(1, t.station, tp, 'uStation');
     this.bind(2, t.line, tp, 'uLine');
-    this.bind(3, t.guide, tp, 'uGuide');
     this.bind(4, this.asphalt, tp, 'uAsphalt');
     this.bind(5, this.grass, tp, 'uGrass');
     this.bind(6, this.wall, tp, 'uWall');
@@ -663,7 +727,7 @@ export class GLRenderer {
     const { line } = track;
     gl.uniform4f(tp.u.uStart, line.x, line.y, line.dx, line.dy);
     gl.uniform1f(tp.u.uStartHalf, line.half);
-    gl.uniform1i(tp.u.uFlags, (this.guide ? 1 : 0) | (this.rubber ? 2 : 0));
+    gl.uniform1i(tp.u.uFlags, this.rubber ? 2 : 0);
     gl.uniform3f(tp.u.uCam, cam.x, cam.y, cam.z);
     gl.uniform1f(tp.u.uGround, cam.ground);
     gl.uniform1f(tp.u.uZStart, Math.max(Z_NEAR, ((cam.z - cam.ground - NEAR_RISE) * this.P) / Math.max(1, this.h - horizon)));
@@ -723,23 +787,26 @@ export class GLRenderer {
       }
       const ca = Math.cos(m.angle), sa = Math.sin(m.angle);
       const cp = Math.cos(m.pitch || 0), sp = Math.sin(m.pitch || 0);
-      const cr = Math.cos(m.roll || 0), sr = Math.sin(m.roll || 0);
-      const R0x = -sa, R0y = ca, U0x = -ca * sp, U0y = -sa * sp, U0z = cp;
       gl.uniform3f(mp.u.uPos, m.x, m.y, m.z);
       gl.uniform3f(mp.u.uF, ca * cp, sa * cp, sp);
-      gl.uniform3f(mp.u.uR, R0x * cr + U0x * sr, R0y * cr + U0y * sr, U0z * sr);
-      gl.uniform3f(mp.u.uU, U0x * cr - R0x * sr, U0y * cr - R0y * sr, U0z * cr);
+      gl.uniform3f(mp.u.uR, -sa, ca, 0);
+      gl.uniform3f(mp.u.uU, -ca * sp, -sa * sp, cp);
+      gl.uniform4f(mp.u.uBody, Math.cos(m.roll || 0), Math.sin(m.roll || 0), Math.cos(m.dive || 0), Math.sin(m.dive || 0));
       gl.uniform1f(mp.u.uK, 1 / m.meters);
       gl.uniform2f(mp.u.uSpin, Math.cos(m.spin || 0), Math.sin(m.spin || 0));
-      const st = (m.steer || 0) * 0.35;
+      const st = m.steer || 0; // ángulo de las ruedas delanteras (rad)
       gl.uniform2f(mp.u.uSteer, Math.cos(st), Math.sin(st));
+      gl.uniform2f(mp.u.uHead, Math.cos(m.head || 0), Math.sin(m.head || 0));
+      gl.uniform3f(mp.u.uNeck, g.neck.x, g.neck.y, g.neck.z);
       const wv = new Float32Array(16);
       g.wheels.forEach((w, i) => wv.set([w.x, w.y, w.z, w.front ? 1 : 0], i * 4));
       gl.uniform4fv(mp.u.uWheels, wv);
       gl.uniform1f(mp.u.uAlpha, alpha);
+      gl.uniform1f(mp.u.uWear, m.wear ?? 1);
+      gl.uniform1f(mp.u.uShine, m.shine ?? 0);
       // primero se crean todas (crear una la deja atada a la unidad activa) y después se atan
-      const texs = [1, 2, 3].map((k) => g.texs[k] && this.glTexture(g.texs[k]));
-      ['uLivery', 'uCarbon', 'uSidewall'].forEach((name, i) => {
+      const texs = [1, 2, 3, 4, 5].map((k) => g.texs[k] && this.glTexture(g.texs[k]));
+      ['uLivery', 'uCarbon', 'uSidewall', 'uTread', 'uRim'].forEach((name, i) => {
         if (texs[i]) this.bind(i, texs[i], mp, name);
       });
       gl.bindVertexArray(g.vao);
@@ -773,5 +840,49 @@ export class GLRenderer {
       gl.drawArrays(gl.TRIANGLES, 0, v.length / 5);
     }
     gl.bindVertexArray(null);
+
+    // 5) ayuda de trazada, semitransparente, al final
+    if (this.guide) {
+      const gp = this.guides, mesh = this.guideMesh(track, this.guide);
+      gl.useProgram(gp.p);
+      this.camera(gp, cam, dirX, dirY, horizon);
+      this.bind(0, t.guide, gp, 'uGuide');
+      gl.uniform1i(gp.u.uLineN, t.n);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.depthMask(false);
+      gl.bindVertexArray(mesh.vao);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, mesh.count);
+      gl.bindVertexArray(null);
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
+    }
+  }
+
+  // cinta de la ayuda de trazada: dos vértices por celda de la línea central, uno a cada lado de la trazada
+  guideMesh(track, line) {
+    let mesh = this.guideMeshes.get(line);
+    if (mesh) return mesh;
+    const gl = this.gl, f = lineFrame(track), L = line.offset.length;
+    const data = new Float32Array((L + 1) * 2 * 5);
+    let o = 0;
+    for (let k = 0; k <= L; k++) {
+      const u = k % L, p = pointAt(f, u, line.offset[u]);
+      const nx = f.nx[u % f.L], ny = f.ny[u % f.L];
+      for (const side of [-1, 1]) {
+        const x = p.x + nx * GUIDE_W * side, y = p.y + ny * GUIDE_W * side;
+        data.set([x, y, sampleField(track.height, track.W, x, y) + GUIDE_LIFT, k, side], o);
+        o += 5;
+      }
+    }
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    this.buffer(data);
+    this.attrib(this.guides, 'aPos', 3, 5, 0);
+    this.attrib(this.guides, 'aUV', 2, 5, 3);
+    gl.bindVertexArray(null);
+    mesh = { vao, count: (L + 1) * 2 };
+    this.guideMeshes.set(line, mesh);
+    return mesh;
   }
 }

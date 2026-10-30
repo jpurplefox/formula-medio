@@ -6,25 +6,29 @@
 
 import { rgb } from './renderer.js';
 import { carbonTexture } from './textures.js';
-import { HALF_L, HALF_W, LIVERY_S, SIDE_L, SIDE_R, SIDEWALL_S, SIDEWALL_SIZE, TALL, TOP, liveryTexture, sidewallTexture } from './livery.js';
+import { HALF_L, HALF_W, LIVERY_S, SIDE_L, SIDE_R, SIDEWALL_S, SIDEWALL_SIZE, TALL, TOP, TREAD_SIZE, RIM_S, RIM_SIZE, liveryTexture, rimTexture, sidewallTexture, treadTexture } from './livery.js';
 
 const CARBON = rgb(34, 34, 38);
 const COCKPIT = rgb(16, 16, 18);
 const TYRE = rgb(26, 26, 28);
-const TYRE_ALT = rgb(40, 40, 44); // franjas de la banda de rodadura, para que se vea girar
 const SIDEWALL = rgb(52, 52, 56);
 const RIM = rgb(118, 120, 128);
+const RIM_FACE = rgb(90, 94, 102); // cara de la llanta (lleva la textura con los rayos)
 const MIRROR = rgb(120, 140, 160);
 const RAIN_LIGHT = rgb(255, 60, 60);
 const VISOR = rgb(20, 22, 28);
 const CARBON_S = 400; // texeles de carbono por metro (cada celda del tejido, 2 cm)
 
 export const WHEEL_R = 0.36; // radio de las ruedas (m)
-const WHEEL_SEGMENTS = 24; // lados del polígono de cada rueda
+const WHEEL_SEGMENTS = 32; // lados del polígono de cada rueda
+const SHOULDER_R = 0.05; // radio del hombro de la goma (m): el borde redondeado entre la banda y el flanco
+const SHOULDER_STEPS = 4; // anillos con que se redondea cada hombro
+const TREAD_TILES = 4; // veces que la textura de la banda da la vuelta a la rueda
 
-function hex(s) {
+// color '#rrggbb', multiplicado por k (k < 1 lo oscurece)
+function hex(s, k = 1) {
   const n = parseInt(s.slice(1), 16);
-  return rgb(n >> 16, (n >> 8) & 255, n & 255);
+  return rgb((n >> 16) * k, ((n >> 8) & 255) * k, (n & 255) * k);
 }
 
 // sección rectangular con las esquinas redondeadas (radio r, n tramos por esquina), perpendicular al eje x:
@@ -91,8 +95,9 @@ function loft(rings, color, capColor = color, side = null) {
   return { verts, faces };
 }
 
-// tubo de sección cuadrada (medio lado t) que pasa por los puntos de path
-function tube(path, t, color) {
+// tubo que pasa por los puntos de path: de sección cuadrada (medio lado t) o, con sides > 4, redondo (radio t).
+// flat < 1 lo aplasta en la dirección "hacia arriba" (sección ovalada, como un perfil)
+function tube(path, t, color, sides = 4, flat = 1) {
   const rings = path.map((p, i) => {
     const a = path[Math.max(0, i - 1)], b = path[Math.min(path.length - 1, i + 1)];
     let dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
@@ -103,7 +108,10 @@ function tube(path, t, color) {
     const lu = Math.hypot(ux, uy);
     if (lu < 1e-6) { ux = 1; uy = 0; } else { ux /= lu; uy /= lu; }
     const vx = dy * uz - dz * uy, vy = dz * ux - dx * uz, vz = dx * uy - dy * ux;
-    return [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([s, q]) => [p[0] + (ux * s + vx * q) * t, p[1] + (uy * s + vy * q) * t, p[2] + (uz * s + vz * q) * t]);
+    const corners = sides > 4
+      ? [...Array(sides).keys()].map((i) => [Math.cos((i / sides) * Math.PI * 2), Math.sin((i / sides) * Math.PI * 2)])
+      : [[1, 1], [-1, 1], [-1, -1], [1, -1]];
+    return corners.map(([s, q]) => [p[0] + (ux * s + vx * q * flat) * t, p[1] + (uy * s + vy * q * flat) * t, p[2] + (uz * s + vz * q * flat) * t]);
   });
   return loft(rings, color);
 }
@@ -121,26 +129,125 @@ function cylinder(x, z, r, y0, y1, n, color, capColor, side) {
   return loft([ring(y0), ring(y1)], color, capColor, side);
 }
 
-// rueda: goma con franjas y la llanta del lado de afuera. Guarda su centro para girarla y doblarla.
-function wheel(x, s, yc, width, front) {
+// Goma: anillos alrededor del eje que siguen el perfil de un costado al otro. La banda es plana y los hombros
+// se redondean en un cuarto de círculo hasta el flanco (las tapas, con el dibujo del flanco).
+// Cada cara de la banda y los hombros lleva sus coordenadas en la textura de la banda: u alrededor de la rueda,
+// v a lo ancho, siguiendo el perfil.
+function tyre(x, y, width) {
+  const hw = width / 2, rs = SHOULDER_R, n = WHEEL_SEGMENTS;
+  // perfil: [corrimiento a lo ancho, radio], de un flanco al otro
+  const profile = [];
+  for (let i = SHOULDER_STEPS; i >= 0; i--) {
+    const a = (i / SHOULDER_STEPS) * (Math.PI / 2);
+    profile.push([-(hw - rs + rs * Math.sin(a)), WHEEL_R - rs + rs * Math.cos(a)]);
+  }
+  for (let i = 0; i <= SHOULDER_STEPS; i++) {
+    const a = (i / SHOULDER_STEPS) * (Math.PI / 2);
+    profile.push([hw - rs + rs * Math.sin(a), WHEEL_R - rs + rs * Math.cos(a)]);
+  }
+  const rings = profile.map(([dy, r]) => [...Array(n).keys()].map((i) => {
+    const t = (i / n) * Math.PI * 2;
+    return [x + r * Math.cos(t), y + dy, WHEEL_R + r * Math.sin(t)];
+  }));
+  const part = loft(rings, TYRE, SIDEWALL);
+  // v: largo recorrido sobre el perfil, de 0 a 1
+  const along = [0];
+  for (let i = 1; i < profile.length; i++) along.push(along[i - 1] + Math.hypot(profile[i][0] - profile[i - 1][0], profile[i][1] - profile[i - 1][1]));
+  const total = along[along.length - 1];
+  // las dos primeras caras son las tapas; después van de a n por cada tramo del perfil
+  part.faces.slice(2).forEach((f, k) => {
+    const r = (k / n) | 0, i = k % n;
+    const u0 = (i / n) * TREAD_TILES, u1 = ((i + 1) / n) * TREAD_TILES;
+    const v0 = along[r] / total, v1 = along[r + 1] / total;
+    Object.assign(f, { tread: true, uv: [[u0, v0], [u1, v0], [u1, v1], [u0, v1]] });
+  });
+  return part;
+}
+
+// Sólido de revolución alrededor del eje de la rueda: section es el corte (un polígono convexo de puntos
+// [corrimiento hacia afuera, radio]) que se gira alrededor del eje. Cada cara mira lejos del centro del corte.
+function revolve(x, y, s, section, n, color) {
+  const verts = [], faces = [], k = section.length;
+  for (let i = 0; i < n; i++) {
+    const t = (i / n) * Math.PI * 2;
+    for (const [dy, r] of section) verts.push([x + r * Math.cos(t), y + s * dy, WHEEL_R + r * Math.sin(t)]);
+  }
+  const [cy, cr] = center(section.map(([dy, r]) => [dy, r, 0]));
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n, t = ((i + 0.5) / n) * Math.PI * 2;
+    const ref = [x + cr * Math.cos(t), y + s * cy, WHEEL_R + cr * Math.sin(t)];
+    for (let a = 0; a < k; a++) {
+      const b = (a + 1) % k;
+      const idx = [i * k + a, i * k + b, j * k + b, j * k + a];
+      faces.push({ idx, color, n: normal(idx.map((v) => verts[v]), ref) });
+    }
+  }
+  return { verts, faces };
+}
+
+// Llanta, del lado de afuera: un aro de metal que sobresale de la goma, la cara un poco hundida adentro del aro
+// (con los rayos dibujados en la textura) y la tuerca central, del color de los detalles del equipo.
+function rim(x, out, s, nut) {
+  const lip = revolve(x, out, s, [[0, 0.226], [0, 0.25], [0.012, 0.25], [0.02, 0.243], [0.02, 0.233], [0.012, 0.226]], 32, RIM);
+  const face = cylinder(x, WHEEL_R, 0.229, out, out + s * 0.008, 32, RIM, RIM_FACE);
+  const hub = cylinder(x, WHEEL_R, 0.042, out, out + s * 0.03, 6, nut, nut);
+  return [lip, face, hub];
+}
+
+// rueda: goma y llanta. Guarda su centro para girarla y doblarla.
+function wheel(x, s, yc, width, front, nut) {
   const y = s * yc, out = s * (yc + width / 2);
-  const tyre = cylinder(x, WHEEL_R, WHEEL_R, y - width / 2, y + width / 2, WHEEL_SEGMENTS, TYRE, SIDEWALL, (i) => ((i / 3) | 0) & 1 ? TYRE_ALT : TYRE);
-  const rim = cylinder(x, WHEEL_R, 0.23, out, out + s * 0.012, 16, CARBON, RIM);
   const info = { x, y, z: WHEEL_R, front };
-  tyre.wheel = info;
-  rim.wheel = info;
-  return [tyre, rim];
+  const parts = [tyre(x, y, width), ...rim(x, out, s, nut)];
+  for (const p of parts) p.wheel = info;
+  return parts;
+}
+
+// Casco: un elipsoide con la visera oscura que lo envuelve por delante y un alerón chico arriba, atrás.
+// Todo gira junto alrededor del cuello (head: el pivote) para que el piloto mire hacia donde va.
+// Se oculta en la vista de cabina, porque ahí está la cámara.
+const HELMET = { x: -0.08, z: 0.8, rx: 0.15, ry: 0.12, rz: 0.13 };
+function helmetParts(color) {
+  const { x: hx, z: hz, rx, ry, rz } = HELMET;
+  const rings = [];
+  for (let i = 1; i < 12; i++) {
+    const p = (i / 12) * Math.PI;
+    rings.push(ellipse(hx + rx * Math.cos(p), 0, ry * Math.sin(p), hz, rz * Math.sin(p), 16));
+  }
+  const shell = loft(rings, color);
+  // visera: una banda que sigue la superficie del casco de -70° a 70° alrededor del frente, apenas por fuera
+  const at = (phi, z, out) => {
+    const k = Math.sqrt(Math.max(0, 1 - ((z - hz) / rz) ** 2)) * out;
+    return [hx + rx * k * Math.cos(phi), ry * k * Math.sin(phi), z];
+  };
+  const visor = [];
+  for (let i = 0; i <= 10; i++) {
+    const phi = (-70 + i * 14) * (Math.PI / 180);
+    // un poco más alta en el centro, como la abertura de los cascos de verdad
+    const z0 = 0.79, z1 = 0.85 + 0.008 * Math.cos(phi * 1.3);
+    // con un punto en el medio de la cara de afuera, que sigue la curva del casco (si no, el casco la atraviesa)
+    visor.push([at(phi, z0, 0.97), at(phi, z0, 1.04), at(phi, (z0 + z1) / 2, 1.04), at(phi, z1, 1.04), at(phi, z1, 0.97)]);
+  }
+  // alerón: una plaquita sobre la parte de atrás, apenas inclinada
+  const spoiler = plate(-0.17, 0.92, -0.225, 0.905, 0.065, 0.012, color);
+  const pivot = { x: hx, y: 0, z: hz };
+  return [shell, loft(visor, VISOR), spoiler].map((p) => ({ ...p, tag: 'helmet', head: pivot }));
 }
 
 // Texturas: cada cara se proyecta sobre el plano al que más mira (desde arriba, de costado o de frente)
 // y de ahí salen sus coordenadas en la textura (u, v, en texeles), una por vértice.
 // Las caras del color de la carrocería llevan la decoración; las de carbono, el tejido; los flancos de las gomas,
-// su dibujo (centrado en la rueda, así gira con ella). El resto queda de un solo color.
-let carbon = null, sidewall = null;
+// su dibujo (centrado en la rueda, así gira con ella); la banda y los hombros, el caucho gastado (sus coordenadas
+// vienen de tyre()). El resto queda de un solo color.
+// La cara de la llanta lleva sus rayos, centrados en la rueda como el flanco.
+// slot: qué textura es, para el renderer de WebGL (1 decoración, 2 carbono, 3 flanco, 4 banda, 5 llanta)
+let carbon = null, sidewall = null, tread = null, rimTex = null;
 
 function skin(parts, body, livery) {
   carbon ??= carbonTexture();
   sidewall ??= sidewallTexture();
+  tread ??= treadTexture();
+  rimTex ??= rimTexture();
   for (const part of parts) {
     for (const f of part.faces) {
       const pts = f.idx.map((i) => part.verts[i]);
@@ -153,19 +260,27 @@ function skin(parts, body, livery) {
           const row = f.n[1] > 0 ? SIDE_R : SIDE_L;
           uv = pts.map(([x, , z]) => [(x + HALF_L) * LIVERY_S, row + (TALL - z) * LIVERY_S]);
         }
-        if (uv) Object.assign(f, { tex: livery, dens: LIVERY_S });
+        if (uv) Object.assign(f, { tex: livery, slot: 1, dens: LIVERY_S });
       } else if (f.color === CARBON) {
         uv = pts.map(([x, y, z]) => (top ? [x, y] : side ? [x, z] : [y, z]).map((c) => c * CARBON_S));
-        Object.assign(f, { tex: carbon, dens: CARBON_S });
+        Object.assign(f, { tex: carbon, slot: 2, dens: CARBON_S });
       } else if (f.color === SIDEWALL && part.wheel && side) {
         const { x: wx, z: wz } = part.wheel, m = SIDEWALL_SIZE / 2;
         uv = pts.map(([x, , z]) => [m + (x - wx) * SIDEWALL_S, m - (z - wz) * SIDEWALL_S]);
-        Object.assign(f, { tex: sidewall, dens: SIDEWALL_S });
+        Object.assign(f, { tex: sidewall, slot: 3, dens: SIDEWALL_S });
+      } else if (f.color === RIM_FACE && part.wheel && side) {
+        const { x: wx, z: wz } = part.wheel, m = RIM_SIZE / 2;
+        uv = pts.map(([x, , z]) => [m + (x - wx) * RIM_S, m - (z - wz) * RIM_S]);
+        Object.assign(f, { tex: rimTex, slot: 5, dens: RIM_S });
+      } else if (f.tread) {
+        uv = f.uv.map(([u, v]) => [u * TREAD_SIZE, v * TREAD_SIZE]);
+        Object.assign(f, { tex: tread, slot: 4, dens: TREAD_SIZE * 2.5 });
       }
       if (uv) f.uv = uv;
-      // cuánto brilla y refleja: pintura y casco con barniz, carbono un poco, gomas y cockpit nada
-      f.gloss = f.color === body || part.tag === 'helmet' ? 1 : f.color === CARBON ? 0.35
-        : [TYRE, TYRE_ALT, SIDEWALL, COCKPIT].includes(f.color) ? 0 : 0.6;
+      // cuánto brilla y refleja: pintura y casco con barniz, carbono un poco, gomas, cockpit y buzo nada
+      // (el vidrio de los espejos, 2: refleja de frente también, como un espejo)
+      f.gloss = f.color === MIRROR ? 2 : f.color === body || part.head ? 1 : f.color === CARBON ? 0.35
+        : part.suit || [TYRE, SIDEWALL, COCKPIT].includes(f.color) ? 0 : 0.6;
     }
   }
   return parts;
@@ -173,7 +288,7 @@ function skin(parts, body, livery) {
 
 // Arma el auto con el color de la carrocería, el del casco y el de los detalles de la decoración (en '#rrggbb')
 // y su número.
-// Devuelve una lista de piezas { verts: [[x,y,z]...], faces: [{ idx, color, n, gloss, tex?, uv?, dens? }], wheel?, tag? }.
+// Devuelve una lista de piezas { verts: [[x,y,z]...], faces: [{ idx, color, n, gloss, tex?, uv?, dens? }], wheel?, head?, tag? }.
 export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', accent = '#f4f4f4') {
   const body = hex(color), head = hex(helmet);
   const parts = [];
@@ -202,39 +317,64 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
     sec(-1.9, 0, 0.18, 0.14, 0.48, 0.08),
     sec(-2.3, 0, 0.08, 0.2, 0.38, 0.04),
   ], body));
-  // toma de aire sobre la cabeza del piloto, con la cámara de TV arriba
-  add(loft([sec(-0.85, 0, 0.17, 0.62, 1.02, 0.08), sec(-0.55, 0, 0.15, 0.64, 1.0, 0.08), sec(-0.3, 0, 0.12, 0.66, 0.92, 0.06)], body, CARBON));
+  // toma de aire sobre la cabeza del piloto, con la cámara de TV arriba; hacia atrás se afina en una aleta que
+  // baja de a poco sobre la cubierta del motor hasta morir antes del alerón
+  add(loft([
+    sec(-2.3, 0, 0.012, 0.36, 0.4, 0.006),
+    sec(-1.95, 0, 0.02, 0.42, 0.56, 0.01),
+    sec(-1.55, 0, 0.05, 0.5, 0.74, 0.03),
+    sec(-1.15, 0, 0.11, 0.58, 0.92, 0.06),
+    sec(-0.85, 0, 0.17, 0.62, 1.02, 0.08),
+    sec(-0.55, 0, 0.15, 0.64, 1.0, 0.08),
+    sec(-0.3, 0, 0.12, 0.66, 0.92, 0.06),
+  ], body, CARBON));
   add(box(-0.45, -0.3, 0, 0.08, 0.99, 1.04, CARBON, 0.02));
-  // pontones a los costados: toma de aire adelante y se van cerrando hacia atrás
-  both((s) => add(loft([
-    sec(0.75, s * 0.6, 0.2, 0.14, 0.56, 0.1),
-    sec(0.35, s * 0.62, 0.22, 0.12, 0.6, 0.14),
-    sec(-0.5, s * 0.6, 0.2, 0.12, 0.55, 0.14),
-    sec(-1.3, s * 0.45, 0.12, 0.12, 0.34, 0.08),
-    sec(-1.8, s * 0.35, 0.06, 0.12, 0.24, 0.04),
-  ], body, CARBON)));
-  // espejos sobre su soporte; el vidrio mira hacia atrás
+  // pontones a los costados: toma de aire adelante y se van cerrando hacia atrás. La boca tiene un labio redondeado
+  // que sobresale de la abertura oscura, y está inclinada: arriba avanza más que abajo, como en los de verdad.
+  const lean = (ring) => ring.map(([x, y, z]) => [x + (z - 0.35) * 0.35, y, z]);
   both((s) => {
-    add(loft([sec(0.42, s * 0.54, 0.08, 0.62, 0.72, 0.03), sec(0.52, s * 0.54, 0.075, 0.625, 0.715, 0.03)], body, MIRROR));
-    add(tube([[0.47, s * 0.46, 0.66], [0.5, s * 0.36, 0.6]], 0.012, CARBON));
+    const pod = loft([
+      lean(sec(0.78, s * 0.6, 0.16, 0.19, 0.51, 0.08)),
+      lean(sec(0.81, s * 0.6, 0.185, 0.16, 0.54, 0.1)),
+      lean(sec(0.76, s * 0.605, 0.2, 0.14, 0.56, 0.11)),
+      sec(0.62, s * 0.61, 0.21, 0.13, 0.58, 0.13),
+      sec(0.35, s * 0.62, 0.22, 0.12, 0.6, 0.14),
+      sec(-0.5, s * 0.6, 0.2, 0.12, 0.55, 0.14),
+      sec(-1.3, s * 0.45, 0.12, 0.12, 0.34, 0.08),
+      sec(-1.8, s * 0.35, 0.06, 0.12, 0.24, 0.04),
+    ], body, CARBON);
+    // el frente del labio mira hacia adelante y hacia la boca (loft lo orientaría hacia afuera del eje)
+    for (const f of pod.faces.slice(2, 2 + 16)) if (f.n[0] < 0) f.n = f.n.map((c) => -c);
+    add(pod);
+  });
+  // la abertura: un bloque oscuro que tapa la boca por dentro del labio
+  both((s) => add(loft([sec(0.45, s * 0.6, 0.16, 0.19, 0.51, 0.08), lean(sec(0.785, s * 0.6, 0.16, 0.19, 0.51, 0.08))], COCKPIT)));
+  // espejos sobre su soporte: el vidrio mira hacia atrás, hundido en un marco, y la carcasa se redondea hacia
+  // adelante como una cáscara
+  both((s) => {
+    const shell = (x, k) => sec(x, s * 0.54, 0.08 * k, 0.67 - 0.05 * k, 0.67 + 0.05 * k, 0.035 * k);
+    const mirror = loft([shell(0.43, 0.85), shell(0.42, 1), shell(0.46, 1), shell(0.5, 0.88), shell(0.53, 0.62), shell(0.545, 0.3)], body, MIRROR);
+    // el vidrio (la primera tapa) mira hacia atrás; la punta de adelante es carcasa
+    const [glass, tip] = mirror.faces;
+    if (glass.n[0] > 0) glass.n = glass.n.map((c) => -c);
+    // posición sobre el vidrio, de -1 a 1 (el renderer la usa para curvar el reflejo, como un espejo convexo)
+    glass.uv = glass.idx.map((i) => [(mirror.verts[i][1] - s * 0.54) / 0.068, (mirror.verts[i][2] - 0.67) / 0.0425]);
+    tip.color = body;
+    add(mirror);
+    add(tube([[0.47, s * 0.46, 0.66], [0.5, s * 0.36, 0.6]], 0.012, CARBON, 8));
   });
 
-  // casco: un elipsoide (se oculta en la vista de cabina, porque ahí está la cámara)
-  const hx = -0.08, hrx = 0.15;
-  const rings = [];
-  for (let i = 1; i < 8; i++) {
-    const p = (i / 8) * Math.PI;
-    rings.push(ellipse(hx + hrx * Math.cos(p), 0, 0.12 * Math.sin(p), 0.8, 0.13 * Math.sin(p)));
-  }
-  add({ ...loft(rings, head), tag: 'helmet' });
-  add({ ...loft([sec(0.0, 0, 0.085, 0.8, 0.855, 0.025), sec(0.075, 0, 0.07, 0.805, 0.85, 0.02)], VISOR), tag: 'helmet' });
+  // piloto: hombros con el buzo del color del equipo y el collar HANS de carbono detrás de la nuca
+  add({ ...box(-0.34, -0.02, 0, 0.2, 0.58, 0.69, hex(color, 0.7), 0.07), tag: 'helmet', suit: true });
+  add({ ...loft([sec(-0.3, 0, 0.15, 0.62, 0.73, 0.05), sec(-0.17, 0, 0.13, 0.64, 0.75, 0.05)], CARBON), tag: 'helmet' });
+  add(...helmetParts(head));
   // halo: un arco sobre la cabeza que se apoya atrás y en un pilar central adelante
   // (visto desde arriba es media elipse: adelante en x = 0,58 y atrás, a los costados de la cabeza)
   const haloAt = (t) => [-0.15 + 0.73 * Math.cos(t), 0.29 * Math.sin(t), 0.74 + 0.12 * Math.cos(t)];
   const halo = [];
   for (let i = 0; i <= 28; i++) halo.push(haloAt(-Math.PI / 2 + (i / 28) * Math.PI));
-  add(tube(halo, 0.014, CARBON));
-  add(tube([[0.62, 0, 0.5], [0.6, 0, 0.75]], 0.016, CARBON));
+  add(tube(halo, 0.016, CARBON, 10));
+  add(tube([[0.62, 0, 0.5], [0.6, 0, 0.75]], 0.018, CARBON, 10));
   // unión del pilar con el arco: una lámina que sigue al arco y baja hasta el pilar con un borde cóncavo,
   // así el pilar se abre en curva hacia arriba en vez de formar una T
   const FILLET_W = 0.15, FILLET_DROP = 0.14;
@@ -268,10 +408,11 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
     both((s) => {
       const hub = s * (y - w / 2 - 0.04);
       for (const z of [0.25, 0.45]) {
-        add(tube([[x - 0.32, s * 0.22, z], [x, hub, z + 0.02]], 0.016, CARBON));
-        add(tube([[x + 0.12, s * 0.22, z], [x, hub, z + 0.02]], 0.016, CARBON));
+        // brazos de sección ovalada y chata, como los perfiles de los de verdad
+        add(tube([[x - 0.32, s * 0.22, z], [x, hub, z + 0.02]], 0.022, CARBON, 10, 0.45));
+        add(tube([[x + 0.12, s * 0.22, z], [x, hub, z + 0.02]], 0.022, CARBON, 10, 0.45));
       }
-      add(...wheel(x, s, y, w, front));
+      add(...wheel(x, s, y, w, front, hex(accent)));
     });
   }
   return skin(parts, body, liveryTexture(color, accent, number));

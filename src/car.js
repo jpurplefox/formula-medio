@@ -23,6 +23,14 @@ const GRASS_MAX = 25; // m/s ≈ 90 km/h
 const REVERSE_MAX = 8;
 const REVERSE_ACCEL = 5;
 const MAX_YAW = 1.6; // rad/s: giro máximo a baja velocidad
+const WHEELBASE = 3.35; // m, entre los ejes (como en carmodel.js)
+const MAX_WHEEL_ANGLE = 0.35; // rad: lo más que doblan las ruedas delanteras, a paso de hombre
+const MIN_WHEEL_ANGLE = 0.05; // rad: aun a fondo se ve que doblan un poco
+// rebufo: detrás de otro auto el aire llega frenado y hay menos resistencia
+const DRAFT_DIST = 45; // m: hasta dónde se siente
+const DRAFT_WIDTH = 1.6; // m de costado: el ancho de la estela
+const DRAFT_DRAG = 0.3; // fracción de la resistencia del aire que se ahorra pegado al de adelante
+const DRAFT_TOP = 4; // m/s más de velocidad punta pegado al de adelante (~14 km/h)
 const GRAVITY = 9.8;
 const SLIP_GRIP = 0.8; // las gomas frenan el deslizamiento de costado con esta fracción de su agarre
 const SPIN_DAMP = 7; // y el giro que dejan los golpes, a este ritmo (rad/s²; en el pasto, la mitad)
@@ -37,6 +45,35 @@ const REV_RATE = 6500; // cuánto suben las rpm por segundo en punto muerto, a f
 const REV_DROP = 7000; // y cuánto bajan sin acelerar
 
 // Interpola una tabla [[x, y], ...] ordenada por x; fuera del rango usa el extremo
+// giro del auto (rad/s) con el volante a fondo, a velocidad sp (m/s) y con ese agarre lateral (m/s²)
+function yawRate(sp, grip) {
+  return Math.min(MAX_YAW, grip / Math.max(sp, 1)) * Math.min(1, sp / 4);
+}
+
+// Ángulo de las ruedas delanteras para dibujarlas: el que hace doblar al auto lo que de verdad dobla
+// (ángulo ≈ distancia entre ejes × giro / velocidad). A baja velocidad doblan mucho; a fondo, apenas.
+export function wheelAngle(steer, speed, profile = DEFAULT_PROFILE) {
+  const sp = Math.max(4, Math.abs(speed)); // parado o casi, como a paso de hombre: con todo el giro
+  const grip = profile.lateralGrip.base + profile.lateralGrip.perV2 * sp * sp;
+  const a = Math.atan((WHEELBASE * yawRate(sp, grip)) / sp);
+  return steer * Math.max(MIN_WHEEL_ANGLE, Math.min(MAX_WHEEL_ANGLE, a));
+}
+
+// Rebufo de car (0..1) por los autos que tiene adelante: más cuanto más cerca y más alineado con la estela.
+// meters: metros por celda del circuito.
+export function slipstream(car, cars, meters) {
+  const fx = Math.cos(car.angle), fy = Math.sin(car.angle);
+  let best = 0;
+  for (const o of cars) {
+    if (o === car || Math.cos(o.angle - car.angle) < 0.9) continue; // la estela va para donde va el otro
+    const dx = (o.x - car.x) * meters, dy = (o.y - car.y) * meters;
+    const ahead = dx * fx + dy * fy, side = Math.abs(-dx * fy + dy * fx);
+    if (ahead < 3 || ahead > DRAFT_DIST || side > DRAFT_WIDTH) continue;
+    best = Math.max(best, (1 - ahead / DRAFT_DIST) * (1 - side / DRAFT_WIDTH));
+  }
+  return best;
+}
+
 export function lookup(rows, x) {
   if (x <= rows[0][0]) return rows[0][1];
   for (let i = 1; i < rows.length; i++) {
@@ -56,6 +93,7 @@ export class Car {
     this.profile = profile;
     this.speed = 0;
     this.steer = 0; // -1..1 suavizado, para animar el auto
+    this.draft = 0; // rebufo, 0..1 (lo calcula el juego con slipstream antes de cada update)
     this.onGrass = false;
     this.onKerb = false;
     this.bump = 0;
@@ -77,6 +115,13 @@ export class Car {
   }
 
   // RPM del motor a una velocidad (m/s) en una marcha
+  // resistencia del aire a velocidad v (m/s²): crece con v²; a velocidad punta es casi toda la desaceleración
+  // medida sin pedales
+  drag(v) {
+    const p = this.profile;
+    return lookup(p.coast, p.topSpeed) * (v / p.topSpeed) ** 2;
+  }
+
   rpmAt(v, gear) {
     return (Math.abs(v) * 3.6) / this.profile.gearKmhPerRpm[Math.max(1, gear) - 1];
   }
@@ -154,11 +199,13 @@ export class Car {
     if (input.throttle) {
       if (this.gear === 0) this.gear = 1;
       const top = this.onGrass ? GRASS_MAX : Infinity;
-      // cerca de la velocidad punta medida, la resistencia del aire se come todo el empuje
-      const aero = Math.min(1, Math.max(0, (p.topSpeed + 2 - v) / 4));
+      // cerca de la velocidad punta medida, la resistencia del aire se come todo el empuje (en el rebufo, más arriba)
+      const aero = Math.min(1, Math.max(0, (p.topSpeed + 2 + DRAFT_TOP * this.draft - v) / 4));
       // en la largada, si se ahogó o patina, llega menos aceleración al piso
       const launch = this.launchTime > 0 ? this.launchFactor : 1;
-      if (this.speed < top) this.speed += lookup(p.accel, v) * power * aero * launch * dt;
+      // el rebufo devuelve la parte de la resistencia del aire que se ahorra
+      const draft = power > 0 ? this.draft * DRAFT_DRAG * this.drag(v) : 0;
+      if (this.speed < top) this.speed += (lookup(p.accel, v) * power + draft) * aero * launch * dt;
     } else if (input.brake) {
       if (this.speed > 0.5) {
         // frenada: más fuerte a más velocidad, por la carga aerodinámica
@@ -168,8 +215,8 @@ export class Car {
         this.speed = Math.max(-REVERSE_MAX, this.speed - REVERSE_ACCEL * dt);
       }
     } else {
-      // sin pedales: resistencia del aire y freno motor, medidos
-      const decel = lookup(p.coast, v);
+      // sin pedales: resistencia del aire y freno motor, medidos (en el rebufo, menos aire)
+      const decel = lookup(p.coast, v) - this.draft * DRAFT_DRAG * this.drag(v);
       this.speed -= Math.sign(this.speed) * Math.min(v, decel * dt);
     }
 
@@ -193,7 +240,7 @@ export class Car {
     const sp = Math.abs(this.speed);
     let grip = p.lateralGrip.base + p.lateralGrip.perV2 * sp * sp;
     if (this.onGrass) grip *= 0.5;
-    const yaw = Math.min(MAX_YAW, grip / Math.max(sp, 1)) * Math.min(1, sp / 4);
+    const yaw = yawRate(sp, grip);
     const steerYaw = this.steer * yaw * Math.sign(this.speed || 1);
     // con el volante la velocidad dobla junto con el auto; el giro de un golpe, en cambio, hace girar el auto
     // pero la velocidad sigue para donde iba: esa diferencia queda como deslizamiento de costado

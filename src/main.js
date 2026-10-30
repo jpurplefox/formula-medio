@@ -2,11 +2,11 @@ import { TRACKS } from '../tracks/index.js';
 import { loadImage, buildTrack, sampleField, stationAt, T } from './track.js';
 import { Renderer, rgb } from './renderer.js';
 import { GLRenderer } from './glrenderer.js';
-import { Car, DEFAULT_PROFILE, LAUNCH_WINDOW, isSolid, lookup } from './car.js';
+import { Car, DEFAULT_PROFILE, LAUNCH_WINDOW, isSolid, lookup, slipstream, wheelAngle } from './car.js';
 import { racingLine } from './racingline.js';
 import { boardTexture, treeTexture } from './sprites.js';
 import { carModel, WHEEL_R } from './carmodel.js';
-import { Driver, gridSlots } from './ai.js';
+import { Driver, gridSlots, lineFrame, pointAt } from './ai.js';
 import { collideCars } from './collision.js';
 import { Cockpit } from './cockpit.js';
 import { CAMERA_MODES, CAMERA_NAMES, Recorder, replayCamera, tvCameras } from './replay.js';
@@ -318,6 +318,8 @@ function update(dt) {
         g.awaitLaunch = false;
       } else g.car.rev(dt, false);
     }
+    const cars = g.entries.map((e) => e.car);
+    for (const c of cars) c.draft = slipstream(c, cars, g.track.meters);
     if (!g.awaitLaunch) g.car.update(dt, input, g.track);
     const line = aiLines.get(g.track);
     const states = g.entries.map((e) => carState(g.track, e));
@@ -334,7 +336,13 @@ function update(dt) {
       e.car.update(dt, e.driver.drive(dt, g.track, line, states[i], others), g.track);
       e.spin = (e.spin + (e.car.speed * dt) / WHEEL_R) % (Math.PI * 2);
     });
-    collideCars(g.entries.map((e) => e.car), g.track, isSolid);
+    collideCars(cars, g.track, isSolid);
+    for (const e of g.entries) {
+      e.head = turnHead(e.head, lookYaw(e.car, cars, g.track), dt);
+      const c = e.car;
+      e.body = suspension(e.body, c.speed * c.omega, (c.speed - (e.prevSpeed ?? c.speed)) / dt, dt);
+      e.prevSpeed = c.speed;
+    }
     for (const e of g.entries) if (e.driver) raceLine(g, e);
     for (const e of g.entries) e.dist += Math.abs(e.car.speed) * dt;
     g.recorder.add(dt, g.entries);
@@ -567,12 +575,22 @@ async function drawReplay() {
   const poses = g.recorder.at(r.t);
   const pose = poses[r.target];
   const heightAt = (x, y) => sampleField(track.height, track.W, x, y);
+  // la cabeza de cada piloto, como en la carrera (la repetición no la graba)
+  r.heads ??= poses.map(() => 0);
+  r.heads = poses.map((p, k) => turnHead(r.heads[k], lookYaw(p, poses, track), 1 / 60));
+  // la suspensión, con las aceleraciones que salen de comparar con un instante después
+  const next = g.recorder.at(r.t + 0.1);
+  r.bodies ??= [];
+  r.bodies = poses.map((p, k) => {
+    const q = next[k], omega = Math.atan2(Math.sin(q.angle - p.angle), Math.cos(q.angle - p.angle)) / 0.1;
+    return suspension(r.bodies[k], p.speed * omega, (q.speed - p.speed) / 0.1, 1 / 60);
+  });
   const models = g.entries.map((e, k) => {
     const p = poses[k];
     return {
       model: e.model, x: p.x, y: p.y, z: heightAt(p.x, p.y), angle: p.angle, meters: M,
-      pitch: Math.atan(p.slope), roll: -p.steer * Math.min(1, Math.abs(p.speed) / 50) * 0.035,
-      steer: p.steer, spin: (p.dist / WHEEL_R) % (Math.PI * 2), shadow: true,
+      pitch: Math.atan(p.slope), roll: r.bodies[k].roll, dive: r.bodies[k].dive,
+      steer: wheelAngle(p.steer, p.speed), spin: (p.dist / WHEEL_R) % (Math.PI * 2), head: r.heads[k], ...tyres(g, p.dist), shadow: true,
     };
   });
   const cam = replayCamera(r.mode, pose, track, tvCams.get(track), r.tv, r.t, renderer.w / 2 / 0.7);
@@ -595,6 +613,84 @@ async function drawReplay() {
     + `<small>Cámara: ${CAMERA_NAMES[r.mode]}${r.mode === 'auto' ? ` (${CAMERA_NAMES[cam.mode]})` : ''} · C cámara · ←→ auto · R nueva carrera · Esc menú</small>`;
   if (hud.replay.innerHTML !== html) hud.replay.innerHTML = html;
   drawMinimapAt(track, poses.map((p, k) => [p.x, p.y, g.entries[k].color, k === r.target]));
+}
+
+// ---------- suspensión: rolido y cabeceo de la carrocería ----------
+// La carrocería se inclina hacia afuera en las curvas (según la aceleración de costado) y baja la trompa al frenar
+// (la sube un poco al acelerar). La sigue un resorte amortiguado: tarda un instante en inclinarse y en volver.
+// Un F1 es muy duro, así que es poquito.
+const ROLL_MAX = 0.026; // rad (1,5°) con ROLL_G de aceleración de costado
+const ROLL_G = 45; // m/s²
+const DIVE_PER = 0.0004; // rad de cabeceo por cada m/s² de frenada (a fondo, ~1,1°)
+const DIVE_MAX = 0.022; // rad
+const SPRING = 90; // 1/s²: rigidez del resorte
+const DAMPING = 14; // 1/s: amortiguación (un poco menos que la crítica: casi no rebota)
+
+// b: { roll, dive, vRoll, vDive }; aLat: aceleración de costado (+ doblando a la derecha), aLon: hacia adelante
+function suspension(b, aLat, aLon, dt) {
+  b ??= { roll: 0, dive: 0, vRoll: 0, vDive: 0 };
+  const roll = Math.max(-1, Math.min(1, aLat / ROLL_G)) * ROLL_MAX;
+  const dive = Math.max(-DIVE_MAX, Math.min(DIVE_MAX, -aLon * DIVE_PER));
+  b.vRoll += (SPRING * (roll - b.roll) - DAMPING * b.vRoll) * dt;
+  b.vDive += (SPRING * (dive - b.dive) - DAMPING * b.vDive) * dt;
+  b.roll += b.vRoll * dt;
+  b.dive += b.vDive * dt;
+  return b;
+}
+
+// ---------- desgaste de las gomas ----------
+// Largan nuevas: lisas y brillantes. El brillo se va en la primera parte de la primera vuelta y el desgaste
+// (las marcas en la banda) aparece de a poco hasta estar completo al empezar la última vuelta.
+const SHINE_LAPS = 0.6; // vueltas que dura el brillo
+const TRIAL_WEAR_LAPS = 3; // en contrarreloj, vueltas hasta el desgaste completo
+
+function tyres(g, dist) {
+  const laps = dist / (g.track.length * g.track.meters);
+  const full = g.trial ? TRIAL_WEAR_LAPS : Math.max(0.75, g.laps - 1);
+  return { wear: Math.min(1, laps / full), shine: Math.max(0, 1 - laps / SHINE_LAPS) };
+}
+
+// ---------- hacia dónde mira cada piloto ----------
+// En orden: el auto de adelante si hay uno cerca dentro de ±10° de su rumbo; si no, el vértice de la próxima curva;
+// si no hay curva a la vista, de frente. La cabeza gira de a poco y hasta cierto punto.
+const LOOK_CONE = (10 * Math.PI) / 180;
+const LOOK_CAR = 60; // m: hasta dónde sigue a un auto
+const LOOK_AHEAD = [8, 140]; // m adelante donde busca la próxima curva
+const LOOK_CORNER = 0.9; // es curva si la trazada va ahí a menos de esta fracción de lo más rápido del tramo
+const LOOK_MAX = 0.5; // rad: lo más que gira la cabeza
+const LOOK_RATE = 4; // 1/s
+
+const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+
+// ángulo (rad, + a la derecha) hacia donde quiere mirar el piloto de car; cars: todos los autos (incluido él)
+function lookYaw(car, cars, track) {
+  const M = track.meters;
+  let best = Infinity, yaw = 0;
+  for (const o of cars) {
+    if (o === car) continue;
+    const dx = o.x - car.x, dy = o.y - car.y, d = Math.hypot(dx, dy) * M;
+    const rel = wrapAngle(Math.atan2(dy, dx) - car.angle);
+    if (d < LOOK_CAR && d < best && Math.abs(rel) <= LOOK_CONE) { best = d; yaw = rel; }
+  }
+  if (best < Infinity) return yaw;
+  const line = guides.get(track), u = stationAt(track, car.x, car.y);
+  if (!line || u < 0) return 0;
+  // el punto más lento de la trazada en el tramo de adelante; si es un vértice de verdad, se mira ahí
+  const L = line.speed.length, a = Math.round(u + LOOK_AHEAD[0] / M), b = Math.round(u + LOOK_AHEAD[1] / M);
+  let lo = Infinity, hi = 0, at = a;
+  for (let i = a; i <= b; i++) {
+    const v = line.speed[((i % L) + L) % L];
+    if (v < lo) { lo = v; at = i; }
+    if (v > hi) hi = v;
+  }
+  if (at === a || lo > hi * LOOK_CORNER) return 0;
+  const p = pointAt(lineFrame(track), at, line.offset[((at % L) + L) % L]);
+  return wrapAngle(Math.atan2(p.y - car.y, p.x - car.x) - car.angle);
+}
+
+function turnHead(head = 0, target, dt) {
+  target = Math.max(-LOOK_MAX, Math.min(LOOK_MAX, target));
+  return head + (target - head) * Math.min(1, dt * LOOK_RATE);
 }
 
 async function draw(time) {
@@ -624,8 +720,8 @@ async function draw(time) {
     const c = e.car;
     models.push({
       model: e.model, x: c.x, y: c.y, z: heightAt(c.x, c.y), angle: c.angle, meters: M,
-      pitch: Math.atan(c.slope), roll: -c.steer * Math.min(1, Math.abs(c.speed) / 50) * 0.035,
-      steer: c.steer, spin: e.spin, shadow: true,
+      pitch: Math.atan(c.slope), roll: e.body?.roll, dive: e.body?.dive,
+      steer: wheelAngle(c.steer, c.speed, c.profile), spin: e.spin, head: e.head, ...tyres(g, e.dist), shadow: true,
     });
   }
 
@@ -649,7 +745,8 @@ async function draw(time) {
   // inclinamos la vista según la pendiente (en subida se mira más arriba); desde la cabina,
   // el horizonte va más arriba para que la pista se vea por encima del auto
   const shakeY = Math.sin(time * 0.045) * shake * UI_SCALE;
-  cam.pitch = (cockpitView ? -28 : -40) * UI_SCALE + car.slope * renderer.P * 0.6 + shakeY;
+  cam.pitch = (cockpitView ? -28 : -40) * UI_SCALE + car.slope * renderer.P * 0.6 + shakeY
+    - (cockpitView ? (g.player.body?.dive ?? 0) * renderer.P : 0); // frenando, la vista baja con la trompa
   const line = guides.get(track);
   const guide = showGuide ? line : null;
   if (guide) paintGuide(guide, track, car);
@@ -661,13 +758,13 @@ async function draw(time) {
   wheelSpin = (wheelSpin + (car.speed * dt) / WHEEL_R) % (Math.PI * 2);
   // desde la cabina se ve el mismo auto, sin el casco (ahí está la cámara) y sin rolido; la pendiente,
   // en la misma medida en que la cámara la sigue, así la carrocería queda quieta en la pantalla
-  const sp = Math.abs(car.speed);
   models.push({
     model: g.player.model, x: car.x, y: car.y, z: heightAt(car.x, car.y), angle: car.angle, meters: M,
     pitch: Math.atan(car.slope) * (cockpitView ? 0.6 : 1),
-    // en las curvas la carrocería se inclina un poco hacia afuera
-    roll: cockpitView ? 0 : -car.steer * Math.min(1, sp / 50) * 0.035,
-    steer: car.steer, spin: wheelSpin, shadow: true, hide: cockpitView ? 'helmet' : null,
+    // la carrocería rola y cabecea sobre la suspensión; desde la cabina no, porque la cámara va pegada a ella
+    // (ahí el cabeceo mueve la vista: ver cam.pitch)
+    roll: cockpitView ? 0 : g.player.body?.roll, dive: cockpitView ? 0 : g.player.body?.dive,
+    steer: wheelAngle(car.steer, car.speed, car.profile), spin: wheelSpin, head: g.player.head, ...tyres(g, g.player.dist), shadow: true, hide: cockpitView ? 'helmet' : null,
   });
   playEngines(g.entries.map((e) => ({ rpm: e.car.rpm, throttle: e.car.throttle, gear: e.car.gear, x: e.car.x * M, y: e.car.y * M, angle: e.car.angle, speed: e.car.speed })),
     cam, M, Math.cos(car.angle) * car.speed, Math.sin(car.angle) * car.speed, cockpitView ? g.entries.indexOf(g.player) : -1);
