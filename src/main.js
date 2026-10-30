@@ -787,9 +787,16 @@ function dot(x, y, color, r = 4) {
 }
 
 // ---------- bucle ----------
+// Tope de cuadros: en pantallas rápidas (120 Hz o más) se saltea un refresco de cada dos, así no se dibuja más de
+// lo que hace falta. El margen deja pasar todos los de una pantalla de 60 o 75 Hz (cortar 75 a 60 haría tirones).
+const MIN_FRAME = 1000 / 60 - 5; // ms
 let lastTime = performance.now();
 let drawing = false;
 function frame(now) {
+  if (now - lastTime < MIN_FRAME) {
+    requestAnimationFrame(frame);
+    return;
+  }
   const dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
   if (game) {

@@ -163,6 +163,9 @@ function skin(parts, body, livery) {
         Object.assign(f, { tex: sidewall, dens: SIDEWALL_S });
       }
       if (uv) f.uv = uv;
+      // cuánto brilla y refleja: pintura y casco con barniz, carbono un poco, gomas y cockpit nada
+      f.gloss = f.color === body || part.tag === 'helmet' ? 1 : f.color === CARBON ? 0.35
+        : [TYRE, TYRE_ALT, SIDEWALL, COCKPIT].includes(f.color) ? 0 : 0.6;
     }
   }
   return parts;
@@ -170,7 +173,7 @@ function skin(parts, body, livery) {
 
 // Arma el auto con el color de la carrocería, el del casco y el de los detalles de la decoración (en '#rrggbb')
 // y su número.
-// Devuelve una lista de piezas { verts: [[x,y,z]...], faces: [{ idx, color, n, tex?, uv?, dens? }], wheel?, tag? }.
+// Devuelve una lista de piezas { verts: [[x,y,z]...], faces: [{ idx, color, n, gloss, tex?, uv?, dens? }], wheel?, tag? }.
 export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', accent = '#f4f4f4') {
   const body = hex(color), head = hex(helmet);
   const parts = [];

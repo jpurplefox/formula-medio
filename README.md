@@ -71,11 +71,14 @@ Controles (flechas, WASD o IJKL): I/↑/W acelerar · K/↓/S frenar y marcha at
    que giran con la rueda. Cada cara toma sus coordenadas de textura proyectándose desde arriba o de costado. La vista de cabina usa el mismo modelo, visto desde los ojos del
    piloto (sin el casco), con el volante dibujado encima. Las cuentas de cámara usan una imagen virtual de 960×540.
    **Con WebGL** (`src/glrenderer.js`, lo normal): todo se dibuja en la placa de video, a la resolución de la
-   pantalla (hasta 1920×1080). El terreno es un *shader* que corre una vez por píxel: arma el rayo de la cámara,
+   pantalla (hasta 1440×810). El terreno es un *shader* que corre una vez por píxel: arma el rayo de la cámara,
    avanza sobre el mapa de alturas (un paso de unos píxeles, que cerca de los muros se achica según la distancia al
    borde, así no los saltea) y afina dónde choca; el color del piso es el mismo "shader" de `renderer.js` en GLSL.
    Autos, árboles, carteles y sombras son triángulos con la misma proyección y la misma profundidad, así el z-buffer
-   de la placa resuelve qué tapa a qué. El volante y el semáforo van en un canvas 2D encima.
+   de la placa resuelve qué tapa a qué. Los autos tienen **reflejos**: la pintura y el casco (y un poco el carbono)
+   reflejan un entorno inventado (asfalto abajo, una franja de árboles en el horizonte y el cielo arriba), más de
+   costado que de frente, con normales suavizadas para que el reflejo corra parejo, y un brillo donde rebota el sol.
+   El volante y el semáforo van en un canvas 2D encima.
    **Sin WebGL** (o agregando `?cpu` a la dirección) se usa el renderer de procesador: el cielo y el terreno se
    reparten entre varios **Web Workers** (uno por núcleo, hasta 6; `src/terrainworker.js`), cada uno dibuja una
    franja de columnas y el hilo principal arma la imagen y dibuja encima los sprites y los autos. Las ruedas giran,

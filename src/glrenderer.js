@@ -17,9 +17,11 @@ import {
 import { sampleField } from './track.js';
 
 const FAR = MAX_DIST + 10; // lo más lejos que se guarda en el z-buffer (en celdas)
-const MAX_SCALE = 2; // como mucho, el doble de los píxeles virtuales (1920×1080)
+const MAX_SCALE = 1.5; // como mucho, 1,5 veces los píxeles virtuales (1440×810): más no se nota y calienta la máquina
 const LINE_TEX_W = 1024; // ancho de las texturas con datos por celda de la línea central
-const ATTRIBS = ['aPos', 'aUV', 'aNormal', 'aColor', 'aTex', 'aWheel'];
+const ATTRIBS = ['aPos', 'aUV', 'aNormal', 'aColor', 'aTex', 'aWheel', 'aSmooth', 'aGloss'];
+const STRIDE = 17; // floats por vértice de los autos
+const CREASE = 0.7; // coseno del ángulo hasta el que las caras vecinas se suavizan para el reflejo (~45°)
 
 const glsl = (n) => (Number.isInteger(n) ? `${n}.0` : String(n));
 const rgbOf = (c) => [(c & 255) / 255, ((c >>> 8) & 255) / 255, ((c >>> 16) & 255) / 255];
@@ -237,9 +239,9 @@ void main() {
 
 // ---------- autos ----------
 const MODEL_VS = `#version 300 es
-in vec3 aPos, aNormal, aColor;
+in vec3 aPos, aNormal, aColor, aSmooth;
 in vec2 aUV;
-in float aTex, aWheel;
+in float aTex, aWheel, aGloss;
 uniform vec4 uWheels[4];
 uniform vec2 uSpin, uSteer; // coseno y seno
 uniform vec3 uPos, uF, uR, uU;
@@ -248,24 +250,29 @@ ${PROJECT}
 out vec3 vColor;
 out vec2 vUV;
 flat out int vTex;
-out float vLight, vDepth, vBack;
+out float vLight, vDepth, vBack, vGloss;
+out vec3 vNormal, vView;
+vec3 spin(vec3 n) { return vec3(n.x * uSpin.x + n.z * uSpin.y, n.y, -n.x * uSpin.y + n.z * uSpin.x); }
+vec3 steer(vec3 n) { return vec3(n.x * uSteer.x - n.y * uSteer.y, n.x * uSteer.y + n.y * uSteer.x, n.z); }
 void main() {
-  vec3 p = aPos, n = aNormal;
+  vec3 p = aPos, n = aNormal, sm = aSmooth;
   if (aWheel > 0.5) {
     // la rueda gira sobre su eje y, si es delantera, dobla con la dirección
     vec4 wh = uWheels[int(aWheel + 0.5) - 1];
-    vec2 a = vec2(p.x - wh.x, p.z - wh.z);
-    p.x = wh.x + a.x * uSpin.x + a.y * uSpin.y;
-    p.z = wh.z - a.x * uSpin.y + a.y * uSpin.x;
-    n = vec3(n.x * uSpin.x + n.z * uSpin.y, n.y, -n.x * uSpin.y + n.z * uSpin.x);
+    p = wh.xyz + spin(p - wh.xyz);
+    n = spin(n);
+    sm = spin(sm);
     if (wh.w > 0.5) {
-      vec2 b = vec2(p.x - wh.x, p.y - wh.y);
-      p.xy = wh.xy + vec2(b.x * uSteer.x - b.y * uSteer.y, b.x * uSteer.y + b.y * uSteer.x);
-      n.xy = vec2(n.x * uSteer.x - n.y * uSteer.y, n.x * uSteer.y + n.y * uSteer.x);
+      p = wh.xyz + steer(p - wh.xyz);
+      n = steer(n);
+      sm = steer(sm);
     }
   }
   vec3 world = uPos + (uF * p.x + uR * p.y + uU * p.z) * uK;
   vec3 nw = uF * n.x + uR * n.y + uU * n.z;
+  vNormal = uF * sm.x + uR * sm.y + uU * sm.z;
+  vView = world - uCam;
+  vGloss = aGloss;
   float sun = -nw.x * ${glsl(SUN[0])} - nw.y * ${glsl(SUN[1])} + nw.z * ${glsl(SUN[2])};
   vLight = 0.5 + 0.6 * max(0.0, sun) + 0.12 * nw.z;
   vBack = dot(nw, world - uCam) >= 0.0 ? 1.0 : 0.0; // cara que mira para el otro lado
@@ -282,13 +289,39 @@ uniform float uAlpha;
 in vec3 vColor;
 in vec2 vUV;
 flat in int vTex;
-in float vLight, vDepth, vBack;
+in float vLight, vDepth, vBack, vGloss;
+in vec3 vNormal, vView;
 out vec4 outColor;
 ${FOG}
+const vec3 SKY_TOP = vec3(70.0, 130.0, 210.0) / 255.0;
+const vec3 SUN_DIR = normalize(vec3(${glsl(-SUN[0])}, ${glsl(-SUN[1])}, ${glsl(SUN[2])}));
+const vec3 ASPHALT = vec3(0.17, 0.18, 0.19), TREES = vec3(0.2, 0.3, 0.19);
+
+// Lo que se refleja en la dirección r: un entorno inventado pero parecido al del circuito. Abajo asfalto que se
+// aclara hacia el horizonte; en el horizonte una franja de árboles de alto irregular; arriba el cielo con el mismo
+// degradé que el de fondo. Al doblar, la franja de árboles corre sobre los costados del auto.
+vec3 env(vec3 r) {
+  if (r.z < 0.0) return mix(ASPHALT, FOG * 0.8, pow(1.0 + r.z, 8.0));
+  float az = atan(r.y, r.x);
+  float trees = 0.06 + 0.035 * (0.5 * sin(az * 7.0) + 0.3 * sin(az * 19.0 + 1.3) + 0.2 * sin(az * 43.0 + 0.7));
+  if (r.z < trees) return TREES * (0.8 + 2.0 * r.z);
+  return mix(FOG, SKY_TOP, pow(r.z, 0.5));
+}
+
 void main() {
   if (vBack > 0.5) discard;
   vec3 c = vTex == 1 ? texture(uLivery, vUV).rgb : vTex == 2 ? texture(uCarbon, vUV).rgb : vTex == 3 ? texture(uSidewall, vUV).rgb : vColor;
-  outColor = vec4(fog(min(c * vLight, vec3(1.0)), vDepth), uAlpha);
+  c = min(c * vLight, vec3(1.0));
+  if (vGloss > 0.0) {
+    // barniz: refleja poco de frente y mucho de costado (Fresnel), y un brillo chico y fuerte donde rebota el sol
+    vec3 v = normalize(vView), n = normalize(vNormal);
+    float facing = clamp(-dot(n, v), 0.0, 1.0);
+    vec3 r = reflect(v, n);
+    float k = vGloss * min(0.75, 0.12 + 0.88 * pow(1.0 - facing, 5.0));
+    float sun = pow(max(dot(r, SUN_DIR), 0.0), 150.0) * 1.4 * vGloss;
+    c = mix(c, env(r), k) + vec3(1.0, 0.97, 0.9) * sun;
+  }
+  outColor = vec4(fog(min(c, vec3(1.0)), vDepth), uAlpha);
 }`;
 
 // ---------- sprites (árboles, carteles) y sombras ----------
@@ -514,7 +547,8 @@ export class GLRenderer {
 
   // ---------- geometría de un auto, armada una vez ----------
   // cada cara (un polígono convexo) se parte en triángulos; cada vértice lleva posición, normal, color, coordenadas
-  // de textura, qué textura usa (0 ninguna, 1 decoración, 2 carbono, 3 flanco) y a qué rueda pertenece
+  // de textura, qué textura usa (0 ninguna, 1 decoración, 2 carbono, 3 flanco), a qué rueda pertenece, una normal
+  // suavizada (para que el reflejo corra parejo sobre las curvas y no se vean las facetas) y cuánto brilla
   modelGeometry(model) {
     let g = this.modelCache.get(model);
     if (g) return g;
@@ -525,15 +559,32 @@ export class GLRenderer {
     let helmetStart = -1;
     const parts = [...model.filter((p) => p.tag !== 'helmet'), ...model.filter((p) => p.tag === 'helmet')];
     for (const part of parts) {
-      if (part.tag === 'helmet' && helmetStart < 0) helmetStart = data.length / 13;
+      if (part.tag === 'helmet' && helmetStart < 0) helmetStart = data.length / STRIDE;
       let w = 0;
       if (part.wheel) {
         let k = wheels.indexOf(part.wheel);
         if (k < 0) k = wheels.push(part.wheel) - 1;
         w = k + 1;
       }
+      // caras de la pieza que tocan cada vértice
+      const touching = part.verts.map(() => []);
+      for (const face of part.faces) for (const i of face.idx) touching[i].push(face.n);
       for (const face of part.faces) {
         const [r, gg, b] = rgbOf(face.color);
+        // normal suavizada en cada esquina: el promedio de las caras vecinas que no doblan demasiado (las aristas
+        // marcadas, como las de una caja, quedan marcadas)
+        const smooth = face.idx.map((i) => {
+          const s = [0, 0, 0];
+          for (const m of touching[i]) {
+            if (m[0] * face.n[0] + m[1] * face.n[1] + m[2] * face.n[2] < CREASE) continue;
+            s[0] += m[0];
+            s[1] += m[1];
+            s[2] += m[2];
+          }
+          const l = Math.hypot(...s);
+          return s.map((c) => c / l);
+        });
+        const gloss = face.gloss ?? 0;
         // la textura se reconoce por su tamaño: decoración 1024, carbono 64, flanco de goma 256
         let tid = 0;
         if (face.tex) {
@@ -544,7 +595,7 @@ export class GLRenderer {
         const vert = (a) => {
           const [x, y, z] = part.verts[face.idx[a]];
           const uv = face.uv ? face.uv[a] : [0, 0];
-          data.push(x, y, z, face.n[0], face.n[1], face.n[2], r, gg, b, uv[0] / size, uv[1] / size, tid, w);
+          data.push(x, y, z, face.n[0], face.n[1], face.n[2], r, gg, b, uv[0] / size, uv[1] / size, tid, w, ...smooth[a], gloss);
         };
         for (let a = 1; a < face.idx.length - 1; a++) {
           vert(0);
@@ -553,17 +604,19 @@ export class GLRenderer {
         }
       }
     }
-    const count = data.length / 13;
+    const count = data.length / STRIDE;
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
     this.buffer(new Float32Array(data));
     const m = this.models;
-    this.attrib(m, 'aPos', 3, 13, 0);
-    this.attrib(m, 'aNormal', 3, 13, 3);
-    this.attrib(m, 'aColor', 3, 13, 6);
-    this.attrib(m, 'aUV', 2, 13, 9);
-    this.attrib(m, 'aTex', 1, 13, 11);
-    this.attrib(m, 'aWheel', 1, 13, 12);
+    this.attrib(m, 'aPos', 3, STRIDE, 0);
+    this.attrib(m, 'aNormal', 3, STRIDE, 3);
+    this.attrib(m, 'aColor', 3, STRIDE, 6);
+    this.attrib(m, 'aUV', 2, STRIDE, 9);
+    this.attrib(m, 'aTex', 1, STRIDE, 11);
+    this.attrib(m, 'aWheel', 1, STRIDE, 12);
+    this.attrib(m, 'aSmooth', 3, STRIDE, 13);
+    this.attrib(m, 'aGloss', 1, STRIDE, 16);
     gl.bindVertexArray(null);
     g = { vao, count, helmetStart: helmetStart < 0 ? count : helmetStart, wheels, texs };
     this.modelCache.set(model, g);
@@ -684,9 +737,10 @@ export class GLRenderer {
       g.wheels.forEach((w, i) => wv.set([w.x, w.y, w.z, w.front ? 1 : 0], i * 4));
       gl.uniform4fv(mp.u.uWheels, wv);
       gl.uniform1f(mp.u.uAlpha, alpha);
+      // primero se crean todas (crear una la deja atada a la unidad activa) y después se atan
+      const texs = [1, 2, 3].map((k) => g.texs[k] && this.glTexture(g.texs[k]));
       ['uLivery', 'uCarbon', 'uSidewall'].forEach((name, i) => {
-        const tex = g.texs[i + 1];
-        if (tex) this.bind(i, this.glTexture(tex), mp, name);
+        if (texs[i]) this.bind(i, texs[i], mp, name);
       });
       gl.bindVertexArray(g.vao);
       gl.drawArrays(gl.TRIANGLES, 0, m.hide === 'helmet' ? g.helmetStart : g.count);
