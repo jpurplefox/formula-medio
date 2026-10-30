@@ -289,7 +289,10 @@ function skin(parts, body, livery) {
 // Arma el auto con el color de la carrocería, el del casco y el de los detalles de la decoración (en '#rrggbb')
 // y su número.
 // Devuelve una lista de piezas { verts: [[x,y,z]...], faces: [{ idx, color, n, gloss, tex?, uv?, dens? }], wheel?, head?, tag? }.
-export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', accent = '#f4f4f4') {
+// cámara de arriba (la "T"): como en la F1, negra en el primer auto de cada equipo y amarilla en el segundo
+export const TCAM = ['#161616', '#f2e600'];
+
+export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', accent = '#f4f4f4', tcam = TCAM[0]) {
   const body = hex(color), head = hex(helmet);
   const parts = [];
   const add = (...p) => parts.push(...p);
@@ -328,7 +331,9 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
     sec(-0.55, 0, 0.15, 0.64, 1.0, 0.08),
     sec(-0.3, 0, 0.12, 0.66, 0.92, 0.06),
   ], body, CARBON));
-  add(box(-0.45, -0.3, 0, 0.08, 0.99, 1.04, CARBON, 0.02));
+  // cámara de TV en forma de T: un parante finito y arriba una barra a lo ancho, del color que distingue al auto
+  add(box(-0.42, -0.34, 0, 0.025, 0.95, 1.07, hex(tcam), 0.01));
+  add(box(-0.45, -0.31, 0, 0.17, 1.07, 1.11, hex(tcam), 0.018));
   // pontones a los costados: toma de aire adelante y se van cerrando hacia atrás. La boca tiene un labio redondeado
   // que sobresale de la abertura oscura, y está inclinada: arriba avanza más que abajo, como en los de verdad.
   const lean = (ring) => ring.map(([x, y, z]) => [x + (z - 0.35) * 0.35, y, z]);

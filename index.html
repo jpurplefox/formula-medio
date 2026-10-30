@@ -32,11 +32,12 @@
     #help.hidden { opacity: 0; pointer-events: none; }
     #help label { color: #ffd400; cursor: pointer; text-decoration: underline; }
     #file { display: none; }
-    #results { top: 50%; left: 50%; transform: translate(-50%, -50%); display: none; min-width: 16em; font-size: clamp(12px, 1.5vw, 17px); padding: 12px 18px; background: rgba(0, 0, 0, 0.78); }
+    #results { top: 50%; left: 50%; transform: translate(-50%, -50%); display: none; min-width: 16em; font-size: clamp(10px, 1.15vw, 14px); padding: 12px 18px; background: rgba(0, 0, 0, 0.78); }
     #results.show { display: block; }
-    #tower { font-size: clamp(10px, 1.2vw, 14px); padding: 6px 8px; }
+    #tower { font-size: clamp(9px, 0.95vw, 12px); line-height: 1.2; padding: 5px 7px; }
     #tower table { border-collapse: collapse; }
-    #tower td { padding: 1px 5px; }
+    #tower td { padding: 0 5px; }
+    #tower small, #results small { color: #9aa4b2; margin-left: 0.35em; font-size: 0.8em; }
     #tower td:first-child { color: #9aa4b2; text-align: right; }
     #tower td:last-child { text-align: right; min-width: 4.2em; color: #c8ced8; font-variant-numeric: tabular-nums; }
     #tower tr.me td { color: #ffd400; font-weight: bold; }
@@ -51,7 +52,7 @@
     #stage.replay #timing, #stage.replay #speedo, #stage.replay #help, #stage.replay #results, #stage.replay #msg { display: none; }
     #results h3 { margin: 0 0 8px; font-size: 1.2em; color: #ffd400; }
     #results table { width: 100%; border-collapse: collapse; }
-    #results td { padding: 3px 6px; }
+    #results td { padding: 1px 6px; }
     #results td:last-child { text-align: right; color: #c8ced8; }
     #results tr.me td { color: #ffd400; font-weight: bold; }
     #results i { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 50%; margin-right: 0.5em; vertical-align: middle; }
@@ -163,6 +164,7 @@
       </section>
       <button id="menu-start" type="button">Largar</button>
       <p class="hint center">Enter para largar · Esc durante la carrera vuelve a este menú</p>
+      <p class="hint center" id="pad-status">Joystick: ninguno (conectalo y apretá cualquier botón)</p>
     </div>
   </div>
 

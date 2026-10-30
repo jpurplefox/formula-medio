@@ -14,15 +14,18 @@ Abrir http://localhost:8123. Hace falta un servidor local porque el juego lee lo
 `serve.py` le pide al navegador que no cachee, así cada recarga usa la última versión.
 
 Antes de largar hay un **menú** (que se acuerda de lo último que elegiste):
-- **Modo:** **Carrera** (contra 5 rivales, con tabla de posiciones y repetición al final) o **Contrarreloj**
+- **Modo:** **Carrera** (22 autos, 2 por equipo, con tabla de posiciones y repetición al final) o **Contrarreloj**
   (solo en pista, vueltas sin límite y un **fantasma** semitransparente que repite tu mejor vuelta, para ver
   dónde ganás o perdés tiempo). En carrera no hay fantasma.
 - **Equipo:** Hierrari, Merchoedes, Red Toro, McLarrón, Austin Martini, Allpain, Willyams, Audiós, Haash,
-  AlfaTorito o Cadillaque, cada uno con sus colores (carrocería, detalles de la decoración y casco) y su número
-  (`src/teams.js`). Los 5 rivales son los equipos que siguen al tuyo en la lista.
+  AlfaTorito o Cadillaque, cada uno con sus colores (carrocería, detalles de la decoración y casco) y los números de sus dos autos
+  (`src/teams.js`). Como en la F1, la cámara de arriba (la "T") es negra en el primer auto de cada equipo y
+  amarilla en el segundo. Vos manejás el primero de tu equipo; los 21 rivales son los dos autos de cada uno de
+  los otros equipos y tu compañero.
 - **Dificultad:** Fácil, Normal, Difícil o Experto: el ritmo de los rivales (en Interlagos, de vueltas de ~75–80 s
   en Fácil a ~69–70 s en Experto).
-- **Circuito** (o cargar uno propio) y **vueltas** (1, 3, 5 o 10; dificultad y vueltas son sólo para carrera).
+- **Circuito:** Interlagos (con alturas reales), Monza, Albert Park, Barcelona, Montreal, Spa, Silverstone o
+  Red Bull Ring (estos todavía planos), o cargar uno propio; y **vueltas** (1, 3, 5 o 10; dificultad y vueltas son sólo para carrera).
 - **Sonido:** prendido o apagado y volumen general, de los motores y de la música del menú.
 
 **Enter** larga y **Esc** vuelve al menú durante la carrera.
@@ -34,13 +37,20 @@ perfecta; con pocas vueltas el motor se ahoga, y cerca del corte las gomas patin
 aceleración al piso durante el primer segundo y medio). Si no estabas acelerando, largás cuando acelerás (con el
 motor bajo de vueltas). Las luces de cambio del volante y del panel muestran las rpm. Los rivales también suben de vueltas, cada uno a su manera, y reaccionan con su propio tiempo.
 
-Es una carrera contra 5 rivales: largás último en la grilla. A la izquierda, debajo de los tiempos,
+Es una carrera de 22 autos: largás último en la grilla. A la izquierda, debajo de los tiempos,
 está la **tabla de posiciones** con la distancia (en segundos) de cada auto con el de adelante: cada auto anota a
 qué hora pasó por cada punto de la pista, y la diferencia es cuánto hace que el de adelante pasó por donde está
 ahora el de atrás (si lo doblaron, dice "+1 V"). El panel muestra tu posición y al
 terminar aparece el resultado y, unos segundos después, la **repetición** de la carrera. R reinicia la carrera.
 
 Controles (flechas, WASD o IJKL): I/↑/W acelerar · K/↓/S frenar y marcha atrás · J L/←→/A D doblar · R reiniciar.
+
+**Joystick** (Xbox, PlayStation o cualquiera con el mapeo estándar): gatillo derecho acelera, izquierdo frena y la
+palanca izquierda dobla, los tres **progresivos** (se puede ir a medio acelerador, frenar un poco o doblar apenas).
+RB/R1 sube de marcha, LB/L1 baja, Y/△ cambia la cámara, X/□ la trazada, Start larga o abre el menú, Back/Share
+reinicia y la cruceta elige el auto en la repetición. La palanca tiene zona muerta y dobla menos cerca del centro,
+para corregir fino a alta velocidad. Con teclado los pedales son todo o nada, pero el acelerador tarda 1/3 s en
+abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
 
 ## Cómo funciona
 
@@ -105,6 +115,16 @@ Controles (flechas, WASD o IJKL): I/↑/W acelerar · K/↓/S frenar y marcha at
    y dentro de su estela, de 1,6 m de costado) hay menos resistencia del aire, hasta un 30 % pegado a él. Eso da
    unos 13 km/h más al final de una recta de 600 m, gana 0,3 s y sube la velocidad punta hasta el corte de 8.ª.
    Vale para vos y para los rivales.
+
+   **Balance:** al frenar el peso se pasa adelante y al acelerar, atrás (hasta un 7 %, con un poco de demora por la
+   suspensión). Cada eje agarra según su carga, pero no en proporción (el doble de carga da 1,74 veces el agarre),
+   y además reparte su agarre entre frenar o empujar y doblar (**círculo de fricción**: √(frenada² + giro²) ≤ agarre;
+   el motor empuja sólo con las de atrás). El eje delantero limita cuánto dobla el auto (si no alcanza, se va de
+   trompa: subviraje); si al trasero no le alcanza para sostener la curva, la cola se abre y el auto queda cruzado
+   (sobreviraje) hasta que levantás el pie o contravolanteás. En una curva sin pedales da lo mismo que el agarre
+   medido; lo que cambia es frenar fuerte doblando (la cola se pone liviana), soltar el freno de a poco al entrar
+   (la trompa muerde y el auto rota) y pisar a fondo en una curva lenta (la cola se abre). El traslado de peso de
+   costado también resta agarre, pero eso ya está dentro del agarre lateral medido.
 4. **Choques** (`src/collision.js`): con impulsos, como un motor de física 2D. Además de la velocidad de marcha,
    cada auto tiene una velocidad de costado y un giro que le dejan los golpes, y que las gomas van frenando (más
    rápido cuanto más agarre). Entre autos, cada uno es un rectángulo de 5,6 × 2 m: se detecta el choque con el test
@@ -128,7 +148,7 @@ Al soltar el acelerador el sonido pasa de a poco (~150 ms) a la retención, más
 Encima, sonidos sueltos: al **subir de marcha**, un corte de una fracción de segundo con un golpe seco; al **bajar**,
 un acelerón corto y a veces una explosión suave (en una frenada con muchos rebajes seguidos, no en cada uno); al
 **soltar el acelerador** a muchas vueltas, un petardeo breve del escape; y en el **corte de rpm**, el tartamudeo
-del encendido. Cada auto (el tuyo y los 5 rivales) tiene su propio motor y se escucha
+del encendido. Cada auto tiene su propio motor (suenan a la vez los 8 más cercanos a la cámara) y se escucha
 desde la cámara: más bajo cuanto más lejos, a la izquierda o a la derecha según dónde esté, más apagado si está
 detrás y con efecto Doppler. En la repetición suenan igual, desde la cámara que se esté viendo. **N** silencia.
 
@@ -213,3 +233,13 @@ y el sentido de giro (sin alturas).
 O fijo, en `tracks/index.js`: copiar la imagen a `tracks/` y agregar una entrada con el punto de largada
 (`start`) y un punto hacia donde se corre (`towards`), ambos en píxeles de la imagen, y opcionalmente el
 perfil de alturas (`elevation`).
+
+Según cómo esté dibujado el circuito puede hacer falta:
+- `scale`: más chico para imágenes chicas (menos de 1 la agranda) o con chicanas cerradas, que si no se suavizan.
+- `threshold`: más bajo si hay flechas rojas u otros dibujos oscuros pegados a la pista.
+- `open`: borra las líneas finas pegadas al trazado (calle de boxes, variantes viejas, el mástil de la bandera).
+- `paint`: repasa en negro un tramo que la bandera a cuadros corta, o tapa un punto blanco dibujado sobre la pista.
+- `smooth`: suaviza más la línea central en imágenes chicas, donde las líneas quedan escalonadas.
+
+Para revisar que quedó bien conviene largar una carrera: si la vuelta del rival da un tiempo razonable y la
+grilla está sobre la recta, el trazado se reconoció entero.

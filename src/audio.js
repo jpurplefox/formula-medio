@@ -17,6 +17,7 @@ import { MenuMusic } from './music.js';
 
 const SOUND_SPEED = 343; // m/s
 const NEAR = 20; // a esta distancia (m) un auto suena a la mitad de volumen
+const MAX_VOICES = 8; // motores que suenan a la vez: los más cercanos (los lejanos casi no se oyen y cada voz cuesta)
 const MASTER = 0.5;
 const LIMITER_RPM = 11700; // a partir de acá, a fondo, se escucha el corte
 const POP_RPM = 8000; // al soltar el acelerador por encima de esto, el escape petardea
@@ -288,16 +289,27 @@ export class EngineAudio {
   // (cabina), que suena "adentro": fuerte, al centro y sin Doppler
   update(cars, ear, inside = -1) {
     if (!this.ctx) return;
-    while (this.voices.length < cars.length) this.voices.push(new Voice(this.kit, this.engines));
     const rx = -Math.sin(ear.angle), ry = Math.cos(ear.angle); // derecha de la cámara
     const fx = Math.cos(ear.angle), fy = Math.sin(ear.angle);
-    this.voices.forEach((v, i) => {
-      const c = cars[i];
+    // cada voz sigue a un auto mientras esté entre los más cercanos; si sale, la toma otro (empieza de cero)
+    const near = cars.map((c, i) => [i === inside ? -1 : Math.hypot(c.x - ear.x, c.y - ear.y), i])
+      .sort((a, b) => a[0] - b[0]).slice(0, MAX_VOICES).map(([, i]) => i);
+    while (this.voices.length < near.length) this.voices.push(new Voice(this.kit, this.engines));
+    const taken = new Set(this.voices.map((v) => v.car));
+    const free = near.filter((i) => !taken.has(i));
+    for (const v of this.voices) {
+      if (v.car !== undefined && near.includes(v.car)) continue;
+      v.car = free.shift();
+      v.gear = null;
+      v.throttle = 0;
+    }
+    this.voices.forEach((v) => {
+      const i = v.car, c = cars[i];
       if (!c) {
         v.mute();
         return;
       }
-      const thr = c.throttle ? 1 : 0;
+      const thr = Math.min(1, +c.throttle || 0); // con joystick, a medias
       // el acelerador suavizado: el timbre y el volumen pasan de a poco entre acelerando y retención
       const now = this.ctx.currentTime;
       v.smooth += (thr - v.smooth) * Math.min(1, (now - v.lastTime) / THROTTLE_TIME);

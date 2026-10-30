@@ -5,12 +5,12 @@ import { GLRenderer } from './glrenderer.js';
 import { Car, DEFAULT_PROFILE, LAUNCH_WINDOW, isSolid, lookup, slipstream, wheelAngle } from './car.js';
 import { racingLine } from './racingline.js';
 import { boardTexture, treeTexture } from './sprites.js';
-import { carModel, WHEEL_R } from './carmodel.js';
+import { carModel, TCAM, WHEEL_R } from './carmodel.js';
 import { Driver, gridSlots, lineFrame, pointAt } from './ai.js';
 import { collideCars } from './collision.js';
 import { Cockpit } from './cockpit.js';
 import { CAMERA_MODES, CAMERA_NAMES, Recorder, replayCamera, tvCameras } from './replay.js';
-import { DIFFICULTIES, LAP_OPTIONS, TEAMS, rivalTeams } from './teams.js';
+import { DIFFICULTIES, LAP_OPTIONS, TEAMS, car as teamCar, rivalCars, rivalPaces } from './teams.js';
 import { EngineAudio } from './audio.js';
 
 const VIEW_W = 960;
@@ -34,7 +34,7 @@ const SETTINGS_KEY = 'raycast-racer-settings';
 // circuito y vueltas
 const settings = { mode: 'race', team: 'hierrari', difficulty: 'dificil', track: TRACKS[0].id, laps: 3, sound: true, volMaster: 0.8, volEngines: 1, volMusic: 0.6 };
 const MODES = [
-  { value: 'race', label: 'Carrera', hint: 'Contra 5 rivales, con repetición al final' },
+  { value: 'race', label: 'Carrera', hint: 'Contra 21 rivales (2 autos por equipo), con repetición al final' },
   { value: 'trial', label: 'Contrarreloj', hint: 'Solo en pista, contra el fantasma de tu mejor vuelta' },
 ];
 try {
@@ -92,9 +92,11 @@ const mctx = minimap.getContext('2d');
 const ghostModel = carModel('#3aa0ff', '#ffffff');
 // el modelo 3D de cada equipo se arma la primera vez que hace falta (la decoración tarda un poco)
 const teamModels = new Map();
-const modelFor = (t) => {
-  if (!teamModels.has(t.id)) teamModels.set(t.id, carModel(t.color, t.helmet, t.number, t.accent));
-  return teamModels.get(t.id);
+// el modelo de cada auto: { team, slot, number } (los dos de un equipo cambian el número y el color de la T)
+const modelFor = ({ team: t, slot, number }) => {
+  const key = `${t.id}/${slot}`;
+  if (!teamModels.has(key)) teamModels.set(key, carModel(t.color, t.helmet, number, t.accent, TCAM[slot]));
+  return teamModels.get(key);
 };
 let wheelSpin = 0; // cuánto giraron las ruedas (rad), para animarlas
 let lastDraw = 0;
@@ -135,17 +137,22 @@ addEventListener('keydown', (e) => {
   const names = keyNames(e);
   held.set(e.code, names);
   for (const n of names) keys.add(n);
+  press(names, e.repeat);
+});
+
+// una tecla (o un botón del joystick, que se traduce a la tecla que hace lo mismo): names son sus nombres
+function press(names, repeat = false) {
   const is = (...codes) => codes.some((c) => names.includes(c));
   if (menuOpen()) {
-    if (e.code === 'Enter') startRace();
+    if (is('Enter')) startRace();
     return;
   }
-  if (e.code === 'Escape' && game) {
+  if (is('Escape') && game) {
     openMenu();
     return;
   }
   if (is('KeyR') && game) resetGame(game.track);
-  if (!game || e.repeat) return;
+  if (!game || repeat) return;
   if (game.replay) {
     replayKey(game.replay, is);
     return;
@@ -172,7 +179,7 @@ addEventListener('keydown', (e) => {
     manualGears = game.car.manual = !game.car.manual;
     flash(manualGears ? 'Caja manual' : 'Caja automática');
   }
-});
+}
 addEventListener('keyup', (e) => {
   for (const n of held.get(e.code) ?? keyNames(e)) keys.delete(n);
   held.delete(e.code);
@@ -183,14 +190,69 @@ addEventListener('blur', () => {
 });
 
 function readInput() {
-  // flechas, WASD o IJKL
+  // flechas, WASD o IJKL, más el joystick: lo que se pise más fuerte de los dos
   const left = keys.has('ArrowLeft') || keys.has('KeyA') || keys.has('KeyJ');
   const right = keys.has('ArrowRight') || keys.has('KeyD') || keys.has('KeyL');
+  const up = keys.has('ArrowUp') || keys.has('KeyW') || keys.has('KeyI');
+  const down = keys.has('ArrowDown') || keys.has('KeyS') || keys.has('KeyK') || keys.has('Space');
   return {
-    throttle: keys.has('ArrowUp') || keys.has('KeyW') || keys.has('KeyI'),
-    brake: keys.has('ArrowDown') || keys.has('KeyS') || keys.has('KeyK') || keys.has('Space'),
-    steer: (right ? 1 : 0) - (left ? 1 : 0),
+    throttle: Math.max(up ? 1 : 0, pad.throttle),
+    brake: Math.max(down ? 1 : 0, pad.brake),
+    steer: Math.max(-1, Math.min(1, (right ? 1 : 0) - (left ? 1 : 0) + pad.steer)),
   };
+}
+
+// ---------- joystick ----------
+// Con la Gamepad API y el mapeo estándar (los de Xbox y PlayStation): el gatillo derecho acelera y el izquierdo
+// frena, la palanca izquierda dobla, y los tres son progresivos. Los botones hacen lo mismo que una tecla:
+// RB/R1 sube de marcha (X), LB/L1 baja (Z), Y/△ cambia la cámara (C), X/□ la trazada (G),
+// Start abre el menú o larga (Esc / Enter), Back/Share reinicia (R) y la cruceta elige el auto en la repetición.
+const STICK_DEAD = 0.08; // zona muerta de la palanca: cerca del centro no dobla
+const STEER_CURVE = 1.5; // la palanca dobla menos al principio, para corregir fino a alta velocidad
+const TRIGGER_DEAD = 0.04;
+const PAD_KEYS = { 4: 'KeyZ', 5: 'KeyX', 3: 'KeyC', 2: 'KeyG', 8: 'KeyR', 14: 'ArrowLeft', 15: 'ArrowRight' };
+const pad = { throttle: 0, brake: 0, steer: 0, pressed: [] };
+
+// El navegador recién muestra un joystick cuando se aprieta un botón con la página abierta. Si hay varios, usa el
+// primero con mapeo estándar. Los que no lo tienen (algunos genéricos, o según el navegador) suelen traer los
+// gatillos como ejes que en reposo valen -1: el primero frena y el segundo acelera.
+let padId = null;
+const padRest = new Map(); // id → valores de los ejes la primera vez que se lo vio (en reposo)
+
+function pollPad() {
+  const pads = [...(navigator.getGamepads?.() ?? [])].filter(Boolean);
+  const gp = pads.find((g) => g.mapping === 'standard') ?? pads[0];
+  if ((gp?.id ?? null) !== padId) {
+    padId = gp?.id ?? null;
+    $('pad-status').textContent = gp ? `Joystick: ${gp.id}` : 'Joystick: ninguno (conectalo y apretá cualquier botón)';
+    if (gp && game) flash('Joystick conectado');
+  }
+  if (!gp) {
+    Object.assign(pad, { throttle: 0, brake: 0, steer: 0 });
+    return;
+  }
+  if (!padRest.has(gp.id)) padRest.set(gp.id, [...gp.axes]);
+  const value = (i) => gp.buttons[i]?.value ?? 0;
+  const dead = (x) => Math.max(0, (x - TRIGGER_DEAD) / (1 - TRIGGER_DEAD));
+  let brake = value(6), throttle = value(7);
+  if (gp.mapping !== 'standard') {
+    const triggers = padRest.get(gp.id).map((a, i) => (i >= 2 && a < -0.5 ? i : -1)).filter((i) => i >= 0);
+    if (triggers.length >= 2) {
+      brake = Math.max(brake, (gp.axes[triggers[0]] + 1) / 2);
+      throttle = Math.max(throttle, (gp.axes[triggers[1]] + 1) / 2);
+    }
+  }
+  const x = gp.axes[0] ?? 0, mag = Math.max(0, (Math.abs(x) - STICK_DEAD) / (1 - STICK_DEAD));
+  pad.throttle = dead(throttle);
+  pad.brake = dead(brake);
+  pad.steer = Math.sign(x) * Math.min(1, mag) ** STEER_CURVE;
+  gp.buttons.forEach((b, i) => {
+    if (b.pressed && !pad.pressed[i]) {
+      if (i === 9) press([menuOpen() ? 'Enter' : 'Escape']);
+      else if (PAD_KEYS[i]) press([PAD_KEYS[i]]);
+    }
+    pad.pressed[i] = b.pressed;
+  });
 }
 
 // ---------- estado del juego ----------
@@ -204,20 +266,22 @@ function resetGame(track) {
   const prevBest = prev && prev.track === track ? prev.best : null;
   const prevGhost = prev && prev.track === track ? prev.ghost : null;
   const team = teamById(settings.team);
-  const paces = (DIFFICULTIES.find((d) => d.id === settings.difficulty) || DIFFICULTIES[2]).paces;
+  const difficulty = DIFFICULTIES.find((d) => d.id === settings.difficulty) || DIFFICULTIES[2];
   const trial = settings.mode === 'trial';
   // en contrarreloj no hay rivales
-  const others = trial ? [] : rivalTeams(team);
+  const others = trial ? [] : rivalCars(team);
+  const paces = rivalPaces(difficulty, others.length);
   // grilla: los rivales adelante (los más rápidos primero) y vos al final
   const slots = gridSlots(track, others.length + 1);
   const spawn = slots[others.length];
   const car = Object.assign(new Car(spawn.x, spawn.y, spawn.angle, carProfile), { manual: manualGears });
-  const player = { name: 'Vos', code: 'VOS', color: team.color, car, driver: null, race: newRace(track, car), model: modelFor(team), dist: 0, gridBack: spawn.back };
-  const rivals = others.map((t, i) => {
-    const c = new Car(slots[i].x, slots[i].y, slots[i].angle, carProfile);
+  const mine = teamCar(team, 0);
+  const player = { name: 'Vos', code: 'VOS', number: mine.number, color: team.color, car, driver: null, race: newRace(track, car), model: modelFor(mine), dist: 0, gridBack: spawn.back };
+  const rivals = others.map((o, i) => {
+    const t = o.team, c = new Car(slots[i].x, slots[i].y, slots[i].angle, carProfile);
     return {
-      name: t.name, code: t.code, color: t.color, car: c, driver: new Driver(paces[i], i + 1), race: newRace(track, c),
-      model: modelFor(t), spin: 0, dist: 0, gridBack: slots[i].back,
+      name: `${t.name} #${o.number}`, code: t.code, number: o.number, color: t.color, car: c, driver: new Driver(paces[i], i + 1), race: newRace(track, c),
+      model: modelFor(o), spin: 0, dist: 0, gridBack: slots[i].back,
       // en la grilla cada rival acelera hasta unas vueltas propias y reacciona al semáforo con su tiempo
       revTarget: LAUNCH_WINDOW[0] - 300 + Math.random() * 1500, react: 0.12 + Math.random() * 0.22,
     };
@@ -480,7 +544,7 @@ function drawTower(g, time) {
   const rows = order.map((e, i) => {
     const gap = i === 0 ? (g.finished.some((f) => f.entry === e) ? 'Final' : 'Líder') : interval(g, order[i - 1], e);
     const me = e === g.player ? ' class="me"' : '';
-    return `<tr${me}><td>${i + 1}</td><td><i style="background:${e.color}"></i>${e.code}</td><td>${gap}</td></tr>`;
+    return `<tr${me}><td>${i + 1}</td><td><i style="background:${e.color}"></i>${e.code}<small>${e.number}</small></td><td>${gap}</td></tr>`;
   });
   const html = `<table>${rows.join('')}</table>`;
   if (hud.tower.innerHTML !== html) hud.tower.innerHTML = html;
@@ -896,6 +960,7 @@ function frame(now) {
   }
   const dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
+  pollPad();
   if (game) {
     // al terminar, unos segundos de resultado y después la repetición (la carrera queda en pausa)
     if (game.replayIn !== null && !game.replay) {

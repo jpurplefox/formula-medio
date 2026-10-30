@@ -24,7 +24,7 @@ export function buildTrack(img, def, elevation = null) {
 
   // 1) De la imagen sacamos sólo el recorrido: la línea central y el ancho de la pista
   const raw = roadFromImage(img, def, W, H);
-  const path = traceCenterline(raw, startLine(raw, def, W, H), W, H);
+  const path = traceCenterline(raw, startLine(raw, def, W, H), W, H, def.smooth ?? 3);
 
   // Escala real: cuántos metros mide una celda, según el largo real de la vuelta
   // (de la telemetría si la hay; si no, el que diga el circuito o 4 km)
@@ -74,6 +74,20 @@ function roadFromImage(img, def, W, H) {
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, 0, 0, W, H);
+  // retoques a mano, en píxeles de la imagen: `paint` repasa en negro tramos de pista que el dibujo tapa
+  // (p. ej. con la bandera a cuadros): [[x0, y0, x1, y1, ancho], ...]
+  ctx.save();
+  ctx.scale(W / img.width, H / img.height);
+  ctx.strokeStyle = '#000';
+  ctx.lineCap = 'round';
+  for (const [x0, y0, x1, y1, width] of def.paint ?? []) {
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+  }
+  ctx.restore();
   const px = ctx.getImageData(0, 0, W, H).data;
 
   let road = new Uint8Array(W * H);
@@ -81,6 +95,9 @@ function roadFromImage(img, def, W, H) {
     const lum = 0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2];
     road[i] = lum < threshold ? 1 : 0;
   }
+  // Líneas finas pegadas al trazado (calle de boxes, variantes viejas, el mástil de la bandera): se borran
+  // achicando todo `open` celdas y volviendo a agrandarlo; la pista, que es más gruesa, sobrevive
+  if (def.open) road = openThin(road, W, H, def.open);
   // Los números de las curvas y otros textos quedan como islas: nos quedamos
   // sólo con el componente conectado más grande, que es el trazado.
   road = largestComponent(road, W, H);
@@ -147,7 +164,8 @@ function startLine(road, def, W, H) {
 
 // Recorre la pista desde la largada como un "caminante": avanza un paso, mide hasta dónde
 // llega la pista hacia cada costado y se centra. Así sigue las horquillas sin cortar camino.
-function traceCenterline(road, line, W, H) {
+// smooth: pasadas de suavizado de la línea central (más en imágenes chicas, donde las líneas quedan escalonadas)
+function traceCenterline(road, line, W, H, smooth) {
   const onRoad = (x, y) => road[idx(W, H, x, y)] === 1;
   const reach = (x, y, nx, ny) => {
     let t = 0;
@@ -167,7 +185,9 @@ function traceCenterline(road, line, W, H) {
     xs.push(px);
     ys.push(py);
     const n = xs.length;
-    if (n > 50 && Math.hypot(px - xs[0], py - ys[0]) < 1.5) break; // vuelta cerrada
+    // vuelta cerrada: de vuelta en la largada, a menos de media pista (la bandera a cuadros puede correr un poco
+    // el centro, y si no se la reconoce acá el recorrido sigue y da otra vuelta)
+    if (n > 50 && Math.hypot(px - xs[0], py - ys[0]) < Math.max(1.5, widths[widths.length - 1] / 2)) break;
     // rumbo: hacia dónde venimos avanzando, suavizado
     if (n > 4) {
       let ndx = px - xs[n - 5], ndy = py - ys[n - 5];
@@ -184,7 +204,7 @@ function traceCenterline(road, line, W, H) {
   let x = Float64Array.from(xs), y = Float64Array.from(ys);
   const n = x.length;
   const wrap = (b) => ((b % n) + n) % n;
-  for (let pass = 0; pass < 3; pass++) {
+  for (let pass = 0; pass < smooth; pass++) {
     const nx = new Float64Array(n), ny = new Float64Array(n);
     for (let b = 0; b < n; b++) {
       for (let k = -3; k <= 3; k++) { nx[b] += x[wrap(b + k)]; ny[b] += y[wrap(b + k)]; }
@@ -565,6 +585,19 @@ function closeGaps(mask, W, H, r) {
   const back = distanceFrom(outside, W, H, r);
   const out = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) out[i] = mask[i] || back[i] < 0 ? 1 : 0;
+  return out;
+}
+
+// Apertura: borra lo que tenga menos de 2r+1 celdas de ancho y deja igual lo demás
+function openThin(mask, W, H, r) {
+  const outside = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) outside[i] = mask[i] ? 0 : 1;
+  const near = distanceFrom(outside, W, H, r);
+  const core = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) core[i] = mask[i] && near[i] < 0 ? 1 : 0;
+  const grown = distanceFrom(core, W, H, r);
+  const out = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) out[i] = mask[i] && grown[i] >= 0 ? 1 : 0;
   return out;
 }
 

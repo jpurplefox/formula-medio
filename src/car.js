@@ -35,6 +35,24 @@ const GRAVITY = 9.8;
 const SLIP_GRIP = 0.8; // las gomas frenan el deslizamiento de costado con esta fracción de su agarre
 const SPIN_DAMP = 7; // y el giro que dejan los golpes, a este ritmo (rad/s²; en el pasto, la mitad)
 const SPIN_GRIP = 0.25; // más esta fracción del agarre: a más velocidad, las gomas enderezan antes el auto
+// balance: al frenar el peso se pasa adelante y al acelerar, atrás; cada eje agarra según la carga que tiene
+// y lo que le queda después de frenar o traccionar (círculo de fricción). En una curva sin pedales da lo mismo
+// que el agarre medido; frenando fuerte la cola queda liviana y se abre, y a fondo en una curva lenta también.
+const FRONT_SHARE = 0.45; // parte del peso sobre el eje delantero, con el auto quieto
+const CG_H = 0.25; // m: altura del centro de gravedad
+const MAX_SHIFT = 0.07; // lo más que se pasa de un eje al otro (fracción del peso)
+const LOAD_EXP = 0.8; // el doble de carga da 2^0,8 = 1,74 veces el agarre: al pasarse el peso se pierde agarre
+const BRAKE_USE = 0.7; // frenando a fondo, qué parte del agarre de las gomas se va en frenar
+const TRACTION = 18; // m/s²: lo que pueden empujar las gomas traseras (sin carga aerodinámica)
+const TRANSFER_RATE = 10; // 1/s: el peso tarda un instante en pasarse (lo frena la suspensión)
+// el pie no llega a fondo de golpe: con teclado (todo o nada) el acelerador tarda un instante en abrirse, así
+// pisar en plena curva no suelta la cola de un saque (con joystick casi no se nota: va siguiendo al gatillo)
+const THROTTLE_RISE = 3; // 1/s: de nada a fondo en 1/3 s
+const BRAKE_RISE = 10; // 1/s
+const PEDAL_DROP = 12; // 1/s: soltar es rápido
+const OVERSTEER = 2.5; // cuánto más gira el auto cuando a la cola le falta agarre (1 = lo justo que le falta)
+const LOOSE_RATE = 4; // 1/s: qué tan rápido se abre la cola
+const LOOSE_SLIP = 0.25; // con la cola suelta, las gomas frenan el deslizamiento de costado mucho menos
 const IDLE_RPM = 4000;
 const LAUNCH_RPM = 8000; // con el embrague patinando, en 1ª y 2ª el motor no cae de acá
 const FULL_POWER_RPM = 9000; // por debajo de esto el motor rinde cada vez menos
@@ -74,6 +92,11 @@ export function slipstream(car, cars, meters) {
   return best;
 }
 
+// un pedal: true/false del teclado o 0..1 de un joystick
+function pedal(x) {
+  return Math.max(0, Math.min(1, +x || 0));
+}
+
 export function lookup(rows, x) {
   if (x <= rows[0][0]) return rows[0][1];
   for (let i = 1; i < rows.length; i++) {
@@ -101,7 +124,9 @@ export class Car {
     this.slip = 0; // velocidad de costado, hacia la derecha (m/s): la dejan los golpes y se va con el agarre
     this.spin = 0; // giro que dejan los golpes (rad/s), aparte del que da el volante
     this.omega = 0; // giro total en este momento (rad/s)
-    this.throttle = 0; // 1 si va acelerando (para el sonido)
+    this.throttle = 0; // cuánto va acelerando, 0..1 (para el sonido)
+    this.brake = 0; // cuánto va frenando, 0..1
+    this.aLon = 0; // aceleración de las gomas hacia adelante (m/s², suavizada): de acá sale el traslado de peso
     this.launchFactor = 1; // en la largada: qué fracción de la aceleración llega al piso
     this.launchTime = 0;
     this.launchRpm = 0;
@@ -145,12 +170,14 @@ export class Car {
     else if (this.gear > 1 && this.rpmAt(this.speed, this.gear - 1) < p.downshiftRpm) this.gear--;
   }
 
-  // En la grilla, con el auto detenido (embrague apretado): el acelerador sólo sube las vueltas
+  // En la grilla, con el auto detenido (embrague apretado): el acelerador sólo sube las vueltas,
+  // hasta un punto que depende de cuánto se lo pisa (0..1; true es a fondo)
   rev(dt, throttle) {
-    const max = this.profile.maxRpm;
-    if (throttle) this.rpm = Math.min(max, this.rpm + REV_RATE * (1 - 0.6 * (this.rpm / max)) * dt);
-    else this.rpm = Math.max(IDLE_RPM, this.rpm - REV_DROP * dt);
-    this.throttle = throttle ? 1 : 0;
+    const max = this.profile.maxRpm, thr = pedal(throttle);
+    const target = IDLE_RPM + (max - IDLE_RPM) * thr;
+    if (this.rpm < target) this.rpm = Math.min(target, this.rpm + REV_RATE * (1 - 0.6 * (this.rpm / max)) * dt);
+    else this.rpm = Math.max(target, this.rpm - REV_DROP * dt);
+    this.throttle = thr;
   }
 
   // Suelta el embrague: según las rpm, cuánto de la aceleración llega al piso durante el primer segundo y medio.
@@ -179,46 +206,52 @@ export class Car {
     this.onGrass = edge < 0 && !this.onKerb;
 
     const v = Math.abs(this.speed);
-    this.throttle = input.throttle ? 1 : 0;
+    // pedales y volante pueden ir a medias (joystick): 0..1 y -1..1; el teclado manda true/false
+    const ease = (now, target, rise) => now + Math.max(-PEDAL_DROP * dt, Math.min(rise * dt, target - now));
+    const thr = (this.throttle = ease(this.throttle, pedal(input.throttle), THROTTLE_RISE));
+    const brk = (this.brake = ease(this.brake, pedal(input.brake), BRAKE_RISE));
+    if (thr && this.gear === 0) this.gear = 1;
     if (this.speed >= 0 && this.gear === 0) this.gear = 1;
-    if (!this.manual && this.gear > 0) this.autoShift(input.throttle);
+    if (!this.manual && this.gear > 0) this.autoShift(thr > 0.5);
 
     // motor: la tabla medida dice cuánto acelera a fondo a cada velocidad con la marcha justa;
     // con otra marcha rinde menos (pocas vueltas) o nada (corte de RPM)
     let rpm = this.rpmAt(v, this.gear);
-    if (this.gear <= 2 && input.throttle) rpm = Math.max(rpm, LAUNCH_RPM);
+    if (this.gear <= 2 && thr) rpm = Math.max(rpm, LAUNCH_RPM);
     rpm = Math.max(rpm, IDLE_RPM);
     const limiter = rpm >= p.maxRpm;
     const power = limiter ? 0 : Math.min(1, Math.max(0.2, (rpm - 3000) / (FULL_POWER_RPM - 3000)));
     // patinando en la largada, el motor queda arriba de vueltas
-    if (this.launchTime > 0 && this.launchRpm > LAUNCH_WINDOW[1] && input.throttle) rpm = Math.max(rpm, this.launchRpm * (0.9 + 0.1 * (this.launchTime / LAUNCH_TIME)));
+    if (this.launchTime > 0 && this.launchRpm > LAUNCH_WINDOW[1] && thr) rpm = Math.max(rpm, this.launchRpm * (0.9 + 0.1 * (this.launchTime / LAUNCH_TIME)));
     this.launchTime = Math.max(0, this.launchTime - dt);
     this.rpm += (Math.min(rpm, p.maxRpm) - this.rpm) * Math.min(1, dt * 20);
 
-    // el acelerador siempre empuja hacia adelante: si el auto venía para atrás, primero lo frena
-    if (input.throttle) {
-      if (this.gear === 0) this.gear = 1;
-      const top = this.onGrass ? GRASS_MAX : Infinity;
-      // cerca de la velocidad punta medida, la resistencia del aire se come todo el empuje (en el rebufo, más arriba)
+    // sin pedales frenan la resistencia del aire y el freno motor, medidos (en el rebufo, menos aire)
+    const losses = lookup(p.coast, v) - this.draft * DRAFT_DRAG * this.drag(v);
+    let drive = 0, braking = 0; // lo que empujan y frenan las gomas (m/s²), para el balance
+    if (this.speed < 0 || (brk && !thr && this.speed <= 0.5)) {
+      // marcha atrás: el freno empuja para atrás; el acelerador primero frena
+      if (thr) this.speed += lookup(p.accel, v) * thr * dt;
+      else if (brk) {
+        this.gear = 0;
+        this.speed = Math.max(-REVERSE_MAX, this.speed - REVERSE_ACCEL * brk * dt);
+      } else this.speed = Math.min(0, this.speed + losses * dt);
+    } else {
+      // a fondo, la tabla medida (aceleración neta); a medias, una parte del empuje menos las pérdidas.
+      // Cerca de la velocidad punta la resistencia del aire se come todo el empuje (en el rebufo, más arriba)
       const aero = Math.min(1, Math.max(0, (p.topSpeed + 2 + DRAFT_TOP * this.draft - v) / 4));
       // en la largada, si se ahogó o patina, llega menos aceleración al piso
       const launch = this.launchTime > 0 ? this.launchFactor : 1;
       // el rebufo devuelve la parte de la resistencia del aire que se ahorra
       const draft = power > 0 ? this.draft * DRAFT_DRAG * this.drag(v) : 0;
-      if (this.speed < top) this.speed += (lookup(p.accel, v) * power + draft) * aero * launch * dt;
-    } else if (input.brake) {
-      if (this.speed > 0.5) {
-        // frenada: más fuerte a más velocidad, por la carga aerodinámica
-        this.speed = Math.max(0, this.speed - (p.brake.base + p.brake.perV2 * v * v) * dt);
-      } else {
-        this.gear = 0;
-        this.speed = Math.max(-REVERSE_MAX, this.speed - REVERSE_ACCEL * dt);
-      }
-    } else {
-      // sin pedales: resistencia del aire y freno motor, medidos (en el rebufo, menos aire)
-      const decel = lookup(p.coast, v) - this.draft * DRAFT_DRAG * this.drag(v);
-      this.speed -= Math.sign(this.speed) * Math.min(v, decel * dt);
+      const full = this.speed < (this.onGrass ? GRASS_MAX : Infinity) ? (lookup(p.accel, v) * power + draft) * aero * launch : 0;
+      drive = thr * (full + losses);
+      // frenada medida: más fuerte a más velocidad, por la carga aerodinámica (ya incluye las pérdidas)
+      braking = brk * Math.max(0, p.brake.base + p.brake.perV2 * v * v - losses);
+      this.speed = Math.max(0, this.speed + (drive - losses - braking) * dt);
     }
+    // el peso se pasa según lo que empujan o frenan las gomas, con un poco de demora
+    this.aLon += (drive - braking - this.aLon) * Math.min(1, dt * TRANSFER_RATE);
 
     const M = track.meters;
     // pendiente en la dirección de marcha (suavizada): la gravedad frena en subida y empuja en bajada
@@ -233,25 +266,45 @@ export class Car {
       this.speed -= Math.sign(this.speed) * Math.min(Math.abs(this.speed), 20 * dt);
     }
 
-    // dirección: el giro está limitado por el agarre lateral (v²/r ≤ agarre), que crece con la
-    // velocidad por la carga aerodinámica; aun así, a más velocidad las curvas se abren
-    const target = input.steer;
-    this.steer += (target - this.steer) * Math.min(1, dt * 10);
     const sp = Math.abs(this.speed);
     let grip = p.lateralGrip.base + p.lateralGrip.perV2 * sp * sp;
+    // carga sobre las gomas (por kg): el peso más la carga aerodinámica, que crece igual que el agarre
+    const load = GRAVITY * (grip / p.lateralGrip.base);
     if (this.onGrass) grip *= 0.5;
-    const yaw = yawRate(sp, grip);
+    // balance: qué parte del peso pasa adelante (frenando) o atrás (acelerando), y cuánto agarra cada eje
+    // para doblar con esa carga y lo que le queda después de frenar o empujar
+    const shift = Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT, (-this.aLon * CG_H) / (WHEELBASE * load)));
+    const usage = (x) => Math.sqrt(1 - Math.min(1, x) ** 2);
+    const frontLoad = ((FRONT_SHARE + shift) / FRONT_SHARE) ** LOAD_EXP;
+    const rearLoad = ((1 - FRONT_SHARE - shift) / (1 - FRONT_SHARE)) ** LOAD_EXP;
+    // los frenos reparten la fuerza según la carga de cada eje, así que el eje cargado la aguanta mejor
+    // (con LOAD_EXP < 1, apenas); el empuje del motor va todo a las de atrás
+    const braked = braking > 0 ? brk * BRAKE_USE : 0;
+    const front = grip * frontLoad * usage(braked * frontLoad ** (1 / LOAD_EXP - 1));
+    const rear = grip * rearLoad * usage(braked * rearLoad ** (1 / LOAD_EXP - 1) + drive / ((TRACTION * load) / GRAVITY) / rearLoad);
+    this.grip = [front / grip, rear / grip]; // para mostrarlo o probarlo: 1 es el agarre de siempre
+
+    // dirección: el giro está limitado por lo que agarran las gomas de adelante (v²/r ≤ agarre), que crece con
+    // la velocidad por la carga aerodinámica; aun así, a más velocidad las curvas se abren
+    const target = input.steer;
+    this.steer += (target - this.steer) * Math.min(1, dt * 10);
+    const yaw = yawRate(sp, front);
     const steerYaw = this.steer * yaw * Math.sign(this.speed || 1);
+    // si la cola no alcanza a sostener la curva, se abre: el auto gira más de lo que pide el volante
+    // (contravolanteando o levantando el pie, la cola vuelve a agarrar)
+    const loose = Math.max(0, sp * Math.abs(steerYaw) - rear);
+    if (loose > 0) this.spin += ((Math.sign(steerYaw) * loose * OVERSTEER) / Math.max(sp, 1) - this.spin) * Math.min(1, dt * LOOSE_RATE);
     // con el volante la velocidad dobla junto con el auto; el giro de un golpe, en cambio, hace girar el auto
     // pero la velocidad sigue para donde iba: esa diferencia queda como deslizamiento de costado
     const turn = this.spin * dt, c = Math.cos(turn), s = Math.sin(turn);
     [this.speed, this.slip] = [this.speed * c + this.slip * s, -this.speed * s + this.slip * c];
     this.omega = steerYaw + this.spin;
     this.angle += this.omega * dt;
-    // las gomas frenan el deslizamiento y el giro
+    // las gomas frenan el deslizamiento y el giro; mientras la cola está suelta, el giro no y el deslizamiento
+    // apenas: el auto queda cruzado y la trompa apunta más adentro de lo que va
     const settle = (value, rate) => value - Math.sign(value) * Math.min(Math.abs(value), rate * dt);
-    this.slip = settle(this.slip, grip * SLIP_GRIP);
-    this.spin = settle(this.spin, (SPIN_DAMP + grip * SPIN_GRIP) * (this.onGrass ? 0.5 : 1));
+    this.slip = settle(this.slip, grip * SLIP_GRIP * (loose > 0 ? LOOSE_SLIP : 1));
+    this.spin = settle(this.spin, (SPIN_DAMP + grip * SPIN_GRIP) * (this.onGrass ? 0.5 : 1) * (loose > 0 ? 0 : 1));
 
     // movimiento (hacia adelante y de costado) y choques contra los muros
     const ca = Math.cos(this.angle), sa = Math.sin(this.angle);
