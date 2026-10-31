@@ -13,6 +13,7 @@ import { CAMERA_MODES, CAMERA_NAMES, Recorder, replayCamera, tvCameras } from '.
 import { DIFFICULTIES, LAP_OPTIONS, TEAMS, car as teamCar, gridOrder, rivalCars, rivalPaces, rivalSetups } from './teams.js';
 import { EngineAudio } from './audio.js';
 import { NeuralDriver, Policy } from './policy.js';
+import { RubberMap } from './rubber.js';
 
 const VIEW_W = 960;
 const VIEW_H = 540;
@@ -335,6 +336,8 @@ function resetGame(track) {
   towerClock = 0;
   game.lightsTotal = game.countdown = LIGHT_FIRST + 4 * LIGHT_GAP + LIGHT_HOLD[0] + Math.random() * (LIGHT_HOLD[1] - LIGHT_HOLD[0]);
   if (!guides.has(track)) guides.set(track, racingLine(track, carProfile));
+  // la goma arranca con la franja tenue de otra categoría sobre la trazada y la carrera la va marcando
+  game.rubber = new RubberMap(track, guides.get(track).offset);
   if (!aiLines.has(track)) aiLines.set(track, racingLine(track, carProfile, { brakeUse: AI_BRAKE_USE }));
   if (!tvCams.has(track)) tvCams.set(track, tvCameras(track));
   hud.stage.classList.remove('replay');
@@ -421,6 +424,7 @@ function update(dt) {
     }
     for (const e of g.entries) if (e.driver) raceLine(g, e);
     for (const e of g.entries) e.dist += Math.abs(e.car.speed) * dt;
+    g.rubber.update(dt, states);
     g.recorder.add(dt, g.entries);
     timePasses(g);
   }
@@ -671,7 +675,7 @@ async function drawReplay() {
   });
   const cam = replayCamera(r.mode, pose, track, tvCams.get(track), r.tv, r.t, renderer.w / 2 / 0.7);
   renderer.guide = null;
-  renderer.rubber = guides.get(track)?.offset ?? null;
+  renderer.rubber = g.rubber; // como quedó al terminar
   // sonido: se escucha desde la cámara; la de TV está quieta, las demás van con el auto
   const moving = cam.mode !== 'tv';
   playEngines(poses.map((p) => ({ ...p, x: p.x * M, y: p.y * M })), cam, M,
@@ -830,7 +834,7 @@ async function draw(time) {
   const guide = showGuide ? line : null;
   if (guide) paintGuide(guide, track, car);
   renderer.guide = guide;
-  renderer.rubber = line ? line.offset : null; // la goma se ve siempre, aunque la trazada esté oculta
+  renderer.rubber = g.rubber;
   // nuestro auto en 3D
   const dt = Math.min(0.1, Math.max(0, (time - lastDraw) / 1000));
   lastDraw = time;

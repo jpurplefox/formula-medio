@@ -6,6 +6,7 @@
 
 import { KERB_W, stationAt, kerbAmount, sampleField } from './track.js';
 import { asphaltTexture, grassTexture, macroNoise, sample, wallTexture } from './textures.js';
+import { RUBBER_DARK, RubberMap } from './rubber.js';
 
 export const MAX_DIST = 140;
 export const FOG_START = 25;
@@ -18,7 +19,6 @@ export const KERB_H = 0.07; // altura del lomo del piano (en celdas)
 export const LINE_W = 0.22; // ancho de la línea blanca de borde (en celdas)
 export const STRIPE = 1.6; // largo de cada franja del piano (en celdas)
 export const GUIDE_W = 0.2; // medio ancho de la trazada ideal (en celdas)
-export const RUBBER_W = 0.9; // medio ancho de la goma oscura que dejan los autos sobre la trazada (en celdas)
 export const ROAD_TPC = 64; // texeles de asfalto por celda (la textura se repite cada 4 celdas, ~10 m)
 export const GRASS_TPC = 32; // texeles de césped por celda
 export const GRASS_BAND = 2.2; // ancho de cada franja del corte de césped (en celdas)
@@ -131,7 +131,7 @@ export class Renderer {
     }
     this.lightFor = new WeakMap();
     this.guide = null; // trazada ideal ({ offset, color } por celda de la línea central), o null
-    this.rubber = null; // por dónde pasa la trazada (offset por celda), para oscurecer el asfalto con goma
+    this.rubber = null; // la goma sobre el asfalto (RubberMap de rubber.js, o lo que se le copió a un worker)
   }
 
   // models: autos 3D, cada uno { model, x, y, z, angle, pitch, roll, dive, steer, spin, head, alpha, shadow, hide, meters }
@@ -363,12 +363,8 @@ export class Renderer {
     }
 
     let roadC = sample(this.asphalt, fx * ROAD_TPC, fy * ROAD_TPC, fw * ROAD_TPC);
-    // goma: por donde pasa la trazada el asfalto está más oscuro, con los bordes difusos
-    let dark = 0;
-    if (this.rubber && st >= 0) {
-      const d = Math.abs(side - this.rubber[st | 0]) / RUBBER_W;
-      if (d < 1) dark = 0.2 * (1 - d * d);
-    }
+    // goma: por donde pasaron las ruedas el asfalto está más oscuro
+    const dark = this.rubber && st >= 0 ? RUBBER_DARK * RubberMap.sample(this.rubber, st, side) : 0;
     roadC = shade(roadC, light * (1 - dark));
     // línea de largada a cuadros
     const ax = fx - line.x, ay = fy - line.y;
@@ -702,7 +698,7 @@ class TerrainPool {
   // Dibuja cielo y terreno en r.buf y r.clip. Devuelve false si no se pudo (y hay que dibujar en el hilo principal).
   async draw(r, track, cam, horizon) {
     if (this.failed) return false;
-    const offset = r.rubber || (r.guide && r.guide.offset) || null;
+    const offset = (r.guide && r.guide.offset) || null;
     if (track !== this.track || offset !== this.offset) {
       // el circuito (y por dónde pasa la trazada) se manda una sola vez, copiado a cada worker
       const { W, H, height, sdf, lat, station, kerbLeft, kerbRight, runoff, line } = track;
@@ -717,8 +713,15 @@ class TerrainPool {
       zoom: cam.zoom || 1,
       horizon,
       guideColor: r.guide ? r.guide.color.slice() : null,
-      rubber: !!r.rubber,
+      // la goma: una copia cuando cambia (cada medio segundo), si no `true` (la misma de antes) o null (sin goma)
+      rubber: r.rubber ? true : null,
     };
+    const m = r.rubber;
+    if (m && (m !== this.rubberMap || m.version !== this.rubberVersion)) {
+      frame.rubber = { length: m.length, rows: m.rows, lanes: m.lanes, span: m.span, bytes: m.bytes };
+      this.rubberMap = m;
+      this.rubberVersion = m.version;
+    }
     const results = await Promise.all(this.parts.map((p) => new Promise((resolve) => {
       p.done = resolve;
       p.worker.postMessage({ ...frame, pix: p.pix, clip: p.clip }, [p.pix.buffer, p.clip.buffer]);

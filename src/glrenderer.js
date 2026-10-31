@@ -9,10 +9,11 @@
 // "píxeles virtuales" de 960 de ancho que usa el resto del juego.
 
 import { KERB_W, kerbAmount, stationAt } from './track.js';
+import { RUBBER_DARK } from './rubber.js';
 import { asphaltTexture, grassTexture, macroNoise, wallTexture } from './textures.js';
 import {
   FOG_END, FOG_START, GRASS_BAND, GRASS_TPC, GUIDE_W, KERB_H, LINE_W, MACRO_TPC, MAX_DIST, MODEL_NEAR, NEAR_RISE, PLANE_LEN,
-  BODY_PIVOT_Z, ROAD_TPC, RUBBER_W, SHADOW, SHADOW_SHIFT, STRIPE, SUN, WALL_H, WALL_STRIPE, WALL_T, Z_NEAR,
+  BODY_PIVOT_Z, ROAD_TPC, SHADOW, SHADOW_SHIFT, STRIPE, SUN, WALL_H, WALL_STRIPE, WALL_T, Z_NEAR,
 } from './renderer.js';
 import { sampleField } from './track.js';
 import { lineFrame, pointAt } from './ai.js';
@@ -60,9 +61,10 @@ void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
 const TERRAIN_FS = `#version 300 es
 precision highp float;
 precision highp sampler2D;
-uniform sampler2D uField, uStation, uLine, uAsphalt, uGrass, uWall, uMacro;
+uniform sampler2D uField, uStation, uLine, uAsphalt, uGrass, uWall, uMacro, uRubber;
 uniform vec2 uMap;
 uniform int uLineN;
+uniform vec2 uRubberSize; // largo de la vuelta y de la línea central al último carril (celdas)
 uniform float uRunoff;
 uniform vec4 uStart;
 uniform float uStartHalf;
@@ -76,7 +78,7 @@ const float MAX_DIST = ${glsl(MAX_DIST)}, NEAR = ${glsl(MODEL_NEAR)}, FAR = ${gl
 ${DEPTH}
 const float WALL_H = ${glsl(WALL_H)}, WALL_T = ${glsl(WALL_T)}, WALL_STRIPE = ${glsl(WALL_STRIPE)};
 const float KERB_W = ${glsl(KERB_W)}, KERB_H = ${glsl(KERB_H)}, LINE_W = ${glsl(LINE_W)}, STRIPE = ${glsl(STRIPE)};
-const float RUBBER_W = ${glsl(RUBBER_W)};
+const float RUBBER_DARK = ${glsl(RUBBER_DARK)};
 const float ROAD_TPC = ${glsl(ROAD_TPC)}, GRASS_TPC = ${glsl(GRASS_TPC)}, GRASS_BAND = ${glsl(GRASS_BAND)}, MACRO_TPC = ${glsl(MACRO_TPC)};
 const vec3 KERB_RED = vec3(200.0, 30.0, 30.0) / 255.0, KERB_WHITE = vec3(235.0) / 255.0, EDGE_WHITE = vec3(225.0) / 255.0;
 const vec3 LINE_BLACK = vec3(20.0) / 255.0, LINE_WHITE = vec3(245.0) / 255.0, WALL_TOP = vec3(150.0, 150.0, 155.0) / 255.0;
@@ -130,8 +132,9 @@ vec3 ground(vec2 p, float fw, float s, float k, float st, float side, float lit)
   vec3 road = textureGrad(uAsphalt, p * ROAD_TPC / 256.0, vec2(ga, 0.0), vec2(0.0, ga)).rgb;
   float dark = 0.0;
   if ((uFlags & 2) != 0 && st >= 0.0) {
-    float dd = abs(side - lineData(int(st)).b) / RUBBER_W;
-    if (dd < 1.0) dark = 0.2 * (1.0 - dd * dd);
+    // la goma del mapa (rubber.js): a lo largo según st, a lo ancho según de qué lado y cuánto
+    float v = (side / uRubberSize.y + 1.0) * 0.5;
+    if (v > 0.0 && v < 1.0) dark = RUBBER_DARK * texture(uRubber, vec2(st / uRubberSize.x, v)).r;
   }
   road = shade(road, light * (1.0 - dark));
   vec2 a2 = p - uStart.xy;
@@ -544,6 +547,24 @@ export class GLRenderer {
     return t;
   }
 
+  // la goma (rubber.js) en una textura de filas × carriles: se vuelve a subir cuando el mapa cambia
+  rubberTexture(map) {
+    const gl = this.gl;
+    if (this.rubberMap !== map) {
+      if (this.rubberTex) gl.deleteTexture(this.rubberTex);
+      this.rubberTex = this.texture(map.bytes, map.rows, map.lanes, { format: 'R8' });
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      this.rubberMap = map;
+      this.rubberVersion = map.version;
+    } else if (this.rubberVersion !== map.version) {
+      gl.bindTexture(gl.TEXTURE_2D, this.rubberTex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, map.rows, map.lanes, gl.RED, gl.UNSIGNED_BYTE, map.bytes);
+      this.rubberVersion = map.version;
+    }
+    return this.rubberTex;
+  }
+
   bind(unit, tex, prog, name) {
     const gl = this.gl;
     gl.activeTexture(gl.TEXTURE0 + unit);
@@ -576,8 +597,8 @@ export class GLRenderer {
       };
       this.trackData.set(track, t);
     }
-    // por celda de la línea central: pianos a cada lado y por dónde pasa la trazada (para la goma y la guía)
-    const offset = this.rubber || (this.guide && this.guide.offset) || null;
+    // por celda de la línea central: pianos a cada lado y por dónde pasa la trazada (para la guía)
+    const offset = (this.guide && this.guide.offset) || null;
     if (t.offset !== offset) {
       const d = new Float32Array(LINE_TEX_W * t.rows * 4);
       for (let i = 0; i < t.n; i++) {
@@ -720,6 +741,8 @@ export class GLRenderer {
     const tp = this.terrain;
     gl.useProgram(tp.p);
     gl.depthFunc(gl.ALWAYS);
+    // la goma se sube antes de enganchar las demás: subirla usa la unidad activa y pisaría la última
+    const rubber = this.rubber && this.rubberTexture(this.rubber);
     this.bind(0, t.field, tp, 'uField');
     this.bind(1, t.station, tp, 'uStation');
     this.bind(2, t.line, tp, 'uLine');
@@ -734,6 +757,10 @@ export class GLRenderer {
     gl.uniform4f(tp.u.uStart, line.x, line.y, line.dx, line.dy);
     gl.uniform1f(tp.u.uStartHalf, line.half);
     gl.uniform1i(tp.u.uFlags, this.rubber ? 2 : 0);
+    if (this.rubber) {
+      this.bind(3, rubber, tp, 'uRubber');
+      gl.uniform2f(tp.u.uRubberSize, this.rubber.length, this.rubber.span);
+    }
     gl.uniform3f(tp.u.uCam, cam.x, cam.y, cam.z);
     gl.uniform1f(tp.u.uGround, cam.ground);
     gl.uniform1f(tp.u.uZStart, Math.max(Z_NEAR, ((cam.z - cam.ground - NEAR_RISE) * this.P) / Math.max(1, this.h - horizon)));

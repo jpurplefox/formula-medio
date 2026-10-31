@@ -74,7 +74,10 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
    terreno y se pinta lo que todavía no estaba tapado. El color de cada punto lo decide una función tipo
    *fragment shader* (asfalto, pianos, pasto, línea a cuadros) con sombreado según la pendiente.
    Las texturas (asfalto, césped, muros) se generan por código en `src/textures.js`, con *mipmaps* para que no
-   titilen a lo lejos; el césped tiene franjas de corte, y sobre la trazada ideal el asfalto está oscurecido por la goma.
+   titilen a lo lejos; el césped tiene franjas de corte. La goma sobre el asfalto (`src/rubber.js`) arranca como una
+   franja tenue sobre la trazada ideal (como si antes hubiera corrido otra categoría) y se va marcando por donde pasan
+   las ruedas de cada auto, más en frenadas, curvas y salidas: a las 3 vueltas ya se ve la línea de carrera y a las
+   10 está bien negra.
    Los árboles y los carteles son sprites. Los autos (el tuyo, los rivales y el fantasma) son **modelos 3D** de unas mil caras,
    armados en código con secciones redondeadas, tubos y cilindros (`src/carmodel.js`: trompa, pontones, alerones
    de varios elementos, halo, espejos, suspensión, piloto con casco, visera, alerón y collar HANS, y ruedas con llanta de rayos) y dibujados por un rasterizador propio

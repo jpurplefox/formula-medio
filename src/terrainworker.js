@@ -3,7 +3,7 @@
 
 import { Renderer } from './renderer.js';
 
-let r = null, x0 = 0, x1 = 0, track = null, offset = null;
+let r = null, x0 = 0, x1 = 0, track = null, offset = null, rubber = null;
 
 onmessage = ({ data: m }) => {
   if (m.type === 'init') {
@@ -15,7 +15,8 @@ onmessage = ({ data: m }) => {
     offset = m.offset;
   } else if (m.type === 'frame') {
     r.guide = m.guideColor && offset ? { offset, color: m.guideColor } : null;
-    r.rubber = m.rubber ? offset : null;
+    if (typeof m.rubber === 'object') rubber = m.rubber; // null, o una copia nueva del mapa de goma
+    r.rubber = rubber;
     r.setZoom(m.zoom);
     r.drawColumns(track, m.cam, m.horizon, x0, x1);
     // se empaqueta la franja (fila por fila) y las marcas de profundidad de sus columnas

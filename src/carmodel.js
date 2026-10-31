@@ -141,8 +141,40 @@ function tube(path, t, color, sides = 4, flat = 1) {
   return loft(rings, color);
 }
 
-// placa fina (alerones): de una sección en x0 a otra en x1, cada una con su altura de abajo y su espesor
+// placa fina (el alerón del casco): de una sección en x0 a otra en x1, cada una con su altura de abajo y su espesor
 const plate = (x0, z0, x1, z1, hw, t, color, yc = 0) => loft([sec(x0, yc, hw, z0, z0 + t), sec(x1, yc, hw, z1, z1 + t)], color);
+
+// Perfil de ala (sección en el plano x-z, a la altura y): del borde de ataque `le` ([x, z], adelante) al de fuga
+// `te`, con espesor máximo t (m) cerca del frente y combado hacia abajo, como las alas invertidas de un F1 que
+// empujan el auto contra el piso. n puntos por cara, más juntos en los bordes.
+function airfoil(y, le, te, t, camber = 0.05, n = 6) {
+  const c = Math.hypot(te[0] - le[0], te[1] - le[1]);
+  const ux = (te[0] - le[0]) / c, uz = (te[1] - le[1]) / c;
+  const nx = uz * Math.sign(-ux), nz = -ux * Math.sign(-ux); // perpendicular a la cuerda, hacia arriba
+  // medio espesor de un perfil NACA de 4 cifras (máximo 0,5 en un 30 % de la cuerda), con el borde de fuga cerrado
+  const half = (u) => (t / 0.2) * (0.2969 * Math.sqrt(u) - 0.126 * u - 0.3516 * u * u + 0.2843 * u ** 3 - 0.1036 * u ** 4);
+  const at = (u, side) => {
+    const off = -camber * c * 4 * u * (1 - u) + side * half(u);
+    return [le[0] + ux * c * u + nx * off, y, le[1] + uz * c * u + nz * off];
+  };
+  const us = [...Array(n + 1).keys()].map((i) => (1 - Math.cos((Math.PI * i) / n)) / 2);
+  return [...us.map((u) => at(u, 1)), ...us.slice(1, -1).reverse().map((u) => at(u, -1))];
+}
+
+// Ala de punta a punta (y de -hw a hw): wing(y) da { le, te, t } en cada estación, para que cambie a lo ancho
+function wing(hw, at, color, stations = 7) {
+  return loft([...Array(stations).keys()].map((i) => {
+    const y = -hw + (2 * hw * i) / (stations - 1), { le, te, t } = at(y);
+    return airfoil(y, le, te, t);
+  }), color);
+}
+
+// placa lateral de un alerón: de perfil, un polígono convexo de esquinas redondeadas (puntos [x, z]),
+// de espesor t centrada en y
+function endplate(y, poly, radii, t, color) {
+  const side = (yy) => rounded(0, poly, radii, 3).map(([, x, z]) => [x, yy, z]);
+  return loft([side(y - t / 2), side(y + t / 2)], color);
+}
 const box = (x0, x1, yc, hw, z0, z1, color, r = 0) => loft([sec(x0, yc, hw, z0, z1, r), sec(x1, yc, hw, z0, z1, r)], color);
 
 // cilindro con el eje en y (ruedas y llantas)
@@ -344,6 +376,11 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
     sec(1.7, 0, 0.2, 0.16, 0.46, 0.09),
     sec(2.2, 0, 0.14, 0.14, 0.34, 0.07),
     sec(2.62, 0, 0.09, 0.12, 0.23, 0.045),
+    // la punta: se afina y se redondea hasta el borde de ataque del alerón
+    sec(2.74, 0, 0.068, 0.115, 0.2, 0.04),
+    sec(2.83, 0, 0.042, 0.115, 0.172, 0.028),
+    sec(2.88, 0, 0.02, 0.12, 0.155, 0.016),
+    sec(2.9, 0, 0.006, 0.128, 0.146, 0.006),
   ], body));
   // abertura de la cabina (oscura, apenas por encima del monocasco)
   add(box(-0.45, 0.2, 0, 0.26, 0.55, 0.672, COCKPIT, 0.08));
@@ -457,17 +494,26 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
   }
   add(loft(fillet, CARBON));
 
-  // alerón delantero: tres elementos escalonados y las placas laterales
-  add(plate(2.82, 0.06, 2.45, 0.07, 1.0, 0.03, CARBON));
-  add(plate(2.52, 0.12, 2.3, 0.16, 0.95, 0.025, body));
-  add(plate(2.38, 0.2, 2.2, 0.25, 0.9, 0.022, body));
-  both((s) => add(box(2.18, 2.84, s * 0.98, 0.02, 0.05, 0.32, CARBON, 0.01)));
+  // alerón delantero: tres elementos con perfil de ala, escalonados; los dos flaps suben y se paran hacia las
+  // puntas (k: 0 en el centro, 1 en la punta), y las placas laterales bajan hacia adelante con el borde redondeado
+  // Visto desde arriba tienen flecha: el centro va más adelante y las puntas se redondean hacia atrás
+  // (sweep: cuánto retrocede el borde de ataque a lo ancho; round: cuánto más en la punta misma)
+  const k = (y, hw) => (y / hw) ** 2;
+  const sweep = (y) => 0.1 * k(y, 0.98) + 0.12 * k(y, 0.98) ** 6;
+  add(wing(0.98, (y) => ({ le: [2.9 - sweep(y), 0.065], te: [2.45 - 0.03 * k(y, 0.98), 0.08], t: 0.032 }), CARBON, 11));
+  add(wing(0.96, (y) => ({ le: [2.52 - 0.6 * sweep(y), 0.125 + 0.02 * k(y, 0.96)], te: [2.28 - 0.04 * k(y, 0.96), 0.165 + 0.05 * k(y, 0.96)], t: 0.026 }), body, 9));
+  add(wing(0.92, (y) => ({ le: [2.38 - 0.4 * sweep(y), 0.205 + 0.025 * k(y, 0.92)], te: [2.16 - 0.04 * k(y, 0.92), 0.255 + 0.06 * k(y, 0.92)], t: 0.022 }), body, 9));
+  both((s) => add(endplate(s * 0.99, [[2.12, 0.04], [2.7, 0.04], [2.7, 0.11], [2.42, 0.33], [2.14, 0.35]],
+    [0.015, 0.03, 0.05, 0.12, 0.03], 0.02, CARBON)));
 
-  // alerón trasero: plano principal y flap inclinados, placas, ala baja y pilar; abajo, la luz de lluvia
-  add(plate(-2.4, 0.76, -2.65, 0.8, 0.5, 0.04, CARBON));
-  add(plate(-2.6, 0.86, -2.78, 0.95, 0.5, 0.03, body));
-  both((s) => add(box(-2.82, -2.35, s * 0.52, 0.02, 0.36, 1.0, body, 0.01)));
-  add(plate(-2.35, 0.36, -2.6, 0.4, 0.45, 0.03, CARBON));
+  // alerón trasero: plano principal y flap con perfil de ala (un poco más bajos en el centro, como una cuchara),
+  // placas laterales con el borde de arriba redondeado, ala baja y pilar; abajo, la luz de lluvia
+  const spoon = (y) => -0.02 * (1 - (y / 0.51) ** 2);
+  add(wing(0.51, (y) => ({ le: [-2.37, 0.765 + spoon(y)], te: [-2.66, 0.81 + spoon(y)], t: 0.045 }), CARBON));
+  add(wing(0.51, (y) => ({ le: [-2.6, 0.865 + spoon(y)], te: [-2.8, 0.965 + spoon(y)], t: 0.03 }), body));
+  both((s) => add(endplate(s * 0.52, [[-2.68, 0.34], [-2.33, 0.34], [-2.33, 0.92], [-2.46, 1.01], [-2.84, 1.01], [-2.86, 0.58]],
+    [0.06, 0.02, 0.08, 0.05, 0.05, 0.08], 0.02, body)));
+  add(wing(0.45, () => ({ le: [-2.33, 0.36], te: [-2.6, 0.4], t: 0.035 }), CARBON));
   add(box(-2.5, -2.2, 0, 0.03, 0.4, 0.78, CARBON, 0.01));
   add(box(-2.64, -2.58, 0, 0.05, 0.25, 0.32, RAIN_LIGHT));
 
