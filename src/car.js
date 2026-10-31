@@ -61,6 +61,20 @@ export const LAUNCH_WINDOW = [9500, 10500]; // rpm de la largada perfecta
 const LAUNCH_TIME = 1.6; // cuánto dura el efecto de la largada (s)
 const REV_RATE = 6500; // cuánto suben las rpm por segundo en punto muerto, a fondo (más lento cerca del corte)
 const REV_DROP = 7000; // y cuánto bajan sin acelerar
+// desgaste de las gomas: se gastan al andar, más cuanto más se exige su agarre (doblando, frenando, acelerando,
+// deslizando); gastadas del todo agarran y frenan WEAR_GRIP menos
+const WEAR_GRIP = 0.08;
+const WEAR_BASE = 0.3; // parte del desgaste que es sólo por andar, aunque sea derecho y suave
+const WEAR_USE = 1.33; // la otra parte se escala para que una vuelta normal promedie 1 (medido con rl/wear.js)
+
+// Variación entre autos: multiplicadores sobre el auto medido (1 = igual). La red los recibe como entradas.
+//   power     empuje del motor
+//   topSpeed  velocidad punta (menos resistencia del aire)
+//   grip      agarre lateral
+//   brakes    frenada
+//   wear      qué tan rápido se gastan las gomas
+export const SETUP_KEYS = ['power', 'topSpeed', 'grip', 'brakes', 'wear'];
+export const SAME_SETUP = Object.freeze({ power: 1, topSpeed: 1, grip: 1, brakes: 1, wear: 1 });
 
 // Interpola una tabla [[x, y], ...] ordenada por x; fuera del rango usa el extremo
 // giro del auto (rad/s) con el volante a fondo, a velocidad sp (m/s) y con ese agarre lateral (m/s²)
@@ -133,6 +147,9 @@ export class Car {
     this.gear = 1; // 0 = marcha atrás
     this.rpm = IDLE_RPM;
     this.manual = false;
+    this.setup = SAME_SETUP;
+    this.wear = 0; // desgaste de las gomas, 0 (nuevas) a 1 (gastadas)
+    this.wearRate = 0; // desgaste por metro andando normal (0 = no se gastan); lo fija el juego según la carrera
   }
 
   get gears() {
@@ -227,7 +244,9 @@ export class Car {
     this.rpm += (Math.min(rpm, p.maxRpm) - this.rpm) * Math.min(1, dt * 20);
 
     // sin pedales frenan la resistencia del aire y el freno motor, medidos (en el rebufo, menos aire)
-    const losses = lookup(p.coast, v) - this.draft * DRAFT_DRAG * this.drag(v);
+    const setup = this.setup, tyres = 1 - WEAR_GRIP * this.wear;
+    // con más velocidad punta, menos resistencia del aire: v²/topSpeed²
+    const losses = lookup(p.coast, v) / setup.topSpeed ** 2 - this.draft * DRAFT_DRAG * this.drag(v);
     let drive = 0, braking = 0; // lo que empujan y frenan las gomas (m/s²), para el balance
     if (this.speed < 0 || (brk && !thr && this.speed <= 0.5)) {
       // marcha atrás: el freno empuja para atrás; el acelerador primero frena
@@ -239,15 +258,15 @@ export class Car {
     } else {
       // a fondo, la tabla medida (aceleración neta); a medias, una parte del empuje menos las pérdidas.
       // Cerca de la velocidad punta la resistencia del aire se come todo el empuje (en el rebufo, más arriba)
-      const aero = Math.min(1, Math.max(0, (p.topSpeed + 2 + DRAFT_TOP * this.draft - v) / 4));
+      const aero = Math.min(1, Math.max(0, (p.topSpeed * setup.topSpeed + 2 + DRAFT_TOP * this.draft - v) / 4));
       // en la largada, si se ahogó o patina, llega menos aceleración al piso
       const launch = this.launchTime > 0 ? this.launchFactor : 1;
       // el rebufo devuelve la parte de la resistencia del aire que se ahorra
       const draft = power > 0 ? this.draft * DRAFT_DRAG * this.drag(v) : 0;
-      const full = this.speed < (this.onGrass ? GRASS_MAX : Infinity) ? (lookup(p.accel, v) * power + draft) * aero * launch : 0;
+      const full = this.speed < (this.onGrass ? GRASS_MAX : Infinity) ? (lookup(p.accel, v) * power * setup.power + draft) * aero * launch : 0;
       drive = thr * (full + losses);
       // frenada medida: más fuerte a más velocidad, por la carga aerodinámica (ya incluye las pérdidas)
-      braking = brk * Math.max(0, p.brake.base + p.brake.perV2 * v * v - losses);
+      braking = brk * Math.max(0, (p.brake.base + p.brake.perV2 * v * v) * setup.brakes * tyres - losses);
       this.speed = Math.max(0, this.speed + (drive - losses - braking) * dt);
     }
     // el peso se pasa según lo que empujan o frenan las gomas, con un poco de demora
@@ -270,6 +289,7 @@ export class Car {
     let grip = p.lateralGrip.base + p.lateralGrip.perV2 * sp * sp;
     // carga sobre las gomas (por kg): el peso más la carga aerodinámica, que crece igual que el agarre
     const load = GRAVITY * (grip / p.lateralGrip.base);
+    grip *= setup.grip * tyres;
     if (this.onGrass) grip *= 0.5;
     // balance: qué parte del peso pasa adelante (frenando) o atrás (acelerando), y cuánto agarra cada eje
     // para doblar con esa carga y lo que le queda después de frenar o empujar
@@ -303,6 +323,11 @@ export class Car {
     // las gomas frenan el deslizamiento y el giro; mientras la cola está suelta, el giro no y el deslizamiento
     // apenas: el auto queda cruzado y la trompa apunta más adentro de lo que va
     const settle = (value, rate) => value - Math.sign(value) * Math.min(Math.abs(value), rate * dt);
+    // desgaste: cuánto se exige el agarre (doblar + empujar o frenar, sobre lo que agarran) y el deslizamiento
+    if (this.wearRate) {
+      const use = (sp * Math.abs(this.omega) + Math.abs(this.aLon)) / grip + Math.abs(this.slip) / 5;
+      this.wear = Math.min(1, this.wear + this.wearRate * setup.wear * (WEAR_BASE + WEAR_USE * (1 - WEAR_BASE) * use) * sp * dt);
+    }
     this.slip = settle(this.slip, grip * SLIP_GRIP * (loose > 0 ? LOOSE_SLIP : 1));
     this.spin = settle(this.spin, (SPIN_DAMP + grip * SPIN_GRIP) * (this.onGrass ? 0.5 : 1) * (loose > 0 ? 0 : 1));
 

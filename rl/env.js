@@ -10,10 +10,13 @@
 //   - por cada golpe contra el muro, según lo fuerte
 // El episodio termina si pasa demasiado tiempo en el pasto, si se queda quieto o si va para atrás,
 // y se corta (sin ser culpa del auto) a los EPISODE_STEPS.
+//
+// Cada episodio el auto es un poco distinto (motor, punta, agarre, frenos, ritmo de desgaste: ± spread) y larga
+// con las gomas a medio gastar; la red recibe esos datos (sensors.js), así aprende a manejar cualquier auto.
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Car, DEFAULT_PROFILE } from '../src/car.js';
+import { Car, DEFAULT_PROFILE, SETUP_KEYS } from '../src/car.js';
 import { racingLine } from '../src/racingline.js';
 import { OBS_SIZE, observe, stationAt, trackHeading } from '../src/sensors.js';
 import { loadTrack } from './tracks.js';
@@ -59,9 +62,21 @@ export function rng(seed) {
   };
 }
 
+// Un auto al azar: cada multiplicador entre 1 - spread y 1 + spread (el desgaste varía más: ±30 %)
+export function randomSetup(rand, spread) {
+  return Object.fromEntries(SETUP_KEYS.map((k) => [k, 1 + (2 * rand() - 1) * (k === 'wear' ? 0.3 : spread)]));
+}
+
+// Gomas al azar: carreras de 3 a 20 vueltas (desgaste por metro) y en cualquier momento de la carrera
+export function randomTyres(car, rand, track) {
+  car.wearRate = 1 / ((3 + 17 * rand()) * track.length * track.meters);
+  car.wear = 0.9 * rand();
+}
+
 export class RaceEnv {
-  constructor({ trackIds, seed = 1 }) {
+  constructor({ trackIds, seed = 1, spread = 0.02 }) {
     this.trackIds = trackIds;
+    this.spread = spread;
     this.rand = rng(seed);
     this.obs = new Float32Array(OBS_SIZE);
   }
@@ -85,6 +100,8 @@ export class RaceEnv {
     while (car.gear < car.gears && car.rpmAt(car.speed, car.gear) > profile.upshiftRpm) car.gear++;
     car.rpm = Math.max(4000, car.rpmAt(car.speed, car.gear));
     car.throttle = 0.5;
+    car.setup = randomSetup(this.rand, this.spread);
+    randomTyres(car, this.rand, track);
     this.car = car;
     this.u = stationAt(track, car.x, car.y);
     this.steps = 0;

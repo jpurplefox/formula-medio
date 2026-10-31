@@ -291,6 +291,8 @@ function resetGame(track) {
       revTarget: LAUNCH_WINDOW[0] - 300 + Math.random() * 1500, react: 0.12 + Math.random() * 0.22,
     };
   });
+  const wearRate = 1 / (wearLaps({ trial, laps: settings.laps }) * track.length * track.meters);
+  for (const e of [...rivals, player]) e.car.wearRate = wearRate;
   game = {
     track,
     car,
@@ -708,15 +710,18 @@ function suspension(b, aLat, aLon, dt) {
 }
 
 // ---------- desgaste de las gomas ----------
-// Largan nuevas: lisas y brillantes. El brillo se va en la primera parte de la primera vuelta y el desgaste
-// (las marcas en la banda) aparece de a poco hasta estar completo al empezar la última vuelta.
+// Largan nuevas: lisas y brillantes. El brillo se va en la primera parte de la primera vuelta. El desgaste es
+// físico (car.js: se gastan más cuanto más se las exige y agarran menos) y está calibrado para que, manejando
+// normal, se gasten del todo al terminar la carrera; las marcas en la banda lo muestran.
 const SHINE_LAPS = 0.6; // vueltas que dura el brillo
 const TRIAL_WEAR_LAPS = 3; // en contrarreloj, vueltas hasta el desgaste completo
 
-function tyres(g, dist) {
+const wearLaps = (g) => (g.trial ? TRIAL_WEAR_LAPS : g.laps);
+
+// wear: el desgaste del auto (en la repetición no se guarda: se estima por la distancia recorrida)
+function tyres(g, dist, wear = null) {
   const laps = dist / (g.track.length * g.track.meters);
-  const full = g.trial ? TRIAL_WEAR_LAPS : Math.max(0.75, g.laps - 1);
-  return { wear: Math.min(1, laps / full), shine: Math.max(0, 1 - laps / SHINE_LAPS) };
+  return { wear: wear ?? Math.min(1, laps / wearLaps(g)), shine: Math.max(0, 1 - laps / SHINE_LAPS) };
 }
 
 // ---------- hacia dónde mira cada piloto ----------
@@ -790,7 +795,7 @@ async function draw(time) {
     models.push({
       model: e.model, x: c.x, y: c.y, z: heightAt(c.x, c.y), angle: c.angle, meters: M,
       pitch: Math.atan(c.slope), roll: e.body?.roll, dive: e.body?.dive,
-      steer: wheelAngle(c.steer, c.speed, c.profile), spin: e.spin, head: e.head, ...tyres(g, e.dist), shadow: true,
+      steer: wheelAngle(c.steer, c.speed, c.profile), spin: e.spin, head: e.head, ...tyres(g, e.dist, c.wear), shadow: true,
     });
   }
 
@@ -833,7 +838,7 @@ async function draw(time) {
     // la carrocería rola y cabecea sobre la suspensión; desde la cabina no, porque la cámara va pegada a ella
     // (ahí el cabeceo mueve la vista: ver cam.pitch)
     roll: cockpitView ? 0 : g.player.body?.roll, dive: cockpitView ? 0 : g.player.body?.dive,
-    steer: wheelAngle(car.steer, car.speed, car.profile), spin: wheelSpin, head: g.player.head, ...tyres(g, g.player.dist), shadow: true, hide: cockpitView ? 'helmet' : null,
+    steer: wheelAngle(car.steer, car.speed, car.profile), spin: wheelSpin, head: g.player.head, ...tyres(g, g.player.dist, car.wear), shadow: true, hide: cockpitView ? 'helmet' : null,
   });
   playEngines(g.entries.map((e) => ({ rpm: e.car.rpm, throttle: e.car.throttle, gear: e.car.gear, x: e.car.x * M, y: e.car.y * M, angle: e.car.angle, speed: e.car.speed })),
     cam, M, Math.cos(car.angle) * car.speed, Math.sin(car.angle) * car.speed, cockpitView ? g.entries.indexOf(g.player) : -1);

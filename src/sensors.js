@@ -2,6 +2,7 @@
 // Se usa igual para entrenar (en Node) y para manejar en el juego.
 //
 //   auto        velocidad, deslizamiento, giro, volante, pedales, marcha, rpm, agarre de cada eje, rebufo
+//   su auto     cómo es respecto del auto medido (motor, punta, agarre, frenos, desgaste) y cómo están las gomas
 //   posición    de qué lado de la pista va, hacia dónde apunta respecto de la pista, si pisa pasto o piano
 //   pista       cuánto dobla la pista más adelante (a 20, 40… 450 m): lo que un piloto sabe de memoria
 //   rayos       distancia hasta el borde de la pista en 19 direcciones, de -90° a +90° (más juntos al frente)
@@ -11,6 +12,7 @@
 // Todo va más o menos entre -1 y 1. Las distancias de la pista se miden en metros, así sirve en cualquier
 // circuito sin importar el tamaño de sus celdas.
 
+import { SETUP_KEYS } from './car.js';
 import { sampleField, stationAt } from './track.js';
 
 export const RAY_ANGLES = [-90, -60, -40, -28, -18, -11, -6, -3, -1, 0, 1, 3, 6, 11, 18, 28, 40, 60, 90]
@@ -18,9 +20,12 @@ export const RAY_ANGLES = [-90, -60, -40, -28, -18, -11, -6, -3, -1, 0, 1, 3, 6,
 export const LOOK_AHEAD = [20, 40, 70, 100, 140, 180, 230, 290, 360, 450]; // m
 export const OPPONENTS = 6;
 const CAR_VALUES = 12;
+export const SETUP_VALUES = SETUP_KEYS.length + 1; // la variación del auto y el desgaste de las gomas
+export const SETUP_START = CAR_VALUES; // dónde empiezan (las redes viejas no los tienen)
+const SETUP_SPREAD = { power: 0.05, topSpeed: 0.05, grip: 0.05, brakes: 0.05, wear: 0.3 }; // lo que se toma como ±1
 const POSITION_VALUES = 5;
 const OPPONENT_VALUES = 7;
-export const OBS_SIZE = CAR_VALUES + POSITION_VALUES + LOOK_AHEAD.length + RAY_ANGLES.length + OPPONENTS * OPPONENT_VALUES;
+export const OBS_SIZE = CAR_VALUES + SETUP_VALUES + POSITION_VALUES + LOOK_AHEAD.length + RAY_ANGLES.length + OPPONENTS * OPPONENT_VALUES;
 
 const RAY_MAX = 200; // m
 const OPPONENT_RANGE = 120; // m
@@ -92,6 +97,10 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
   put(car.grip?.[1] ?? 1);
   put(car.aLon / 40);
   put(car.draft);
+
+  // su auto
+  for (const k of SETUP_KEYS) put(((car.setup?.[k] ?? 1) - 1) / SETUP_SPREAD[k]);
+  put(car.wear ?? 0);
 
   // posición en la pista
   const lat = sampleField(track.lat, W, car.x, car.y);

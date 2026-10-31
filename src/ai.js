@@ -52,6 +52,12 @@ export function pointAt(f, u, side) {
   return { x: f.cx[i] + f.nx[i] * side, y: f.cy[i] + f.ny[i] * side, angle: Math.atan2(-f.nx[i], f.ny[i]) };
 }
 
+// Vuelve a poner un auto trabado en la pista, sobre la trazada y un poco más adelante (u: posición en celdas)
+export function rescue(track, line, car, u) {
+  const spot = pointAt(lineFrame(track), u + 4 / track.meters, line.offset[u | 0]);
+  Object.assign(car, { x: spot.x, y: spot.y, angle: spot.angle, speed: 0, steer: 0, slip: 0, spin: 0 });
+}
+
 // Grilla de largada detrás de la línea: de a dos, alternando de costado, cada puesto 8 m más atrás
 export function gridSlots(track, count) {
   const f = lineFrame(track), M = track.meters;
@@ -159,8 +165,7 @@ export class Driver {
     // si se quedó trabado (contra un muro o un auto), vuelve a la pista sobre la trazada
     this.stuck = v < 1.5 ? this.stuck + dt : 0;
     if (this.stuck > STUCK_TIME) {
-      const spot = pointAt(f, u + 4 / M, line.offset[u | 0]);
-      Object.assign(car, { x: spot.x, y: spot.y, angle: spot.angle, speed: 0, steer: 0, slip: 0, spin: 0 });
+      rescue(track, line, car, u);
       this.stuck = 0;
       this.shift = 0;
     }

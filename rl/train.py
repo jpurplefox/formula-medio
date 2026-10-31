@@ -1,10 +1,11 @@
 """Entrena la IA con PPO.
 
-Etapa 1, sola en pista, aprendiendo a dar la vuelta lo más rápido posible:
-    rl/.venv/bin/python rl/train.py --steps 60_000_000 --name etapa1
-Etapa 2, en carreras contra sí misma y otros rivales, partiendo de la etapa 1:
-    rl/.venv/bin/python rl/train.py --race --envs 4 --steps 40_000_000 --name etapa2 --resume rl/runs/etapa1c/model.zip \
-        --fresh-opponents --critic-warmup 3_000_000 --lr 1e-4
+Entrenamiento por fases (rl/CURRICULO.md). Fase 1, sola en pista con autos algo distintos:
+    rl/.venv/bin/python rl/train.py --steps 60_000_000 --name fase1
+Fases 2 a 4, en escenarios con otros autos, cada una partiendo de la anterior (los comandos exactos están en
+rl/CURRICULO.md):
+    rl/.venv/bin/python rl/train.py --race --envs 4 --mix pack:45,start:30,solo:25 --steps 30_000_000 --name fase2 \
+        --resume rl/runs/fase1/model.zip --fresh-opponents --critic-warmup 3_000_000 --lr 1e-4
 
     rl/.venv/bin/tensorboard --logdir rl/runs        (para ver las curvas)
 
@@ -37,19 +38,18 @@ class RaceStats(BaseCallback):
         self.laps = defaultdict(lambda: deque(maxlen=50))
         self.ends = deque(maxlen=500)
         self.dist = deque(maxlen=500)
-        self.passes = deque(maxlen=500)
-        self.hits = deque(maxlen=500)
+        self.scenarios = defaultdict(lambda: deque(maxlen=200))  # escenario → episodios
         self.start = time.time()
 
     def _on_step(self) -> bool:
         for info in self.locals["infos"]:
             ep = info.get("episode")
             if ep:
-                self.ends.append(ep["end"])
+                if "end" in ep:  # en las carreras no termina nunca antes: se rescata (ver rl/race.js)
+                    self.ends.append(ep["end"])
                 self.dist.append(ep["dist"])
-                if "passes" in ep:
-                    self.passes.append(ep["passes"])
-                    self.hits.append(ep["hits"])
+                if "scenario" in ep:
+                    self.scenarios[ep["scenario"]].append(ep)
         env = self.training_env.venv  # debajo de VecNormalize
         for track, lap in env.laps:
             self.laps[track].append(lap)
@@ -65,9 +65,10 @@ class RaceStats(BaseCallback):
             for kind in ("grass", "stuck", "back", "time"):
                 self.logger.record(f"fin/{kind}", self.ends.count(kind) / len(self.ends))
             self.logger.record("episodio/metros", float(np.mean(self.dist)))
-        if self.passes:
-            self.logger.record("carrera/pasadas", float(np.mean(self.passes)))
-            self.logger.record("carrera/toques", float(np.mean(self.hits)))
+        for name, eps in self.scenarios.items():
+            for key in ("passes", "passed", "hits", "danger", "weaves", "rescues", "r"):
+                self.logger.record(f"{name}/{key}", float(np.mean([e.get(key, 0) for e in eps])))
+            self.logger.record(f"{name}/metros", float(np.mean([e["dist"] for e in eps])))
         self.logger.record("tiempo/pasos_por_segundo", self.num_timesteps / (time.time() - self.start))
 
 
@@ -103,9 +104,12 @@ def main():
     p.add_argument("--tracks", default=",".join(TRACKS))
     p.add_argument("--workers", type=int, default=8)
     p.add_argument("--envs", type=int, default=16, help="entornos (o carreras, en la etapa 2) por proceso")
-    p.add_argument("--race", action="store_true", help="etapa 2: carreras con varios autos")
+    p.add_argument("--race", action="store_true", help="fases 2 a 4: escenarios con varios autos")
     p.add_argument("--agents", type=int, default=4, help="autos que aprenden en cada carrera")
-    p.add_argument("--opponent", default="", help="red que maneja parte de los rivales (por defecto, sólo la IA de siempre)")
+    p.add_argument("--mix", default="race:1", help="peso de cada escenario (rl/race.js), en pasos: pack:45,start:30,solo:25")
+    p.add_argument("--opponents", default="", help="redes (separadas por coma) que manejan parte de los rivales")
+    p.add_argument("--spread", type=float, default=0.02, help="variación de los autos (±, fracción)")
+    p.add_argument("--race-spread", type=float, help="variación de los autos en carrera completa (por defecto, --spread)")
     p.add_argument("--critic-warmup", type=int, default=0,
                    help="pasos al principio en los que sólo aprende el crítico (al cambiar la recompensa)")
     p.add_argument("--lr", type=float, help="tasa de aprendizaje inicial (baja de a poco hasta 0)")
@@ -118,8 +122,13 @@ def main():
     torch.set_num_threads(4)  # el resto de los núcleos quedan para los procesos de Node
     out = RUNS / args.name
     out.mkdir(parents=True, exist_ok=True)
-    mode = dict(mode="race", agents=args.agents, opponent=args.opponent) if args.race else {}
-    env = RacingVecEnv(args.workers, args.envs, args.tracks.split(","), args.seed, **mode)
+    config = dict(spread=args.spread)
+    if args.race:
+        mix = {k: float(w) for k, w in (part.split(":") for part in args.mix.split(","))}
+        opponents = [f for f in args.opponents.split(",") if f]
+        config |= dict(agents=args.agents, mix=mix, opponents=opponents, raceSpread=args.race_spread or args.spread)
+    env = RacingVecEnv(args.workers, args.envs, args.tracks.split(","), args.seed,
+                       mode="race" if args.race else "solo", config=config)
     # recompensas escaladas para que el crítico (la red que estima el valor) no se desajuste; las observaciones
     # no se tocan, así la red se usa igual en el juego
     env = VecNormalize(env, norm_obs=False, norm_reward=True, gamma=0.995)
@@ -147,7 +156,9 @@ def main():
             clip_range=0.2,
             ent_coef=0.0,
             target_kl=0.03,
-            policy_kwargs=dict(net_arch=dict(pi=[256, 256], vf=[256, 256]), log_std_init=-0.5),
+            # el crítico más grande que la política: estimar cuánto premio viene con varios autos cerca es lo más
+            # difícil; la política no puede ser enorme porque en el juego corre 21 veces, 20 veces por segundo
+            policy_kwargs=dict(net_arch=dict(pi=[384, 384], vf=[512, 512]), log_std_init=-0.5),
             tensorboard_log=str(RUNS),
             seed=args.seed,
             device="cpu",
@@ -155,7 +166,11 @@ def main():
         )
 
     if args.lr:
-        model.learning_rate = lambda left, lr=args.lr: lr * left
+        # stable-baselines3 mide el progreso sobre el total (fases anteriores incluidas): al seguir un modelo, `left`
+        # arranca en la parte que falta de ese total. Se reescala para que esta fase vaya de lr a 0
+        start = model.num_timesteps if args.resume else 0
+        share = args.steps / (start + args.steps)
+        model.learning_rate = lambda left, lr=args.lr: lr * min(1, left / share)
         model._setup_lr_schedule()
         model.target_kl = 0.015  # pasos más cortos: que no se desarme lo aprendido
 

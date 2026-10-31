@@ -16,13 +16,11 @@ TRACKS = ["interlagos", "monza", "albertpark", "barcelona", "montreal", "spa", "
 
 
 class Worker:
-    """mode "solo": envs autos sueltos (etapa 1); "race": envs carreras de `agents` autos que aprenden (etapa 2),
-    con rivales que no aprenden (algunos manejados por la red `opponent`)."""
+    """mode "solo": envs autos sueltos (fase 1); "race": envs carreras con varios autos que aprenden (fases 2 a 4).
+    config: opciones de RaceEnv / RaceSim (rl/env.js, rl/race.js), por ejemplo spread, agents, opponents, mix."""
 
-    def __init__(self, envs: int, tracks: list[str], seed: int, mode: str = "solo", agents: int = 4, opponent: str = ""):
-        args = [mode, str(envs), ",".join(tracks), str(seed)]
-        if mode == "race":
-            args += [str(agents), opponent]
+    def __init__(self, envs: int, tracks: list[str], seed: int, mode: str = "solo", config: dict | None = None):
+        args = [mode, str(envs), ",".join(tracks), str(seed), json.dumps(config or {})]
         self.proc = subprocess.Popen(
             ["node", str(ROOT / "rl" / "worker.js"), *args],
             stdin=subprocess.PIPE,

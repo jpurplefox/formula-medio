@@ -1,13 +1,16 @@
 // La red entrenada (rl/): recibe lo que ve el auto (sensors.js) y devuelve volante y pedal.
 // Los pesos vienen de rl/export.py: capas lineales con tanh entre ellas.
 
-import { OBS_SIZE, observe } from './sensors.js';
+import { rescue } from './ai.js';
+import { OBS_SIZE, observe, SETUP_START, SETUP_VALUES } from './sensors.js';
 import { stationAt } from './track.js';
 
 export class Policy {
   // opponents: si aprendió a mirar a los demás autos (etapa 2); si no, se le pasan en cero, como al entrenar
   constructor({ obs_size, layers, opponents = false }) {
-    if (obs_size !== OBS_SIZE) throw new Error(`La red espera ${obs_size} valores y los sensores dan ${OBS_SIZE}`);
+    // las redes de antes del desgaste y la variación de autos no reciben esos valores: se les sacan
+    this.legacy = obs_size === OBS_SIZE - SETUP_VALUES;
+    if (obs_size !== OBS_SIZE && !this.legacy) throw new Error(`La red espera ${obs_size} valores y los sensores dan ${OBS_SIZE}`);
     this.opponents = opponents;
     this.layers = layers.map((l) => {
       const w = floats(l.w);
@@ -22,6 +25,11 @@ export class Policy {
   // obs → [volante, pedal], los dos entre -1 y 1
   act(obs) {
     let x = obs;
+    if (this.legacy) {
+      x = new Float32Array(OBS_SIZE - SETUP_VALUES);
+      x.set(obs.subarray(0, SETUP_START));
+      x.set(obs.subarray(SETUP_START + SETUP_VALUES), SETUP_START);
+    }
     this.layers.forEach(({ w, b }, k) => {
       const y = new Float32Array(b.length);
       for (let i = 0; i < b.length; i++) {
@@ -46,6 +54,7 @@ function floats(b64) {
 
 // Piloto con la red: decide 20 veces por segundo (como al entrenar) y entre medio mantiene los controles
 export const DECISION_DT = 1 / 20;
+const STUCK_TIME = 3; // s casi quieta hasta que se la rescata
 
 export class NeuralDriver {
   // opponents: si le pasa los demás autos a la red (por defecto, si la red aprendió a mirarlos)
@@ -54,6 +63,7 @@ export class NeuralDriver {
     this.opponents = opponents;
     this.obs = new Float32Array(OBS_SIZE);
     this.wait = 0;
+    this.stuck = 0;
     this.u = 0;
     this.input = { throttle: 0, brake: 0, steer: 0 };
   }
@@ -62,6 +72,13 @@ export class NeuralDriver {
   drive(dt, track, line, { car }, others = []) {
     const u = stationAt(track, car.x, car.y);
     if (u >= 0) this.u = u;
+    // trabada (contra un muro o en un amontonamiento): vuelve a la pista, como la IA de siempre. Al entrenar
+    // también se la rescata, pero a los 6 s: acá se le da la mitad para que no frene la carrera
+    this.stuck = Math.abs(car.speed) < 1 ? this.stuck + dt : 0;
+    if (this.stuck > STUCK_TIME) {
+      rescue(track, line, car, this.u);
+      this.stuck = 0;
+    }
     this.wait -= dt;
     if (this.wait <= 0) {
       this.wait += DECISION_DT;

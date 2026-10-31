@@ -1,9 +1,10 @@
 // Proceso de Node que simula varios entornos y habla con Python (rl/racing_env.py) por stdin/stdout.
 //
-//   node rl/worker.js solo  <entornos> <circuitos separados por coma> <semilla>
-//   node rl/worker.js race  <carreras> <circuitos> <semilla> <agentes por carrera> [red de los rivales]
+//   node rl/worker.js solo  <entornos> <circuitos separados por coma> <semilla> [config]
+//   node rl/worker.js race  <carreras> <circuitos> <semilla> [config]
 //
-// "solo" es la etapa 1 (un auto por entorno); "race" la etapa 2 (rl/race.js: varios agentes por carrera).
+// "solo" es la fase 1 (un auto por entorno); "race" las fases 2 a 4 (rl/race.js: varios agentes por carrera).
+// config es un JSON con las opciones de RaceEnv o RaceSim (spread, agents, opponents, mix, raceSpread).
 // Para Python cada agente es un entorno más: en total, entornos × agentes.
 //
 // Al arrancar escribe una línea JSON ({ obs_size, envs }) y espera órdenes. Cada orden empieza con un byte:
@@ -17,13 +18,14 @@ import { OBS_SIZE } from '../src/sensors.js';
 import { RaceEnv } from './env.js';
 import { RaceSim } from './race.js';
 
-const [mode, n, ids, seed, agents, opponent] = process.argv.slice(2);
+const [mode, n, ids, seed, config = '{}'] = process.argv.slice(2);
 const trackIds = ids.split(',');
+const options = JSON.parse(config);
 
 // Etapa 1 con la misma forma que una carrera: un solo agente
 class Solo {
   constructor(seed) {
-    this.env = new RaceEnv({ trackIds, seed });
+    this.env = new RaceEnv({ ...options, trackIds, seed });
     this.agents = 1;
   }
 
@@ -39,7 +41,7 @@ class Solo {
 }
 
 const sims = Array.from({ length: Number(n) }, (_, k) => mode === 'race'
-  ? new RaceSim({ trackIds, agents: Number(agents), seed: Number(seed) * 1000 + k, opponent: opponent || null })
+  ? new RaceSim({ ...options, trackIds, seed: Number(seed) * 1000 + k })
   : new Solo(Number(seed) * 1000 + k));
 const N = sims.reduce((a, s) => a + s.agents, 0);
 const obs = new Float32Array(N * OBS_SIZE);

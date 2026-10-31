@@ -193,8 +193,8 @@ Una red neuronal aprende a manejar sola, con la misma física del juego, por eta
    rivales con la IA de siempre a ritmos variados; largan en grilla, en fila o repartidos por la pista. Además de
    los metros, se castigan los toques entre autos (mucho más al que le pega al de adelante).
 
-**Qué ve** (`src/sensors.js`, 88 números): su auto (velocidad, deslizamiento, giro, volante, pedales, marcha,
-rpm, agarre de cada eje, rebufo), su posición en la pista, cuánto dobla la pista a 20, 40… 450 m (lo que un piloto
+**Qué ve** (`src/sensors.js`, 94 números): su auto (velocidad, deslizamiento, giro, volante, pedales, marcha,
+rpm, agarre de cada eje, rebufo, cuánto mejor o peor es que el promedio y el desgaste de las gomas), su posición en la pista, cuánto dobla la pista a 20, 40… 450 m (lo que un piloto
 sabe de memoria), 19 rayos que miden la distancia al borde de la pista de -90° a +90°, y los 6 rivales más
 cercanos (posición, velocidad relativa y hacia dónde apuntan; en la etapa 1 quedan en cero).
 **Qué decide**: volante y pedal (de frenar a fondo a acelerar a fondo), 20 veces por segundo, progresivos.
@@ -243,6 +243,13 @@ Un premio por pasar y por defender le enseñó a zigzaguear y a meterse aunque h
 
 Contra la etapa 1, en carreras de 22 autos se toca un 18 % menos y pisa un 26 % menos el pasto, con el mismo ritmo
 (posición media 6,9 contra 7,2); con 8 autos, un 29 % menos de toques.
+
+**Currículum** (`rl/curriculum.sh`, `models/fase1.json` a `models/fase7.json`): red más grande (política 384×384,
+crítico 512×512), autos con potencia, agarre y frenos algo distintos y gomas que se gastan, y fases que enseñan de a
+una cosa (manejar sola, no chocar, pasar, carreras completas) y después tres fases más dedicadas a manejar limpio.
+**`models/fase7.json` es la recomendada**: un 44 % menos de toques que la fase 1 y la que menos pisa el pasto, a
+cambio de quedar a mitad de tabla contra la IA de siempre (la fase 1 es la más rápida). Detalle, resultados y lo que
+salió mal en el camino: `rl/CURRICULO.md`.
 
 ## Trazada ideal
 

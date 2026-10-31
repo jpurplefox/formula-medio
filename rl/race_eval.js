@@ -4,14 +4,21 @@
 //   node rl/race_eval.js models/etapa2.json [circuitos separados por coma] [vueltas]
 //
 // Informa la posición promedio de cada grupo, cuántos puestos ganó la red desde la largada, toques entre autos
-// (en los que estuvo la red) y segundos en el pasto.
+// (en los que estuvo la red), cuántos de esos provocó la red (le pegó al de adelante o apretó al de al lado) y segundos
+// en el pasto.
+//
+// Con SPREAD (por ejemplo 0.05) cada auto de la grilla es un poco distinto, siempre igual para una misma semilla,
+// y cada carrera se corre dos veces intercambiando qué autos maneja la red: así ningún resultado depende de la
+// suerte con los autos. Las gomas se gastan como en el juego (del todo al terminar la carrera).
 
 import { readFileSync } from 'node:fs';
 import { Driver, gridSlots } from '../src/ai.js';
 import { Car, isSolid, slipstream } from '../src/car.js';
+import { randomSetup, rng } from './env.js';
 import { collideCars } from '../src/collision.js';
 import { NeuralDriver, Policy } from '../src/policy.js';
 import { racingLine } from '../src/racingline.js';
+import { trackHeading } from '../src/sensors.js';
 import { sampleField, stationAt } from '../src/track.js';
 import { loadTrack, TRACK_IDS } from './tracks.js';
 
@@ -20,20 +27,25 @@ const policy = new Policy(JSON.parse(readFileSync(file, 'utf8')));
 const profile = JSON.parse(readFileSync(new URL('../cars/f1-2023.json', import.meta.url), 'utf8'));
 const DT = 1 / 60, CARS = Number(process.env.CARS ?? 22), LAPS = Number(lapsArg ?? 3);
 const PACES = [1.06, 0.98]; // Difícil
+const SPREAD = Number(process.env.SPREAD ?? 0);
 
-function race(track) {
+function race(track, seed, swap) {
+  const rand = rng(seed);
+  const setups = Array.from({ length: CARS }, () => randomSetup(rand, SPREAD));
   const line = racingLine(track, profile, { brakeUse: 0.93 });
   const slots = gridSlots(track, CARS);
   const L = track.length;
   let ai = 0;
   const entries = slots.map((s, k) => {
     const car = new Car(s.x, s.y, s.angle, profile);
-    const net = k % 2 === 0;
+    const net = k % 2 === (swap ? 1 : 0);
+    if (SPREAD) car.setup = setups[k];
+    car.wearRate = 1 / (LAPS * track.length * track.meters);
     const pace = PACES[0] + ((PACES[1] - PACES[0]) * ai) / (CARS / 2 - 1);
     if (!net) ai++;
     car.throttle = 1;
     car.launch();
-    return { car, net, grid: k, driver: net ? new NeuralDriver(policy) : new Driver(pace, k + 1), u: stationAt(track, car.x, car.y), dist: -s.back, hits: 0, grass: 0 };
+    return { car, net, grid: k, driver: net ? new NeuralDriver(policy) : new Driver(pace, k + 1), u: stationAt(track, car.x, car.y), dist: -s.back, hits: 0, fault: 0, grass: 0 };
   });
   const cars = entries.map((e) => e.car);
   for (let t = 0; t < 600; t += DT) {
@@ -44,7 +56,10 @@ function race(track) {
     collideCars(cars, track, isSolid);
     let leader = 0;
     entries.forEach((e, i) => {
-      if (e.car.bump > before[i] + 0.05) e.hits++;
+      if (e.car.bump > before[i] + 0.05) {
+        e.hits++;
+        if (atFault(track, e, entries)) e.fault++;
+      }
       if (e.car.onGrass) e.grass += DT;
       const u = stationAt(track, e.car.x, e.car.y);
       if (u < 0) return;
@@ -64,17 +79,40 @@ function race(track) {
   return {
     net: avg(group(true), (e) => e.pos), ai: avg(group(false), (e) => e.pos),
     gained: avg(group(true), (e) => e.grid + 1 - e.pos),
-    hits: group(true).reduce((a, e) => a + e.hits, 0), aiHits: group(false).reduce((a, e) => a + e.hits, 0),
+    hits: group(true).reduce((a, e) => a + e.hits, 0), fault: group(true).reduce((a, e) => a + e.fault, 0), aiHits: group(false).reduce((a, e) => a + e.hits, 0),
     grass: group(true).reduce((a, e) => a + e.grass, 0),
     podium: order.slice(0, 3).map((e) => (e.net ? 'red' : 'IA')).join(' '),
   };
 }
 
+// ¿El toque lo provocó e? Le pegó al de adelante, o se le fue encima de costado al de al lado más rápido de lo que el
+// otro se acercó (como el castigo de rl/race.js)
+function atFault(track, e, entries) {
+  const M = track.meters, c = e.car, ca = Math.cos(c.angle), sa = Math.sin(c.angle);
+  const h = trackHeading(track, e.u), nx = -Math.sin(h), ny = Math.cos(h);
+  const lat = (k) => {
+    const a = Math.cos(k.angle), b = Math.sin(k.angle);
+    return (a * k.speed - b * k.slip) * nx + (b * k.speed + a * k.slip) * ny;
+  };
+  return entries.some((o) => {
+    if (o === e) return false;
+    const dx = (o.car.x - c.x) * M, dy = (o.car.y - c.y) * M;
+    const fwd = dx * ca + dy * sa, side = -dx * sa + dy * ca;
+    if (fwd > 0 && fwd < 7 && Math.abs(side) < 2.5) return true;
+    if (Math.abs(fwd) > 5.5 || Math.abs(side) > 4) return false;
+    const dir = Math.sign(dx * nx + dy * ny);
+    const mine = lat(c) * dir, theirs = -lat(o.car) * dir;
+    return mine > 0.5 && mine >= theirs;
+  });
+}
+
 const all = [];
-for (const id of ids ? ids.split(',') : TRACK_IDS) {
-  const r = race(loadTrack(id));
-  all.push(r);
-  console.log(`${id.padEnd(12)} posición media: red ${r.net.toFixed(1)}, IA ${r.ai.toFixed(1)} · puestos ganados por la red ${r.gained.toFixed(1)} · toques red ${r.hits}, IA ${r.aiHits} · pasto red ${r.grass.toFixed(1)} s · podio ${r.podium}`);
+for (const [n, id] of (ids ? ids.split(',') : TRACK_IDS).entries()) {
+  for (const swap of SPREAD ? [false, true] : [false]) {
+    const r = race(loadTrack(id), 1000 + n, swap);
+    all.push(r);
+    console.log(`${id.padEnd(12)} posición media: red ${r.net.toFixed(1)}, IA ${r.ai.toFixed(1)} · puestos ganados por la red ${r.gained.toFixed(1)} · toques red ${r.hits} (provocados ${r.fault}), IA ${r.aiHits} · pasto red ${r.grass.toFixed(1)} s · podio ${r.podium}`);
+  }
 }
 const mean = (f) => (all.reduce((a, r) => a + f(r), 0) / all.length).toFixed(2);
-console.log(`total: posición media red ${mean((r) => r.net)}, IA ${mean((r) => r.ai)} · toques red ${mean((r) => r.hits)} por carrera · pasto red ${mean((r) => r.grass)} s`);
+console.log(`total: posición media red ${mean((r) => r.net)}, IA ${mean((r) => r.ai)} · toques red ${mean((r) => r.hits)} por carrera (provocados ${mean((r) => r.fault)}) · pasto red ${mean((r) => r.grass)} s`);
