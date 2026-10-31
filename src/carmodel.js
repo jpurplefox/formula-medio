@@ -46,6 +46,31 @@ function sec(x, yc, hw, z0, z1, r = 0, n = 3) {
   return pts;
 }
 
+// sección perpendicular al eje x con la forma de un polígono convexo (puntos [y, z]) de esquinas redondeadas:
+// radii[i] es el radio de la esquina i (se achica si no entra en los lados vecinos), n tramos por esquina
+function rounded(x, poly, radii, n = 4) {
+  const pts = [], k = poly.length;
+  for (let i = 0; i < k; i++) {
+    const p = poly[i], a = poly[(i + k - 1) % k], b = poly[(i + 1) % k];
+    const la = Math.hypot(a[0] - p[0], a[1] - p[1]), lb = Math.hypot(b[0] - p[0], b[1] - p[1]);
+    const ua = [(a[0] - p[0]) / la, (a[1] - p[1]) / la], ub = [(b[0] - p[0]) / lb, (b[1] - p[1]) / lb];
+    const half = Math.acos(Math.max(-1, Math.min(1, ua[0] * ub[0] + ua[1] * ub[1]))) / 2;
+    // el arco toca los dos lados a una distancia t de la esquina
+    const r = Math.min(radii[i], 0.45 * Math.min(la, lb) * Math.tan(half)), t = r / Math.tan(half);
+    const bis = [ua[0] + ub[0], ua[1] + ub[1]], lbis = Math.hypot(...bis);
+    const c = [p[0] + (bis[0] / lbis) * (r / Math.sin(half)), p[1] + (bis[1] / lbis) * (r / Math.sin(half))];
+    const a0 = Math.atan2(p[1] + ua[1] * t - c[1], p[0] + ua[0] * t - c[0]);
+    let a1 = Math.atan2(p[1] + ub[1] * t - c[1], p[0] + ub[0] * t - c[0]);
+    if (a1 - a0 > Math.PI) a1 -= Math.PI * 2;
+    if (a0 - a1 > Math.PI) a1 += Math.PI * 2;
+    for (let j = 0; j <= n; j++) {
+      const ang = a0 + (j / n) * (a1 - a0);
+      pts.push([x, c[0] + r * Math.cos(ang), c[1] + r * Math.sin(ang)]);
+    }
+  }
+  return pts;
+}
+
 // elipse perpendicular al eje x, de radios ry y rz, con n puntos
 function ellipse(x, yc, ry, zc, rz, n = 12) {
   return [...Array(n).keys()].map((i) => {
@@ -203,28 +228,36 @@ function wheel(x, s, yc, width, front, nut) {
   return parts;
 }
 
-// Casco: un elipsoide con la visera oscura que lo envuelve por delante y un alerón chico arriba, atrás.
-// Todo gira junto alrededor del cuello (head: el pivote) para que el piloto mire hacia donde va.
-// Se oculta en la vista de cabina, porque ahí está la cámara.
+// Casco: cortes horizontales apilados de arriba hacia abajo, con la visera oscura que lo envuelve por delante y un
+// alerón chico arriba, atrás. Todo gira junto alrededor del cuello (head: el pivote) para que el piloto mire hacia
+// donde va. Se oculta en la vista de cabina, porque ahí está la cámara.
 const HELMET = { x: -0.08, z: 0.8, rx: 0.15, ry: 0.12, rz: 0.13 };
-function helmetParts(color) {
+// Un casco de verdad no es una pelota: abajo no se cierra (se angosta menos que arriba y termina en una base
+// plana, donde entra el cuello) y adelante, debajo de la visera, la mentonera baja casi recta, siguiendo la misma
+// superficie (sin escalón), en vez de curvarse hacia adentro como la nuca.
+// Punto de la superficie a la altura w (de -1 abajo a 1 arriba), en el ángulo phi alrededor del eje vertical
+// (0 = adelante); out > 1 lo saca un poco hacia afuera (para la visera).
+function helmetAt(phi, w, out = 1) {
   const { x: hx, z: hz, rx, ry, rz } = HELMET;
-  const rings = [];
-  for (let i = 1; i < 12; i++) {
-    const p = (i / 12) * Math.PI;
-    rings.push(ellipse(hx + rx * Math.cos(p), 0, ry * Math.sin(p), hz, rz * Math.sin(p), 16));
-  }
+  const chin = Math.max(0, Math.cos(phi)) ** 2; // 1 adelante, 0 a los costados y atrás
+  const k = Math.sqrt(Math.max(0, 1 - (w < 0 ? (w / (1.25 + 0.9 * chin)) ** 2 : w * w))) * out;
+  return [hx + rx * k * Math.cos(phi), ry * k * Math.sin(phi), hz + rz * w];
+}
+const HELMET_LEVELS = [0.99, 0.94, 0.85, 0.72, 0.56, 0.38, 0.18, 0, -0.15, -0.3, -0.45, -0.58, -0.68, -0.75];
+function helmetParts(color) {
+  const { x: hx, z: hz, rz } = HELMET;
+  const ring = (w, out) => [...Array(24).keys()].map((i) => helmetAt((i / 24) * Math.PI * 2, w, out));
+  // el último corte, un poco más chico, redondea el borde de la base
+  const rings = [...HELMET_LEVELS.map((w) => ring(w, 1)), ring(-0.79, 0.9)];
   const shell = loft(rings, color);
-  // visera: una banda que sigue la superficie del casco de -70° a 70° alrededor del frente, apenas por fuera
-  const at = (phi, z, out) => {
-    const k = Math.sqrt(Math.max(0, 1 - ((z - hz) / rz) ** 2)) * out;
-    return [hx + rx * k * Math.cos(phi), ry * k * Math.sin(phi), z];
-  };
+  // visera: una banda que sigue la superficie del casco de -78° a 78° alrededor del frente, apenas por fuera.
+  // Es espejada, como los vidrios de los retrovisores (ver skin)
+  const at = (phi, z, out) => helmetAt(phi, (z - hz) / rz, out);
   const visor = [];
-  for (let i = 0; i <= 10; i++) {
-    const phi = (-70 + i * 14) * (Math.PI / 180);
+  for (let i = 0; i <= 12; i++) {
+    const phi = (-78 + i * 13) * (Math.PI / 180);
     // un poco más alta en el centro, como la abertura de los cascos de verdad
-    const z0 = 0.79, z1 = 0.85 + 0.008 * Math.cos(phi * 1.3);
+    const z0 = 0.772 - 0.006 * Math.cos(phi), z1 = 0.852 + 0.01 * Math.cos(phi * 1.3);
     // con un punto en el medio de la cara de afuera, que sigue la curva del casco (si no, el casco la atraviesa)
     visor.push([at(phi, z0, 0.97), at(phi, z0, 1.04), at(phi, (z0 + z1) / 2, 1.04), at(phi, z1, 1.04), at(phi, z1, 0.97)]);
   }
@@ -278,8 +311,9 @@ function skin(parts, body, livery) {
       }
       if (uv) f.uv = uv;
       // cuánto brilla y refleja: pintura y casco con barniz, carbono un poco, gomas, cockpit y buzo nada
-      // (el vidrio de los espejos, 2: refleja de frente también, como un espejo)
-      f.gloss = f.color === MIRROR ? 2 : f.color === body || part.head ? 1 : f.color === CARBON ? 0.35
+      // (el vidrio de los espejos, 2: refleja de frente también, como un espejo; la visera, 3: igual, pero un reflejo
+      // borroso, sin horizonte marcado)
+      f.gloss = f.color === MIRROR ? 2 : f.color === VISOR ? 3 : f.color === body || part.head ? 1 : f.color === CARBON ? 0.35
         : part.suit || [TYRE, SIDEWALL, COCKPIT].includes(f.color) ? 0 : 0.6;
     }
   }
@@ -334,26 +368,47 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
   // cámara de TV en forma de T: un parante finito y arriba una barra a lo ancho, del color que distingue al auto
   add(box(-0.42, -0.34, 0, 0.025, 0.95, 1.07, hex(tcam), 0.01));
   add(box(-0.45, -0.31, 0, 0.17, 1.07, 1.11, hex(tcam), 0.018));
-  // pontones a los costados: toma de aire adelante y se van cerrando hacia atrás. La boca tiene un labio redondeado
-  // que sobresale de la abertura oscura, y está inclinada: arriba avanza más que abajo, como en los de verdad.
+  // pontones a los costados: toma de aire adelante y se van cerrando hacia atrás, hasta morir contra la cubierta
+  // del motor (la "botella de Coca-Cola"). No son tubos sueltos: el lado de adentro queda metido en el monocasco
+  // y el techo es una rampa que baja desde el hombro del chasis hacia afuera, así la carrocería sigue de corrido
+  // hasta el borde del pontón. Abajo, el costado se mete hacia adentro (el undercut) y deja ver el piso.
+  // Cada estación: x, borde de adentro (in) y de afuera (out), altura del techo adentro y afuera, piso y undercut.
+  const POD = [
+    { x: 0.8, in: 0.37, out: 0.8, top: 0.56, edge: 0.52, bot: 0.16, cut: 0.14 },
+    { x: 0.62, in: 0.3, out: 0.82, top: 0.56, edge: 0.54, bot: 0.13, cut: 0.17 },
+    { x: 0.35, in: 0.22, out: 0.83, top: 0.62, edge: 0.55, bot: 0.12, cut: 0.2 },
+    { x: -0.3, in: 0.22, out: 0.81, top: 0.63, edge: 0.5, bot: 0.12, cut: 0.2 },
+    { x: -0.9, in: 0.22, out: 0.72, top: 0.6, edge: 0.42, bot: 0.12, cut: 0.16 },
+    { x: -1.35, in: 0.18, out: 0.55, top: 0.5, edge: 0.33, bot: 0.12, cut: 0.1 },
+    { x: -1.8, in: 0.1, out: 0.36, top: 0.4, edge: 0.25, bot: 0.12, cut: 0.05 },
+    { x: -2.05, in: 0.06, out: 0.25, top: 0.3, edge: 0.2, bot: 0.12, cut: 0.03 },
+  ];
+  // sección del pontón en una estación, achicada d metros hacia adentro (para la boca)
+  const podSec = (st, s, x = st.x, d = 0) => rounded(x, [
+    [st.in + d, st.bot + d],
+    [st.out - st.cut - d / 2, st.bot + d],
+    [st.out - d, st.bot + st.cut + d / 2],
+    [st.out - d, st.edge - d],
+    [st.in + d, st.top - d],
+  ].map(([y, z]) => [s * y, z]), [0.02, 0.04, 0.06, 0.12, 0.03]);
+  const POD_RING = 25; // puntos de cada sección (5 esquinas de 5 puntos)
+  // la boca está inclinada: arriba avanza más que abajo, como en los de verdad
   const lean = (ring) => ring.map(([x, y, z]) => [x + (z - 0.35) * 0.35, y, z]);
+  const MOUTH = 0.035; // ancho del labio que rodea la abertura
   both((s) => {
+    const [mouth, ...rest] = POD;
     const pod = loft([
-      lean(sec(0.78, s * 0.6, 0.16, 0.19, 0.51, 0.08)),
-      lean(sec(0.81, s * 0.6, 0.185, 0.16, 0.54, 0.1)),
-      lean(sec(0.76, s * 0.605, 0.2, 0.14, 0.56, 0.11)),
-      sec(0.62, s * 0.61, 0.21, 0.13, 0.58, 0.13),
-      sec(0.35, s * 0.62, 0.22, 0.12, 0.6, 0.14),
-      sec(-0.5, s * 0.6, 0.2, 0.12, 0.55, 0.14),
-      sec(-1.3, s * 0.45, 0.12, 0.12, 0.34, 0.08),
-      sec(-1.8, s * 0.35, 0.06, 0.12, 0.24, 0.04),
+      lean(podSec(mouth, s, 0.78, MOUTH)),
+      lean(podSec(mouth, s, 0.81, MOUTH / 3)),
+      lean(podSec(mouth, s, 0.76)),
+      ...rest.map((st) => podSec(st, s)),
     ], body, CARBON);
     // el frente del labio mira hacia adelante y hacia la boca (loft lo orientaría hacia afuera del eje)
-    for (const f of pod.faces.slice(2, 2 + 16)) if (f.n[0] < 0) f.n = f.n.map((c) => -c);
+    for (const f of pod.faces.slice(2, 2 + POD_RING)) if (f.n[0] < 0) f.n = f.n.map((c) => -c);
     add(pod);
+    // la abertura: un bloque oscuro que tapa la boca por dentro del labio
+    add(loft([podSec(mouth, s, 0.45, MOUTH), lean(podSec(mouth, s, 0.785, MOUTH))], COCKPIT));
   });
-  // la abertura: un bloque oscuro que tapa la boca por dentro del labio
-  both((s) => add(loft([sec(0.45, s * 0.6, 0.16, 0.19, 0.51, 0.08), lean(sec(0.785, s * 0.6, 0.16, 0.19, 0.51, 0.08))], COCKPIT)));
   // espejos sobre su soporte: el vidrio mira hacia atrás, hundido en un marco, y la carcasa se redondea hacia
   // adelante como una cáscara
   both((s) => {
@@ -379,18 +434,26 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
   const halo = [];
   for (let i = 0; i <= 28; i++) halo.push(haloAt(-Math.PI / 2 + (i / 28) * Math.PI));
   add(tube(halo, 0.016, CARBON, 10));
-  add(tube([[0.62, 0, 0.5], [0.6, 0, 0.75]], 0.018, CARBON, 10));
-  // unión del pilar con el arco: una lámina que sigue al arco y baja hasta el pilar con un borde cóncavo,
-  // así el pilar se abre en curva hacia arriba en vez de formar una T
-  const FILLET_W = 0.15, FILLET_DROP = 0.14;
+  // el pilar no cae vertical: baja inclinado hacia adelante (PILLAR_LEAN metros hacia adelante por cada metro
+  // que baja) desde el frente del arco hasta clavarse en la trompa
+  const PILLAR_R = 0.018, PILLAR_LEAN = 0.9, PILLAR_DROP = 0.32;
+  const [px, , pz] = haloAt(0);
+  const pillarX = (z) => px + PILLAR_LEAN * (pz - z); // x del eje del pilar a la altura z
+  // (arranca un poco debajo del eje del arco, para que no asome por encima)
+  add(tube([[pillarX(pz - 0.025), 0, pz - 0.025], [pillarX(pz - PILLAR_DROP), 0, pz - PILLAR_DROP]], PILLAR_R, CARBON, 10));
+  // unión del pilar con el arco: una lámina a los dos lados del pilar, que baja desde el arco con un borde
+  // cóncavo (un cuarto de elipse) que arranca tangente al arco y termina tangente al pilar, así el pilar se abre
+  // en curva hacia arriba en vez de formar una T. Sigue la inclinación del pilar.
+  const FILLET_W = 0.15, FILLET_DROP = 0.15;
   const fillet = [];
-  for (let j = 0; j <= 16; j++) {
-    const y = -FILLET_W + (j / 16) * 2 * FILLET_W;
+  for (let j = 0; j <= 24; j++) {
+    const y = -FILLET_W + (j / 24) * 2 * FILLET_W;
     const [x, , z] = haloAt(Math.asin(y / 0.29));
-    const f = 1 - Math.abs(y) / FILLET_W; // 1 en el pilar, 0 donde se funde con el arco
-    const cx = x + 0.02 * f; // en el medio, alineada con el pilar
-    const bottom = z - FILLET_DROP * f * f;
-    fillet.push([[cx - 0.016, y, bottom], [cx + 0.016, y, bottom], [cx + 0.016, y, z], [cx - 0.016, y, z]]);
+    const g = Math.max(0, Math.abs(y) - PILLAR_R) / (FILLET_W - PILLAR_R); // 0 junto al pilar, 1 en el arco
+    const drop = FILLET_DROP * (1 - Math.sqrt(1 - (1 - g) ** 2));
+    // arriba va por el eje del arco (queda adentro del tubo) y abajo se corre hacia el pilar
+    const bottom = pillarX(z - drop) * (1 - g) + x * g;
+    fillet.push([[bottom - 0.014, y, z - drop], [bottom + 0.014, y, z - drop], [x + 0.014, y, z], [x - 0.014, y, z]]);
   }
   add(loft(fillet, CARBON));
 

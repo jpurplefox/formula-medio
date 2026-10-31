@@ -264,7 +264,7 @@ void main() {
   vec3 p = aPos, n = aNormal, sm = aSmooth;
   // el vidrio de los espejos es convexo: la normal se abre hacia los bordes (aUV va de -1 a 1 sobre el vidrio),
   // así el reflejo cambia de un lado al otro y abarca más
-  if (aGloss > 1.5) sm = normalize(sm + vec3(0.0, aUV.x, aUV.y) * 0.45);
+  if (aGloss > 1.5 && aGloss < 2.5) sm = normalize(sm + vec3(0.0, aUV.x, aUV.y) * 0.45);
   if (aWheel > 4.5) {
     // la cabeza del piloto gira alrededor del cuello
     p = uNeck + look(p - uNeck);
@@ -331,6 +331,12 @@ vec3 env(vec3 r) {
   if (r.z < trees) return TREES * (0.8 + 2.0 * r.z);
   return mix(FOG, SKY_TOP, pow(r.z, 0.5));
 }
+// Lo que refleja la visera del casco: el mismo entorno pero borroso, un degradé de oscuro abajo a cielo arriba.
+// Como la visera se curva hacia los dos lados, un horizonte nítido se vería como un anillo alrededor.
+const vec3 VISOR_LOW = vec3(0.05, 0.06, 0.08);
+vec3 visorEnv(vec3 r) {
+  return mix(VISOR_LOW, mix(FOG, SKY_TOP, 0.6), smoothstep(-0.5, 0.6, r.z));
+}
 
 void main() {
   if (vBack > 0.5) discard;
@@ -344,10 +350,10 @@ void main() {
     vec3 v = normalize(vView), n = normalize(vNormal);
     float facing = clamp(-dot(n, v), 0.0, 1.0);
     vec3 r = reflect(v, n);
-    // espejo (gloss 2): refleja casi todo, también de frente
+    // espejo (gloss 2) y visera (gloss 3): reflejan casi todo, también de frente
     float k = gloss > 1.5 ? 0.85 : gloss * min(0.75, 0.12 + 0.88 * pow(1.0 - facing, 5.0));
     float sun = pow(max(dot(r, SUN_DIR), 0.0), 150.0) * 1.4 * min(gloss, 1.0);
-    c = mix(c, env(r), k) + vec3(1.0, 0.97, 0.9) * sun;
+    c = mix(c, gloss > 2.5 ? visorEnv(r) : env(r), k) + vec3(1.0, 0.97, 0.9) * sun;
   }
   outColor = vec4(fog(min(c, vec3(1.0)), vDepth), uAlpha);
 }`;
