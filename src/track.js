@@ -24,25 +24,58 @@ export function buildTrack(img, def, elevation = null) {
 // Lo mismo, a partir de la máscara de la imagen (imageMask) ya calculada: no necesita el navegador,
 // así también se puede armar el circuito en Node (para entrenar la IA, ver rl/)
 export function buildTrackFromMask({ W, H, road: dark }, def, elevation = null) {
-  // 1) De la imagen sacamos sólo el recorrido: la línea central y el ancho de la pista
+  // De la imagen sacamos sólo el recorrido: la línea central y el ancho de la pista
   const raw = cleanRoad(dark, def, W, H);
   const path = traceCenterline(raw, startLine(raw, def, W, H), W, H, def.smooth ?? 3);
+  // la línea de largada, sobre la pista definitiva
+  const start = (road) => startLine(road, def, W, H);
+  return buildTrackFromPath(path, W, H, def, elevation, start);
+}
 
+// A partir del trazado sacado de la telemetría (tools/layout.py): la línea central en metros desde la largada y
+// las alturas. Cada celda mide CELL_M metros; alrededor queda lugar para el pasto, los muros y los árboles.
+// def.rotate (grados): gira el trazado, para que el mapa quede orientado como el dibujo de siempre
+const CELL_M = 2, LAYOUT_MARGIN = 45; // celdas
+export function buildTrackFromLayout(layout, def) {
+  const a = ((def.rotate ?? 0) * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+  const turned = layout.points.map(([x, y]) => [x * c - y * s, x * s + y * c]);
+  const x0 = Math.min(...turned.map((p) => p[0])), y0 = Math.min(...turned.map((p) => p[1]));
+  const pts = turned.map(([x, y]) => [(x - x0) / CELL_M + LAYOUT_MARGIN, (y - y0) / CELL_M + LAYOUT_MARGIN]);
+  const W = Math.ceil(Math.max(...pts.map((p) => p[0])) + LAYOUT_MARGIN);
+  const H = Math.ceil(Math.max(...pts.map((p) => p[1])) + LAYOUT_MARGIN);
+  const n = pts.length;
+  const path = {
+    n, x: Float64Array.from(pts, (p) => p[0]), y: Float64Array.from(pts, (p) => p[1]),
+    wrap: (b) => ((b % n) + n) % n,
+    // la telemetría no trae los bordes (ver tools/layout.py): el ancho es el del circuito
+    halfWidth: (def.widthMeters ?? 14) / 2 / CELL_M,
+  };
+  // largada: el primer punto, mirando hacia el siguiente
+  const dx = path.x[1] - path.x[0], dy = path.y[1] - path.y[0], l = Math.hypot(dx, dy);
+  const start = (road) => ({ x: path.x[0], y: path.y[0], dx: dx / l, dy: dy / l, half: lineHalf(road, W, H, path.x[0], path.y[0], dx / l, dy / l, def) });
+  const elevation = { lapLengthMeters: layout.lapLengthMeters, heightsMeters: layout.heightsMeters };
+  return buildTrackFromPath(path, W, H, def, elevation, start);
+}
+
+// path: línea central (en celdas, desde la largada), con el medio ancho en cada punto (halfWidths) o uno solo
+// (halfWidth); start(road): la línea de largada sobre la pista ya armada
+function buildTrackFromPath(path, W, H, def, elevation, start) {
   // Escala real: cuántos metros mide una celda, según el largo real de la vuelta
   // (de la telemetría si la hay; si no, el que diga el circuito o 4 km)
   const lapMeters = elevation?.lapLengthMeters ?? def.lengthMeters ?? 4000;
   const st = stations(path);
   const length = st[path.n]; // largo de la línea central, en celdas
   const meters = lapMeters / length;
-  const halfWidth = def.widthMeters ? def.widthMeters / 2 / meters : path.halfWidth;
+  const halfWidths = path.halfWidths ?? new Float32Array(path.n).fill(def.widthMeters ? def.widthMeters / 2 / meters : path.halfWidth);
+  const halfWidth = [...halfWidths].sort((a, b) => a - b)[path.n >> 1]; // el típico
 
   // 2) Reconstruimos la pista como una cinta de ancho constante alrededor de la línea central:
   //    bordes suaves, sin las ondulaciones ni mordiscos que trae la imagen pixelada
   // Cada celda guarda además su posición sobre la línea central (station) y de qué lado está (lat)
-  const { road, sdf, station, lat } = ribbon(path, st, halfWidth, W, H);
+  const { road, sdf, station, lat } = ribbon(path, st, halfWidths, W, H);
 
   // 3) Con la pista definitiva calculamos todo lo demás
-  const { dist, tiles, line, progress, maxProgress } = layout(road, sdf, def, W, H);
+  const { dist, tiles, line, progress, maxProgress } = layout(road, sdf, def, W, H, start(road));
   const runoff = def.runoff ?? 3;
 
   // Largamos unas celdas detrás de la línea
@@ -58,7 +91,7 @@ export function buildTrackFromMask({ W, H, road: dark }, def, elevation = null) 
   for (const b of boards) b.z = sampleField(height, W, b.x, b.y);
 
   return {
-    W, H, meters, runoff, halfWidth, tiles, road, sdf, station, lat, length, kerbLeft, kerbRight, height,
+    W, H, meters, runoff, halfWidth, halfWidths, tiles, road, sdf, station, lat, length, kerbLeft, kerbRight, height,
     path: { n: path.n, x: path.x, y: path.y, st }, // línea central: puntos y su posición acumulada
     progress, maxProgress, line, spawn, trees, boards, scale: def.scale ?? 3, name: def.name,
   };
@@ -125,7 +158,7 @@ function cleanRoad(dark, def, W, H) {
 
 // A partir de la pista: tipo de cada celda, línea de largada y progreso de vuelta.
 // El muro es la franja que está a más de `runoff` celdas del borde (según sdf, que es continuo).
-function layout(road, sdf, def, W, H) {
+function layout(road, sdf, def, W, H, line) {
   const runoff = def.runoff ?? 3;
   const dist = distanceFrom(road, W, H, 255);
   const tiles = new Uint8Array(W * H);
@@ -142,7 +175,6 @@ function layout(road, sdf, def, W, H) {
   }
   const drivable = (i) => sdf[i] >= -runoff && tiles[i] !== T.WALL;
 
-  const line = startLine(road, def, W, H);
   const progress = computeProgress(drivable, W, H, line);
   let maxProgress = 0;
   for (let i = 0; i < W * H; i++) if (progress[i] > maxProgress) maxProgress = progress[i];
@@ -152,7 +184,6 @@ function layout(road, sdf, def, W, H) {
 // Línea de largada: punto (sobre la pista), dirección de carrera y medio ancho
 function startLine(road, def, W, H) {
   const scale = def.scale ?? 3;
-  const runoff = def.runoff ?? 3;
   let sx = def.start.x / scale;
   let sy = def.start.y / scale;
   let dx = def.towards.x - def.start.x;
@@ -161,16 +192,18 @@ function startLine(road, def, W, H) {
   dx /= len;
   dy /= len;
   [sx, sy] = snapToRoad(road, W, H, sx, sy);
+  return { x: sx, y: sy, dx, dy, half: lineHalf(road, W, H, sx, sy, dx, dy, def) };
+}
 
-  // Medio ancho de la línea de largada: hasta donde llega la pista hacia los costados
-  let lineHalf = 1;
+// Medio ancho de la línea de largada: hasta donde llega la pista hacia los costados, más el pasto
+function lineHalf(road, W, H, sx, sy, dx, dy, def) {
+  let half = 1;
   for (const s of [1, -1]) {
     let k = 0;
     while (k < 60 && road[idx(W, H, sx - dy * s * k, sy + dx * s * k)]) k++;
-    lineHalf = Math.max(lineHalf, k + runoff + 1);
+    half = Math.max(half, k + (def.runoff ?? 3) + 1);
   }
-
-  return { x: sx, y: sy, dx, dy, half: lineHalf };
+  return half;
 }
 
 // Recorre la pista desde la largada como un "caminante": avanza un paso, mide hasta dónde
@@ -242,9 +275,10 @@ function stations({ n, x, y, wrap }) {
 //   sdf     = medio ancho − distancia (positiva sobre la pista)
 //   station = posición de ese punto a lo largo de la línea central, en celdas desde la largada (-1 si lejos)
 //   lat     = distancia con signo hacia el costado (positiva a la derecha del sentido de carrera)
-function ribbon({ n, x, y, wrap }, st, halfWidth, W, H) {
-  const R = halfWidth + 12;
+function ribbon({ n, x, y, wrap }, st, halfWidths, W, H) {
+  const R = Math.max(...halfWidths) + 12;
   const d = new Float32Array(W * H).fill(R);
+  const half = new Float32Array(W * H); // el medio ancho en el punto más cercano de la línea central
   const station = new Float32Array(W * H).fill(-1);
   const lat = new Float32Array(W * H);
   for (let b = 0; b < n; b++) {
@@ -262,6 +296,7 @@ function ribbon({ n, x, y, wrap }, st, halfWidth, W, H) {
         const i = cy * W + cx;
         if (dd < d[i]) {
           d[i] = dd;
+          half[i] = halfWidths[b] * (1 - t) + halfWidths[wrap(b + 1)] * t;
           station[i] = st[b] + t * len;
           lat[i] = (py * ex - px * ey) / len;
         }
@@ -271,10 +306,23 @@ function ribbon({ n, x, y, wrap }, st, halfWidth, W, H) {
   const sdf = new Float32Array(W * H);
   const road = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) {
-    sdf[i] = halfWidth - d[i];
+    sdf[i] = half[i] - d[i];
     road[i] = sdf[i] > 0 ? 1 : 0;
   }
   return { road, sdf, station, lat };
+}
+
+// Medio ancho de la pista (celdas) en una posición st de la línea central
+export function halfWidthAt(track, st) {
+  const { halfWidths, path: { n, st: s } } = track;
+  let lo = 0, hi = n;
+  const u = ((st % s[n]) + s[n]) % s[n];
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (s[mid] <= u) lo = mid; else hi = mid;
+  }
+  const t = (u - s[lo]) / Math.max(1e-9, s[lo + 1] - s[lo]);
+  return halfWidths[lo] * (1 - t) + halfWidths[(lo + 1) % n] * t;
 }
 
 // Posición sobre la línea central en un punto cualquiera, interpolada.

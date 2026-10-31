@@ -1,8 +1,8 @@
 # Raycast Racer
 
 Juego de carreras para el navegador con un motor de render "a la antigua" (un rayo por columna de pantalla).
-El mundo se arma a partir de una **imagen del trazado** (línea oscura sobre fondo claro) y,
-opcionalmente, un **perfil de alturas** sacado de la telemetría real de F1.
+Los circuitos de F1 se arman con el **trazado real**, sacado de la telemetría (forma, largo de vuelta y alturas);
+también se puede cargar uno propio desde una **imagen del trazado** (línea oscura sobre fondo claro).
 
 ## Jugar
 
@@ -58,9 +58,12 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
 
 ## Cómo funciona
 
-1. **Imagen → mapa** (`src/track.js`): la imagen se reduce a una grilla (1 celda = `scale` píxeles).
-   Los píxeles oscuros son pista; se queda con el trazado más grande (descarta números y textos)
-   y tapa huecos chicos. Alrededor pone pasto (`runoff` celdas) y después un guardrail.
+1. **Trazado → mapa** (`src/track.js`): los circuitos de F1 traen la línea central en metros
+   (`tracks/<id>.layout.json`, ver "Trazados reales desde la telemetría de F1") y se dibujan en una grilla de
+   celdas de 2 m. Un circuito propio sale de una imagen, que se reduce a una grilla (1 celda = `scale` píxeles):
+   los píxeles oscuros son pista, se queda con el trazado más grande (descarta números y textos), tapa huecos
+   chicos y le saca la línea central. En los dos casos la pista es una cinta del ancho del circuito alrededor de
+   la línea central (puede variar por tramo); alrededor pone pasto (`runoff` celdas) y después un guardrail.
    Además calcula, por celda:
    - la **distancia con signo al borde** de la pista (para dibujar bordes suaves),
    - el **progreso** a lo largo de la vuelta (para validar vueltas, contramano y las franjas de los pianos),
@@ -216,7 +219,8 @@ Node (`rl/worker.js`) que simulan 128 autos a la vez; en una Mac M4 Pro van unos
 python3 -m venv rl/.venv && rl/.venv/bin/pip install torch stable-baselines3 gymnasium tensorboard
 ```
 
-1. Exportar los circuitos (la parte que necesita el navegador): con `serve.py` corriendo, abrir
+1. Los circuitos de F1 se arman en Node desde `tracks/*.layout.json`. Sólo los que salen de una imagen
+   necesitan exportarse antes (la parte que necesita el navegador): con `serve.py` corriendo, abrir
    `http://localhost:8123/rl/bake.html` (guarda las máscaras en `rl/tracks/`).
 2. Entrenar: `rl/.venv/bin/python rl/train.py --steps 30000000 --name etapa1` (las curvas, con
    `rl/.venv/bin/tensorboard --logdir rl/runs`).
@@ -291,7 +295,24 @@ Con este perfil, las velocidades del juego a lo largo de la vuelta coinciden con
 ~95-110 km/h, punta ~305-325 km/h). Un piloto automático por el centro de la pista hace ~1:17,7; la vuelta real
 fue 1:12,5 (con trazada de carrera y al 100 %).
 
-## Alturas reales desde la telemetría de F1
+## Trazados reales desde la telemetría de F1
+
+`tools/layout.py` usa la API abierta de [OpenF1](https://openf1.org) (posiciones X, Y, Z de los autos) y junta
+todas las vueltas de todos los pilotos en las prácticas y la clasificación (sin entradas ni salidas de boxes):
+
+```bash
+python3 tools/layout.py Montreal 2025 tracks/montreal.layout.json
+```
+
+Guarda la línea central cada 2 m desde la línea de largada, el largo de vuelta y la altura en cada punto; lo que
+baja queda en `tools/.cache/`. Las posiciones de OpenF1 no son de GPS: el sistema de tiempos ubica a cada auto
+sobre el dibujo oficial del circuito, así que todos pasan por la misma línea. De ahí sale la forma, suave y en
+metros reales (sin los zigzags de sacar la línea central de una imagen), pero no los bordes: el ancho es el de
+cada circuito (`widthMeters`). La telemetría viene en otra orientación que los dibujos: `rotate` en
+`tracks/index.js` gira el mapa. Si la API dice que hay una sesión en vivo, sólo deja pedir datos con clave hasta
+que termine.
+
+### Sólo las alturas, para un circuito de imagen
 
 `tools/elevation.py` usa la API abierta de [OpenF1](https://openf1.org) (posiciones X, Y, Z de los autos),
 promedia las 5 vueltas más rápidas de una carrera y guarda la altura según la fracción de vuelta:
@@ -309,6 +330,9 @@ las alturas lo que hacía falta (entre 0,4 % y 4,7 % de vuelta; queda anotado en
 pendientes sean las reales; `elevationScale` en `tracks/index.js` permite exagerarlas o suavizarlas.
 
 ## Agregar un circuito
+
+Uno de F1: generar el trazado con `tools/layout.py` y agregar en `tracks/index.js` una entrada con `layout`,
+`widthMeters` y, si hace falta, `rotate`.
 
 Desde el juego: "Cargar tu circuito" o arrastrar una imagen, y marcar con dos clicks la línea de largada
 y el sentido de giro (sin alturas).

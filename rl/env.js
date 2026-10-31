@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Car, DEFAULT_PROFILE, SETUP_KEYS } from '../src/car.js';
 import { racingLine } from '../src/racingline.js';
+import { halfWidthAt } from '../src/track.js';
 import { OBS_SIZE, observe, stationAt, trackHeading } from '../src/sensors.js';
 import { loadTrack } from './tracks.js';
 
@@ -94,7 +95,7 @@ export class RaceEnv {
     const L = track.length;
     const u = this.rand() * L;
     const rough = this.rand() < ROUGH_START;
-    const side = (this.rand() - 0.5) * track.halfWidth * (rough ? 2.6 : 1);
+    const side = (this.rand() - 0.5) * halfWidthAt(track, u) * (rough ? 2.6 : 1);
     const h = trackHeading(track, u);
     const { x, y } = pointOnCenter(track, u);
     const car = new Car(x - Math.sin(h) * side, y + Math.cos(h) * side, h + (this.rand() - 0.5) * (rough ? 1.6 : 0.2), profile);

@@ -11,7 +11,7 @@
 
   const log = document.getElementById('log');
   const lines = [];
-  for (const def of TRACKS) {
+  for (const def of TRACKS.filter((d) => d.image)) { // los que salen de la telemetría no necesitan máscara
     const mask = imageMask(await loadImage('../' + def.image), def);
     const res = await fetch(`tracks/${def.id}.mask`, { method: 'PUT', body: packMask(mask) });
     lines.push(`${def.id}: ${mask.W}×${mask.H} ${res.ok ? 'ok' : 'error ' + res.status}`);

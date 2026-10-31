@@ -1,5 +1,12 @@
 // Definición de circuitos.
-// Las coordenadas (start, towards) están en píxeles de la imagen original.
+// Los de F1 salen de la telemetría (tools/layout.py): línea central en metros, alturas y largo de vuelta.
+//   layout     → trazado generado con tools/layout.py
+//   rotate     → (opcional) grados para girar el trazado (la telemetría viene en otra orientación que los dibujos)
+//   widthMeters → ancho de la pista en metros
+//   runoff     → celdas de pasto entre la pista y los muros
+//   elevationScale → (opcional) exagera o suaviza las alturas; 1 = pendientes reales
+// Un circuito propio (o uno sin telemetría) sale de una imagen; las coordenadas (start, towards) están en píxeles
+// de la imagen original.
 //   image      → imagen del trazado: línea oscura sobre fondo claro
 //   scale      → cuántos píxeles de la imagen forman una celda del mapa
 //   threshold  → luminancia (0-255) por debajo de la cual un píxel es pista
@@ -21,126 +28,65 @@ export const TRACKS = [
   {
     id: 'interlagos',
     name: 'Interlagos',
-    image: 'tracks/interlagos.webp',
-    elevation: 'tracks/interlagos.elevation.json',
-    elevationScale: 1,
+    layout: 'tracks/interlagos.layout.json',
+    rotate: 76,
     widthMeters: 15,
-    scale: 3,
-    threshold: 90,
-    widen: 1,
     runoff: 3,
-    start: { x: 707, y: 335 },
-    towards: { x: 600, y: 397 },
   },
   {
     id: 'monza',
     name: 'Monza',
-    image: 'tracks/monza.webp',
+    layout: 'tracks/monza.layout.json',
+    rotate: -87,
     widthMeters: 14,
-    elevation: 'tracks/monza.elevation.json',
-    scale: 2, // más fino que Interlagos: con 3 las chicanas quedan muy suavizadas
-    threshold: 90,
-    widen: 1,
     runoff: 3,
-    start: { x: 1220, y: 892 },
-    towards: { x: 1100, y: 893 },
   },
   {
     id: 'albertpark',
     name: 'Albert Park',
-    image: 'tracks/Australia.webp',
+    layout: 'tracks/albertpark.layout.json',
+    rotate: -48,
     widthMeters: 14,
-    elevation: 'tracks/albertpark.elevation.json',
-    scale: 4, // la imagen es casi el doble de grande que las otras
-    threshold: 90,
-    widen: 1,
     runoff: 3,
-    start: { x: 2113, y: 1716 },
-    towards: { x: 1890, y: 1716 },
   },
   {
     id: 'barcelona',
     name: 'Barcelona',
-    image: 'tracks/barcelona.png',
+    layout: 'tracks/barcelona.layout.json',
+    rotate: 5,
     widthMeters: 14,
-    elevation: 'tracks/barcelona.elevation.json',
-    scale: 3,
-    threshold: 90,
-    widen: 1,
     runoff: 3,
-    open: 1, // el mástil de la bandera toca la pista
-    start: { x: 1555, y: 670 },
-    towards: { x: 1476, y: 794 },
   },
   {
     id: 'montreal',
     name: 'Montreal',
-    image: 'tracks/canada.jpeg',
+    layout: 'tracks/montreal.layout.json',
+    rotate: 102,
     widthMeters: 12,
-    elevation: 'tracks/montreal.elevation.json',
-    scale: 0.4, // imagen chica: se agranda (con 0,5 la calle de boxes queda pegada a la recta)
-    threshold: 100,
-    widen: 1,
     runoff: 3,
-    open: 4, // la calle de boxes, más finita, va pegada a la recta
-    start: { x: 93, y: 179 },
-    towards: { x: 60, y: 176 },
   },
   {
     id: 'spa',
     name: 'Spa',
-    image: 'tracks/spa.png',
+    layout: 'tracks/spa.layout.json',
+    rotate: -104,
     widthMeters: 13,
-    elevation: 'tracks/spa.elevation.json',
-    scale: 0.6, // imagen chica: se agranda
-    threshold: 90,
-    widen: 1,
     runoff: 3,
-    open: 2, // la calle de boxes va pegada a la recta
-    paint: [[150, 351, 100, 408, 8]], // la bandera a cuadros corta la pista
-    start: { x: 107, y: 400 },
-    towards: { x: 88, y: 420 },
   },
   {
     id: 'silverstone',
     name: 'Silverstone',
-    image: 'tracks/silverstone.svg',
+    layout: 'tracks/silverstone.layout.json',
+    rotate: -71,
     widthMeters: 15,
-    elevation: 'tracks/silverstone.elevation.json',
-    scale: 0.75,
-    threshold: 90,
-    widen: 1,
     runoff: 3,
-    open: 3, // las líneas finas son variantes viejas del circuito
-    paint: [[440, 457, 505, 531, 10]], // la bandera a cuadros corta la pista
-    start: { x: 470, y: 490 },
-    towards: { x: 450, y: 467 },
   },
   {
     id: 'redbullring',
     name: 'Red Bull Ring',
-    image: 'tracks/austria.png',
+    layout: 'tracks/redbullring.layout.json',
+    rotate: 9,
     widthMeters: 13,
-    elevation: 'tracks/redbullring.elevation.json',
-    scale: 0.4, // imagen chica: se agranda
-    threshold: 80, // las flechas rojas no son pista
-    widen: 1,
     runoff: 3,
-    open: 4, // la calle de boxes va pegada a la recta
-    smooth: 25,
-    paint: [
-      [385, 284.5, 315, 302.5, 5], // la bandera a cuadros corta la pista
-      // el dibujo marca cada curva con un punto blanco sobre la pista: se tapan
-      [219, 327, 219.1, 327, 8],
-      [48, 61, 48.1, 61, 8],
-      [316, 86, 316.1, 86, 8],
-      [171, 133, 171.1, 133, 8],
-      [212, 222, 212.1, 222, 8],
-      [262, 185, 262.1, 185, 8],
-      [448, 186, 448.1, 186, 8],
-      [466, 252, 466.1, 252, 8],
-    ],
-    start: { x: 320, y: 302 },
-    towards: { x: 290, y: 309 },
   },
 ];

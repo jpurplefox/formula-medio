@@ -3,6 +3,8 @@
 // para ir a la velocidad que la trazada indica en cada punto, multiplicada por su ritmo (pace).
 // Si alcanza a otro auto, se abre hacia el lado donde hay lugar para pasarlo; si no hay lugar, se queda detrás.
 
+import { halfWidthAt } from './track.js';
+
 const LOOK_BASE = 6; // distancia mínima al punto que persigue el volante (m)
 const LOOK_TIME = 0.35; // más la distancia que recorre en este tiempo (s)
 const BRAKE_LOOK = 0.12; // mira la velocidad objetivo un poco más adelante, para frenar a tiempo (s)
@@ -94,8 +96,8 @@ export class Driver {
 
     // tráfico: entre qué posiciones de costado puede ir sin tocar a nadie (lo, hi, en m)
     // y qué velocidad no tiene que pasar para no llevarse puesto al de adelante (cap)
-    const half = track.halfWidth * M - MARGIN;
     const u = me.st;
+    const half = halfWidthAt(track, u) * M - MARGIN;
     const racing = line.offset[u | 0] * M + wobble; // por dónde va la trazada acá (m de costado)
     const myLat = me.lat * M;
     const lapM = f.length * M;

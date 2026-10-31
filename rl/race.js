@@ -39,7 +39,7 @@ import { collideCars } from '../src/collision.js';
 import { NeuralDriver, Policy } from '../src/policy.js';
 import { racingLine } from '../src/racingline.js';
 import { OBS_SIZE, observe, stationAt, trackHeading } from '../src/sensors.js';
-import { sampleField } from '../src/track.js';
+import { halfWidthAt, sampleField } from '../src/track.js';
 import { pointOnCenter, randomSetup, randomTyres, rng } from './env.js';
 import { loadTrack } from './tracks.js';
 
@@ -426,7 +426,7 @@ export class RaceSim {
       const e = r.e;
       if (r.rescue) {
         const old = e.car;
-        const side = (this.rand() < 0.5 ? -1 : 1) * track.halfWidth * M * 0.6;
+        const side = (this.rand() < 0.5 ? -1 : 1) * halfWidthAt(track, e.u) * M * 0.6;
         e.car = this.place(e.u, side, 10);
         Object.assign(e.car, { setup: old.setup, wear: old.wear, wearRate: old.wearRate });
         Object.assign(e, { grass: 0, stuck: 0, back: 0 });

@@ -1,5 +1,5 @@
 import { TRACKS } from '../tracks/index.js';
-import { loadImage, buildTrack, sampleField, stationAt, T } from './track.js';
+import { loadImage, buildTrack, buildTrackFromLayout, sampleField, stationAt, T } from './track.js';
 import { Renderer, rgb } from './renderer.js';
 import { GLRenderer } from './glrenderer.js';
 import { Car, DEFAULT_PROFILE, LAUNCH_WINDOW, isSolid, lookup, slipstream, wheelAngle } from './car.js';
@@ -1007,6 +1007,12 @@ async function loadTrack(id) {
   if (id === 'custom' && customTrack) return customTrack.track;
   if (builtTracks.has(id)) return builtTracks.get(id);
   const def = TRACKS.find((t) => t.id === id) || TRACKS[0];
+  if (def.layout) {
+    // el trazado sacado de la telemetría (tools/layout.py)
+    const track = buildTrackFromLayout(await fetch(def.layout).then((r) => r.json()), def);
+    builtTracks.set(def.id, track);
+    return track;
+  }
   const [img, elevation] = await Promise.all([loadImage(def.image), def.elevation ? fetch(def.elevation).then((r) => r.json()) : null]);
   const track = buildTrack(img, def, elevation);
   builtTracks.set(def.id, track);

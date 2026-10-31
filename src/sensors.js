@@ -13,7 +13,7 @@
 // circuito sin importar el tamaño de sus celdas.
 
 import { SETUP_KEYS } from './car.js';
-import { sampleField, stationAt } from './track.js';
+import { halfWidthAt, sampleField, stationAt } from './track.js';
 
 export const RAY_ANGLES = [-90, -60, -40, -28, -18, -11, -6, -3, -1, 0, 1, 3, 6, 11, 18, 28, 40, 60, 90]
   .map((d) => (d * Math.PI) / 180);
@@ -83,7 +83,7 @@ function velocity(car) {
 // car: el auto (Car de car.js); u: su posición en la vuelta (track.station, celdas);
 // others: los demás autos (Car) en el mismo circuito
 export function observe(track, car, u, others = [], out = new Float32Array(OBS_SIZE)) {
-  const { meters, halfWidth, W } = track;
+  const { meters, W } = track;
   let i = 0;
   const put = (v) => { out[i++] = Number.isFinite(v) ? Math.max(-3, Math.min(3, v)) : 0; };
 
@@ -108,7 +108,7 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
   // posición en la pista
   const lat = sampleField(track.lat, W, car.x, car.y);
   const rel = wrapAngle(car.angle - trackHeading(track, u));
-  put(lat / halfWidth);
+  put(lat / halfWidthAt(track, u));
   put(Math.sin(rel));
   put(Math.cos(rel));
   put(car.onGrass ? 1 : 0);

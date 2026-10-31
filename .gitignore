@@ -4,3 +4,4 @@ __pycache__/
 rl/.venv/
 rl/runs/
 rl/tracks/
+tools/.cache/

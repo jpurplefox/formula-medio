@@ -3,7 +3,7 @@
 // Todo se guarda por posición sobre la línea central (una entrada por celda), como los pianos.
 
 import { lookup } from './car.js';
-import { curvature } from './track.js';
+import { curvature, halfWidthAt } from './track.js';
 
 const MARGIN = 1.3; // distancia mínima de la trazada al borde de la pista (m): medio auto y un poco más
 const GRIP_USE = 0.94; // fracción del agarre lateral que usa la trazada (un poco de margen)
@@ -17,7 +17,7 @@ const SMOOTH = [[4, 12]]; // suavizado final: [distancia a los vecinos (celdas),
 // limits: qué fracción del agarre y de la frenada usa (por defecto, con margen, para la trazada que ves;
 // los rivales usan una más al límite)
 export function racingLine(track, profile, { gripUse = GRIP_USE, brakeUse = BRAKE_USE } = {}) {
-  const { path, meters, halfWidth } = track;
+  const { path, meters, halfWidths } = track;
   const { n, x, y, st } = path;
   const wrap = (b) => ((b % n) + n) % n;
 
@@ -33,10 +33,12 @@ export function racingLine(track, profile, { gripUse = GRIP_USE, brakeUse = BRAK
   // 1) La línea, curva por curva, como la hacen los pilotos: se llega por el lado de afuera,
   //    se toca el vértice (el punto más cerrado) del lado de adentro y se sale abriendo de nuevo hacia afuera.
   //    Entre una curva y otra la línea cruza la pista de a poco; en las eses va de vértice a vértice.
-  const lim = halfWidth - MARGIN / meters;
+  // hasta dónde se puede abrir en cada punto (y en una posición cualquiera de la vuelta): la pista no es pareja
+  const lim = Float64Array.from(halfWidths, (h) => h - MARGIN / meters);
+  const limAt = (s) => halfWidthAt(track, s) - MARGIN / meters;
   const len = st[n];
   const corners = findCorners(curvature({ n, x, y, wrap }), st, n, wrap, meters);
-  const ctrl = controlPoints(corners, len, lim, meters);
+  const ctrl = controlPoints(corners, len, limAt, meters);
   const off = new Float64Array(n);
   if (ctrl.length) {
     // entre dos puntos de control, transición suave (sin quiebres, plana en cada punto de control)
@@ -58,7 +60,7 @@ export function racingLine(track, profile, { gripUse = GRIP_USE, brakeUse = BRAK
         const mx = (x[a] + nx[a] * off[a] + x[c] + nx[c] * off[c]) / 2;
         const my = (y[a] + ny[a] * off[a] + y[c] + ny[c] * off[c]) / 2;
         const target = (mx - x[b]) * nx[b] + (my - y[b]) * ny[b];
-        off[b] = Math.max(-lim, Math.min(lim, off[b] + (target - off[b]) * 0.5));
+        off[b] = Math.max(-lim[b], Math.min(lim[b], off[b] + (target - off[b]) * 0.5));
       }
     }
   }
@@ -149,7 +151,7 @@ function findCorners(curv, st, n, wrap, meters) {
 // Puntos de control de la trazada: afuera antes de la curva, adentro en el vértice, afuera después.
 // Si la salida de una curva se pisa con la entrada de la siguiente: si doblan para el mismo lado,
 // queda un solo punto afuera en el medio; si doblan para lados contrarios (una ese), se va de vértice a vértice.
-function controlPoints(corners, len, lim, meters) {
+function controlPoints(corners, len, limAt, meters) {
   const m = corners.length;
   if (!m) return [];
   // posiciones "desenrolladas": siempre crecientes a lo largo de la vuelta
@@ -165,13 +167,13 @@ function controlPoints(corners, len, lim, meters) {
     const next = i + 1 < m ? cs[i + 1] : { ...cs[0], entry: cs[0].entry + len, apex: cs[0].apex + len };
     const prev = i > 0 ? cs[i - 1] : { ...cs[m - 1], apex: cs[m - 1].apex - len, exit: cs[m - 1].exit - len };
     // entrada: sólo si no se pisa con la salida de la anterior (de eso se ocupa la anterior)
-    if (c.entry > prev.exit && c.entry > prev.apex) pts.push({ s: c.entry, o: -c.sign * lim });
-    pts.push({ s: c.apex, o: c.sign * lim });
-    if (c.exit < next.entry) pts.push({ s: c.exit, o: -c.sign * lim });
+    if (c.entry > prev.exit && c.entry > prev.apex) pts.push({ s: c.entry, o: -c.sign * limAt(c.entry) });
+    pts.push({ s: c.apex, o: c.sign * limAt(c.apex) });
+    if (c.exit < next.entry) pts.push({ s: c.exit, o: -c.sign * limAt(c.exit) });
     else if (c.sign === next.sign) {
       // misma mano: un punto afuera entre las dos, sin pasar ninguno de los vértices
       const mid = Math.min(Math.max((c.exit + next.entry) / 2, c.apex + 1), next.apex - 1);
-      if (mid > c.apex) pts.push({ s: mid, o: -c.sign * lim });
+      if (mid > c.apex) pts.push({ s: mid, o: -c.sign * limAt(mid) });
     }
   }
   // a posiciones dentro de la vuelta, ordenadas

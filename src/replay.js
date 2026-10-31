@@ -2,7 +2,7 @@
 // (interpolando entre muestras) con distintas cámaras, como en una transmisión de TV.
 
 import { lineFrame, pointAt } from './ai.js';
-import { sampleField } from './track.js';
+import { halfWidthAt, sampleField } from './track.js';
 
 export const REPLAY_STEP = 1 / 30;
 const FIELDS = 10; // por auto y por muestra: x, y, angle, steer, speed, slope, dist (metros recorridos), rpm, throttle, gear
@@ -56,7 +56,7 @@ export function tvCameras(track) {
   const out = [];
   const count = Math.max(4, Math.round((f.length * M) / TV_SPACING));
   for (let k = 0; k < count; k++) {
-    const side = (k % 2 ? 1 : -1) * (track.halfWidth + track.runoff + 0.5 + TV_BACK / M);
+    const side = (k % 2 ? 1 : -1) * (halfWidthAt(track, (k * f.length) / count) + track.runoff + 0.5 + TV_BACK / M);
     const p = pointAt(f, (k * f.length) / count, side);
     if (p.x < 3 || p.y < 3 || p.x > track.W - 3 || p.y > track.H - 3) continue;
     out.push({ x: p.x, y: p.y });

@@ -22,7 +22,7 @@ export class RubberMap {
   constructor(track, offset) {
     this.length = track.length;
     this.rows = Math.min(MAX_ROWS, Math.ceil(track.length));
-    this.span = track.halfWidth + 0.6; // de la línea central al último carril (celdas), un poco más que la pista
+    this.span = Math.max(...track.halfWidths) + 0.6; // de la línea central al último carril (celdas), un poco más que la pista
     this.lanes = RUBBER_LANES;
     this.meters = track.meters;
     this.rubber = new Float32Array(this.rows * this.lanes); // la que dejaron los autos
