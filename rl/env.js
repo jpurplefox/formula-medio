@@ -62,9 +62,11 @@ export function rng(seed) {
   };
 }
 
-// Un auto al azar: cada multiplicador entre 1 - spread y 1 + spread (el desgaste varía más: ±30 %)
+// Un auto al azar: cada multiplicador entre 1 - spread y 1 + spread, o entre 1 - spread[0] y 1 + spread[1]
+// (el desgaste varía siempre ±30 %)
 export function randomSetup(rand, spread) {
-  return Object.fromEntries(SETUP_KEYS.map((k) => [k, 1 + (2 * rand() - 1) * (k === 'wear' ? 0.3 : spread)]));
+  const [down, up] = Array.isArray(spread) ? spread : [spread, spread];
+  return Object.fromEntries(SETUP_KEYS.map((k) => [k, k === 'wear' ? 1 + (2 * rand() - 1) * 0.3 : 1 - down + (down + up) * rand()]));
 }
 
 // Gomas al azar: carreras de 3 a 20 vueltas (desgaste por metro) y en cualquier momento de la carrera
@@ -74,7 +76,9 @@ export function randomTyres(car, rand, track) {
 }
 
 export class RaceEnv {
-  constructor({ trackIds, seed = 1, spread = 0.02 }) {
+  // rewards: escala del castigo por pasto y por muro (la fase 1 del tercer intento los hace más caros)
+  constructor({ trackIds, seed = 1, spread = 0.02, rewards = {} }) {
+    this.rewards = { grass: 1, wall: 1, ...rewards };
     this.trackIds = trackIds;
     this.spread = spread;
     this.rand = rng(seed);
@@ -124,7 +128,7 @@ export class RaceEnv {
     for (let k = 0; k < SUBSTEPS; k++) {
       const bump = car.bump;
       car.update(PHYSICS_DT, input, track);
-      if (car.bump > bump + 0.05) reward -= WALL_PENALTY * (car.bump - bump);
+      if (car.bump > bump + 0.05) reward -= WALL_PENALTY * this.rewards.wall * (car.bump - bump);
       this.time += PHYSICS_DT;
       // avance sobre la línea central (en metros); al cruzar la línea de largada el station vuelve a 0
       const u = stationAt(track, car.x, car.y);
@@ -147,7 +151,7 @@ export class RaceEnv {
     }
     const dt = PHYSICS_DT * SUBSTEPS;
     if (car.onGrass) {
-      reward -= GRASS_PENALTY;
+      reward -= GRASS_PENALTY * this.rewards.grass;
       this.grass += dt;
     } else this.grass = 0;
     this.stuck = Math.abs(car.speed) < 1 ? this.stuck + dt : 0;

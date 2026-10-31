@@ -19,6 +19,11 @@
 //     pasto en ese rato, y con no más de 2 autos alrededor (en un pelotón la prioridad es no chocar)
 //   - ser pasado limpio (bastante menos: defender sí, pero nunca a costa de un toque)
 //   - zigzag defendiendo: en recta y con alguien pegado atrás, cambiar de dirección más de una vez
+//   - ir lento con la pista libre (piso de ritmo, si la fase lo usa)
+//
+// Cada fase puede escalar partes del premio (rewards: progress, pass, paceFloor, paceAlways, crowd) y el castigo
+// por toque provocado se multiplica por contactScale, que el entrenamiento ajusta solo según un presupuesto de
+// toques (rl/train.py). progress (de 0 a 1, cuánto lleva la fase) achica la desventaja del rival en persecución.
 //
 // Cada auto es un poco distinto (motor, punta, agarre, frenos, desgaste: ± spread) y las gomas pueden estar
 // gastadas; la red lo recibe como entradas. Con autos distintos, pasar y defender aparecen solos.
@@ -66,6 +71,16 @@ const WEAVE_MOVE = 1.5; // m de costado: desde acá cuenta como movimiento
 // amontonamiento: la red se ahorra los toques y el peligro que venían, y aprende a frenar en vez de salir de ahí
 const GRASS_LIMIT = 6, STUCK_LIMIT = 6, BACKWARDS_LIMIT = 30, RESCUE_PENALTY = 4;
 const STALL_PENALTY = 1; // por segundo casi quieto
+// Piso de ritmo: con la pista libre adelante, ir por debajo de PACE_FLOOR de la velocidad de la trazada se castiga
+// (hasta PACE_PENALTY por segundo, proporcional a lo que le falta). Así frenar nunca es "seguro" sin motivo; con
+// alguien adelante no aplica, porque seguir a uno más lento está bien
+const PACE_FLOOR = 0.75, PACE_PENALTY = 1, FREE_ROAD = 40;
+// Con paceAlways el piso cuenta también con alguien adelante (quedarse detrás de uno lento cuesta: hay que pasarlo),
+// salvo en un amontonamiento: más de CROWD_CLOSE autos a menos de CROWD_NEAR m (largadas, pelotones). Ahí, con
+// crowd, un toque provocado cuesta crowd veces más y el peligro se mira con TTC_CROWD veces más anticipación
+const CROWD_NEAR = 30, CROWD_CLOSE = 3, TTC_CROWD = 1.5;
+// Persecución: desventaja del rival de adelante (menos agarre y motor) al principio y al final de la fase
+const CHASE_HANDICAP = [0.2, 0.08];
 
 // escenarios: duración (decisiones, a 20 por segundo)
 export const SCENARIOS = { solo: 2400, pack: 300, start: 500, chase: 600, race: 2400 };
@@ -118,7 +133,11 @@ const mod = (u, L) => ((u % L) + L) % L;
 export class RaceSim {
   // agents: cuántos autos aprenden; opponents: redes que manejan algunos rivales; mix: peso de cada escenario
   // (en pasos de entrenamiento, no en carreras); spread: variación de los autos (raceSpread en carrera completa)
-  constructor({ trackIds, agents = 4, seed = 1, opponents = [], mix = { race: 1 }, spread = 0.02, raceSpread = spread }) {
+  constructor({ trackIds, agents = 4, seed = 1, opponents = [], mix = { race: 1 }, spread = 0.02, raceSpread = spread,
+    rewards = {}, contactScale = 1, progress = 0 }) {
+    this.rewards = { progress: 1, pass: 1, paceFloor: 0, paceAlways: 0, crowd: 1, ...rewards };
+    this.contactScale = contactScale;
+    this.progress = progress;
     this.trackIds = trackIds;
     this.agents = agents;
     this.rand = rng(seed);
@@ -229,11 +248,14 @@ export class RaceSim {
         used.push(c);
         const u0 = straight ? c + (20 + 40 * r()) / M : c - (150 + 150 * r()) / M;
         const v = (straight ? 0.9 : 0.8 + 0.15 * r()) * this.lineSpeed(u0);
-        // más lento: menos ritmo y, en recta, también menos punta
-        const pace = straight ? 0.92 + 0.04 * r() : 0.85 + 0.08 * r();
-        const slow = this.bot(spots.length, pace);
-        bot(u0, (r() - 0.5) * half * 0.5, v, slow);
-        spots[spots.length - 1].setup = { ...SAME_SETUP, topSpeed: straight ? 0.96 + 0.02 * r() : 1, power: straight ? 0.97 : 1 };
+        // más lento: menos agarre, motor, frenos y punta, una desventaja que se achica a lo largo de la fase (primero
+        // pasadas fáciles, con lugar de sobra; al final, más ajustadas). Maneja a su ritmo con ese auto
+        const [h0, h1] = CHASE_HANDICAP;
+        const h = (h0 + (h1 - h0) * Math.min(1, this.progress)) * (0.75 + 0.5 * r());
+        const setup = { ...SAME_SETUP, grip: 1 - h, power: 1 - h, brakes: 1 - h / 2, topSpeed: 1 - h / 3 };
+        const slow = this.bot(spots.length, 0.93 + 0.04 * r());
+        bot(u0, (r() - 0.5) * half * 0.5, v * (1 - h / 2), slow);
+        spots[spots.length - 1].setup = setup;
         let gap = (straight ? 10 + 20 * r() : 12 + 25 * r()) / M;
         for (let j = 0; j < (two ? 2 : 1); j++) {
           agent(u0 - gap, (r() - 0.5) * half * 0.6, v * (1 + 0.05 * r()));
@@ -266,7 +288,11 @@ export class RaceSim {
       car.setup = s.setup ?? randomSetup(r, spread);
       randomTyres(car, r, track);
       const e = { kind: s.kind, car, u: stationAt(track, car.x, car.y), start: wrap(s.u - front, L) * M, dist: 0, lastHit: -1e9, lastGrass: -1e9 };
-      if (s.kind === 'bot') e.driver = s.driver;
+      if (s.kind === 'bot') {
+        e.driver = s.driver;
+        // la IA de siempre no sabe de su auto: con menos agarre, menos ritmo (la velocidad en curva va con su raíz)
+        if (e.driver.pace) e.driver.pace *= Math.sqrt(Math.min(1, car.setup.grip));
+      }
       else this.newEpisode(e);
       return e;
     });
@@ -278,7 +304,7 @@ export class RaceSim {
 
   newEpisode(e) {
     Object.assign(e, { grass: 0, stuck: 0, back: 0, ret: 0, steps: 0, lapStart: null, epDist: 0,
-      passes: 0, passed: 0, hits: 0, danger: 0, weaves: 0, rescues: 0, defDir: 0, moves: 0, behind: 0, ext: undefined });
+      passes: 0, passed: 0, hits: 0, faults: 0, slow: 0, danger: 0, weaves: 0, rescues: 0, defDir: 0, moves: 0, behind: 0, ext: undefined });
   }
 
   observe(e) {
@@ -328,8 +354,11 @@ export class RaceSim {
         if (k >= 0) {
           rewards[k] -= WALL_PENALTY * e.wallHit;
           if (carHit) {
-            rewards[k] -= CAR_PENALTY * carHit * (this.hitAhead(e) || this.squeezed(e) ? 1 : CAR_PENALTY_HIT);
+            const fault = this.hitAhead(e) || this.squeezed(e);
+            const crowd = this.crowded(e) ? this.rewards.crowd : 1;
+            rewards[k] -= CAR_PENALTY * carHit * (fault ? this.contactScale * crowd : CAR_PENALTY_HIT);
             e.hits++;
+            if (fault) e.faults++;
           }
         }
         // avance sobre la línea central
@@ -352,7 +381,7 @@ export class RaceSim {
         states[i].st = u;
         states[i].lat = sampleField(track.lat, track.W, e.car.x, e.car.y);
         if (k >= 0) {
-          if (!e.car.onGrass || m < 0) rewards[k] += PROGRESS_REWARD * m;
+          if (!e.car.onGrass || m < 0) rewards[k] += PROGRESS_REWARD * (m < 0 ? 1 : this.rewards.progress) * m;
           e.epDist += m;
           e.back = m < 0 ? e.back - m : Math.max(0, e.back - m);
         }
@@ -363,6 +392,7 @@ export class RaceSim {
     this.agentsList.forEach((e, k) => {
       rewards[k] -= this.danger(e, dt);
       rewards[k] -= this.weave(e, dt);
+      if (this.rewards.paceFloor) rewards[k] -= this.slow(e, dt);
     });
 
     this.steps++;
@@ -387,7 +417,7 @@ export class RaceSim {
       const info = { lap: laps[k], track: this.id };
       if (truncated) {
         info.episode = { r: e.ret, l: e.steps, dist: e.epDist, track: this.id, scenario: this.scenario,
-          passes: e.passes, passed: e.passed, hits: e.hits, danger: e.danger, weaves: e.weaves, rescues: e.rescues };
+          passes: e.passes, passed: e.passed, hits: e.hits, faults: e.faults, slow: e.slow, danger: e.danger, weaves: e.weaves, rescues: e.rescues };
       }
       return { obs: null, reward: rewards[k], done: false, truncated, info, e, rescue };
     });
@@ -438,8 +468,8 @@ export class RaceSim {
       if (time - p.t < PASS_HOLD) return true;
       // en el rato que siguió tampoco tuvo que tocar a nadie ni irse al pasto
       if (p.clean && p.passer.lastHit < p.t && p.passer.lastGrass < p.t) {
-        reward(p.passer, PASS_REWARD);
-        reward(p.passed, -PASSED_PENALTY);
+        reward(p.passer, PASS_REWARD * this.rewards.pass);
+        reward(p.passed, -PASSED_PENALTY * this.rewards.pass);
         if (p.passer.kind === 'agent') p.passer.passes++;
         if (p.passed.kind === 'agent') p.passed.passed++;
       }
@@ -450,6 +480,8 @@ export class RaceSim {
   // Peligro: el auto que tiene adelante en su carril, si al ritmo que se le acerca lo alcanza en menos de TTC
   danger(e, dt) {
     let worst = 0;
+    const look = this.rewards.crowd > 1 && this.crowded(e) ? TTC_CROWD : 1;
+    const TTC_AHEAD = TTC * look, TTC_LAT = TTC_SIDE * look;
     const { car } = e;
     const ca = Math.cos(car.angle), sa = Math.sin(car.angle);
     const vx = ca * car.speed - sa * car.slip, vy = sa * car.speed + ca * car.slip;
@@ -462,7 +494,7 @@ export class RaceSim {
       const closing = (vx - ovx) * ca + (vy - ovy) * sa;
       if (closing <= 0) continue;
       const ttc = Math.max(0, fwd - 5) / closing; // 5 m: el largo de un auto
-      if (ttc < TTC) worst = Math.max(worst, 1 - ttc / TTC);
+      if (ttc < TTC_AHEAD) worst = Math.max(worst, 1 - ttc / TTC_AHEAD);
     }
     // de costado: el que tiene al lado, si se le va encima y a ese ritmo lo toca en menos de TTC_SIDE
     for (const o of this.cars) {
@@ -472,10 +504,25 @@ export class RaceSim {
       const toward = this.lateralToward(e, o);
       if (toward <= 0) continue;
       const ttc = Math.max(0, Math.abs(side) - CAR_WIDTH) / toward;
-      if (ttc < TTC_SIDE) worst = Math.max(worst, 1 - ttc / TTC_SIDE);
+      if (ttc < TTC_LAT) worst = Math.max(worst, 1 - ttc / TTC_LAT);
     }
     if (worst > 0) e.danger += dt;
     return DANGER_PENALTY * worst;
+  }
+
+  // Piso de ritmo: con nadie adelante en su carril a menos de FREE_ROAD metros (o siempre, con paceAlways, salvo en
+  // un amontonamiento), por debajo de PACE_FLOOR de la velocidad de la trazada para su auto paga en proporción a lo
+  // que le falta
+  slow(e, dt) {
+    const free = this.rewards.paceAlways ? !this.crowded(e) : !this.cars.some((o) => {
+      if (o === e) return false;
+      const [fwd, side] = this.rel(e, o);
+      return fwd > 0 && fwd < FREE_ROAD && Math.abs(side) < 4;
+    });
+    const floor = PACE_FLOOR * this.lineSpeed(e.u) * Math.sqrt(Math.min(1, e.car.setup.grip));
+    if (!free || e.car.speed >= floor) return 0;
+    e.slow += dt;
+    return PACE_PENALTY * dt * (1 - Math.max(0, e.car.speed) / floor);
   }
 
   // Zigzag defendiendo: en recta, con un auto pegado atrás, el primer movimiento vale y volver también; cambiar
@@ -533,6 +580,13 @@ export class RaceSim {
     };
     const dir = Math.sign((o.car.x - e.car.x) * M * nx + (o.car.y - e.car.y) * M * ny);
     return lat(e.car) * dir;
+  }
+
+  // ¿amontonamiento? más de CROWD_CLOSE autos a menos de CROWD_NEAR metros
+  crowded(e) {
+    let n = 0;
+    for (const o of this.cars) if (o !== e && Math.hypot(...this.rel(e, o)) < CROWD_NEAR && ++n > CROWD_CLOSE) return true;
+    return false;
   }
 
   // ¿apretó él a un auto que tenía al lado? Es culpa suya si se le fue encima más rápido de lo que el otro se acercó

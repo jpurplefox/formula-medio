@@ -4,7 +4,7 @@
 //
 //   node rl/scenario_eval.js models/a.json [models/b.json ...]
 //
-// Por escenario: toques y segundos en peligro cada 1000 m, pasadas limpias, veces que lo pasaron, zigzags y metros
+// Por escenario: toques, toques provocados (le pegó al de adelante o apretó al de al lado) y segundos en peligro cada 1000 m, pasadas limpias, veces que lo pasaron, zigzags y metros
 // recorridos por episodio (el ritmo: una red miedosa choca poco pero avanza menos) y rescates (trabado, en el pasto o
 // para atrás demasiado tiempo). Variables: RACES (carreras por escenario, 40), SPREAD (variación de los autos, 0.02).
 
@@ -17,7 +17,7 @@ const RACES = Number(process.env.RACES ?? 40), SPREAD = Number(process.env.SPREA
 const files = process.argv.slice(2);
 
 function measure(policy, scenario) {
-  const sim = new RaceSim({ trackIds: TRACK_IDS, agents: 4, seed: 12345, mix: { [scenario]: 1 }, spread: SPREAD });
+  const sim = new RaceSim({ trackIds: TRACK_IDS, agents: 4, seed: 12345, mix: { [scenario]: 1 }, spread: SPREAD, progress: 1 });
   const eps = [];
   for (let race = 0; race < RACES; race++) {
     let obs = sim.reset();
@@ -33,7 +33,7 @@ function measure(policy, scenario) {
   const sum = (f) => eps.reduce((a, e) => a + f(e), 0);
   const km = sum((e) => Math.max(0, e.dist)) / 1000;
   return {
-    toques: sum((e) => e.hits) / km, peligro: sum((e) => e.danger) / km, pasadas: sum((e) => e.passes) / eps.length,
+    toques: sum((e) => e.hits) / km, provocados: sum((e) => e.faults) / km, peligro: sum((e) => e.danger) / km, pasadas: sum((e) => e.passes) / eps.length,
     pasado: sum((e) => e.passed) / eps.length, zigzag: sum((e) => e.weaves) / eps.length, metros: (km * 1000) / eps.length,
     rescates: sum((e) => e.rescues) / eps.length,
   };
@@ -44,7 +44,7 @@ for (const scenario of Object.keys(SCENARIOS)) {
   console.log(`\n${scenario}`);
   policies.forEach((p, i) => {
     const m = measure(p, scenario);
-    console.log(`  ${files[i].padEnd(36)} toques/km ${m.toques.toFixed(2)} · peligro s/km ${m.peligro.toFixed(2)} · pasadas ${m.pasadas.toFixed(2)} · ` +
+    console.log(`  ${files[i].padEnd(36)} toques/km ${m.toques.toFixed(2)} · provocados/km ${m.provocados.toFixed(2)} · peligro s/km ${m.peligro.toFixed(2)} · pasadas ${m.pasadas.toFixed(2)} · ` +
       `pasado ${m.pasado.toFixed(2)} · zigzag ${m.zigzag.toFixed(2)} · metros ${m.metros.toFixed(0)} · rescates ${m.rescates.toFixed(2)}`);
   });
 }

@@ -44,6 +44,11 @@ class Worker:
     def read_reset(self) -> np.ndarray:
         return self._read(self.n * self.obs_size).reshape(self.n, self.obs_size)
 
+    def set(self, settings: dict):
+        data = json.dumps(settings).encode()
+        self.proc.stdin.write(b"\x02" + len(data).to_bytes(4, "little") + data)
+        self.proc.stdin.flush()
+
     def send_step(self, actions: np.ndarray):
         self.proc.stdin.write(b"\x00" + np.asarray(actions, dtype=np.float32).tobytes())
         self.proc.stdin.flush()
@@ -103,6 +108,12 @@ class RacingVecEnv(VecEnv):
             if dones[j]:
                 infos[j]["TimeLimit.truncated"] = bool(truncated[j])
         return obs, rewards, dones, infos
+
+    def set(self, **settings):
+        """Ajustes de todas las carreras (rl/race.js): contactScale multiplica el castigo por toque provocado
+        (presupuesto de toques, rl/train.py); progress es cuánto lleva la fase, de 0 a 1."""
+        for w in self.workers:
+            w.set(settings)
 
     def close(self):
         for w in self.workers:

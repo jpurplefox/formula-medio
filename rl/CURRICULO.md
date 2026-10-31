@@ -134,6 +134,115 @@ autos distintos rotando), pasto y posición media contra la IA de siempre en Dif
 - El costo: queda a mitad de tabla contra la IA de siempre (que choca más y no levanta).
 - `rl/race_eval.js` ahora informa cuántos toques provocó la red (le pegó al de adelante o apretó al de al lado).
 
+## Tercer intento: limpio primero, velocidad después
+
+Con lo aprendido, el currículum se rearma desde cero (`sh rl/curriculum3.sh`, modelos en `models/v3/`) y se compara
+con la fase 7. La idea: aprender primero a manejar limpio y recién después a ir rápido y a pasar.
+
+| Fase | Qué aprende | Premio | Mezcla |
+|---|---|---|---|
+| 1 | Manejar dentro de la pista | Avanzar como siempre; pasto ×3 y muro ×2; menos pasos (no sobre-optimizar) | sola |
+| 2 | No chocar en grupo | Avanzar ×0,7; sin premio por pasar; presupuesto de toques estricto; piso de ritmo | pelotón, largadas, sola |
+| 3 | No chocar en carrera | Igual que la 2 | carreras, largadas, pelotón, seguir a uno más lento, sola |
+| 4 | Velocidad sin chocar | Avanzar ×1, mismo presupuesto de toques | carreras + repaso |
+| 5 | Pasar seguro | Premio por pasada limpia (como antes) | persecuciones + repaso |
+| 6 | Integrar | Todo junto, LR baja, rivales de fases anteriores | carreras + repaso |
+
+- **Pasto más caro en la fase 1** en vez de menos premio por avanzar: para esquivar hace falta controlar el auto
+  al límite, y eso se aprende yendo rápido. "Limpio" sola en pista es no salirse.
+- **Piso de ritmo** (fases 2–6): con la pista libre adelante (nadie a menos de 40 m en su carril), ir por debajo del
+  75 % de la velocidad de la trazada se castiga (hasta 1 por segundo). Con alguien adelante no aplica: seguir a uno
+  más lento está bien. Es lo que evita que vuelva a aprender que frenar es "seguro".
+- **Presupuesto de toques**: el castigo por un toque provocado (pegarle al de adelante o apretar al de al lado) se
+  multiplica por un factor que se ajusta solo durante el entrenamiento. Si la red provoca más toques por km que el
+  presupuesto, el factor sube; si provoca menos, baja de a poco (entre 0,5 y 5). El factor pasa de una fase a la
+  siguiente, así subir el premio por avanzar en la fase 4 no puede comprarse con toques.
+- **Pasadas** sin premio hasta la fase 5: en las fases de limpieza seguir a uno más lento es lo correcto.
+
+### Resultados del tercer intento
+
+Toques por carrera (promedio con autos iguales y con autos distintos rotando), provocados por la red, pasto y
+posición media contra la IA de siempre en Difícil; vuelta sola con `rl/eval.js` (más bajo es más rápido):
+
+| Red | Toques, 22 autos | Provocados, 22 | Toques, 8 autos | Pasto, 22 | Posición, 22 | Posición, 8 | Vuelta sola |
+|---|---|---|---|---|---|---|---|
+| fase 7 (2.º intento) | 249 | 193 | 38 | 41 s | 9,7 | 3,7 | 0,942 |
+| v3 fase 3 (limpia) | 182 | 130 | 27 | 183 s | 16,4 | 5,9 | |
+| v3 fase 4 (velocidad) | 159 | 107 | 24 | 108 s | 16,1 | 5,6 | 0,953 |
+| v3 fase 5 (pasar) | 195 | 134 | 25 | 70 s | 15,2 | 5,5 | |
+| v3 fase 6 (integrar) | 194 | 128 | 23 | 49 s | 14,9 | 5,9 | 0,965 |
+
+- **Más limpia**: la fase 6 toca un 22 % menos que la fase 7 en 22 autos (provoca un 34 % menos) y un 40 % menos en 8.
+- **Pero mucho más lenta**: pierde unos 5 puestos por carrera contra la IA de siempre y en 8 autos casi siempre
+  terminan las 4 redes detrás de las 4 IA. Sola, su vuelta es un 3 % más lenta que la de su propia fase 1 (0,932).
+- **Por qué**: el presupuesto (la mitad de los toques de la fase 7) fue demasiado exigente. La escala del castigo
+  llegó al tope (5) en la fase 2 y no bajó nunca: durante todo el currículum lo que más pesaba era no tocar, y con
+  alguien adelante el piso de ritmo no aplica, así que en tráfico conviene ir detrás. La fase 4 casi no ganó ritmo.
+- En la fase 3 y 4 el pasto en carrera de 22 es alto: la red se abre al pasto para no tocar.
+
+## Cuarto intento: mantener el ritmo en vez de premiar pasadas
+
+`sh rl/curriculum4.sh` (~1,5 h, modelos en `models/v4/`). Parte de la v3 fase 4 (la que menos tocaba) y cambia
+cuatro cosas:
+
+- **Sin premio por pasar; piso de ritmo siempre** (salvo amontonado: más de 3 autos a menos de 30 m). Para no perder
+  ritmo detrás de uno más lento tiene que pasarlo; pasar sale solo, no se premia.
+- **Persecuciones con el de adelante en desventaja**: menos agarre y potencia (−20 % al principio de la fase, −8 %
+  al final), para que pasar sea posible sin forzar.
+- **Largadas y amontonamientos conservadores**: ahí un toque provocado cuesta ×2,5 y se mira más lejos (×1,5) para
+  el peligro.
+- **Presupuesto alcanzable**: 80 % de los toques provocados de la fase 7 (no 50 %), con escala inicial 2.
+- **Autos más distintos**: de −15 % a +20 % (antes ±5 %), para poder subir la dificultad en el juego dándoles más
+  agarre. Las entradas del auto se normalizan ahora con ±20 % (`SETUP_SPREAD`); las redes anteriores se
+  reescalaron con `rl/rescale_setup.py` y dan exactamente lo mismo.
+
+| Fase | Mezcla | Rivales | Pasos |
+|---|---|---|---|
+| v4 fase 5 (ritmo sin chocar) | carreras 35, persecuciones 25, largadas 15, pelotón 15, sola 10 | fase 7, v3 fase 4 | 35 M |
+| v4 fase 6 (integrar) | carreras 55, largadas 15, pelotón 10, persecuciones 10, sola 10 | + v4 fase 5 | 30 M |
+
+La escala del castigo terminó en 0,9 en la fase 5 (dentro del presupuesto) y en 2,9 en la fase 6.
+
+### Resultados del cuarto intento
+
+Contra la IA de siempre, igual que la tabla anterior:
+
+| Red | Toques, 22 autos | Provocados, 22 | Toques, 8 autos | Pasto, 22 | Posición, 22 | Posición, 8 | Vuelta sola |
+|---|---|---|---|---|---|---|---|
+| fase 7 | 249 | 193 | 38 | 41 s | 9,7 | 3,7 | 0,942 |
+| v3 fase 4 | 159 | 107 | 24 | 108 s | 16,1 | 5,6 | 0,953 |
+| v3 fase 6 | 194 | 128 | 23 | 49 s | 14,9 | 5,9 | 0,965 |
+| v4 fase 5 | 125 | 82 | 20 | 84 s | 16,2 | 5,6 | 0,971 |
+| v4 fase 6 | **107** | **68** | **18** | 73 s | 16,3 | 5,8 | 0,969 |
+
+Carrera tipo juego (`JUEGO=1`: 21 autos con la red y uno de la IA de siempre al ritmo más alto de Difícil
+haciendo de jugador; los 8 circuitos), por auto de la red:
+
+| Red | Toques | Provocados | Pasto | Tiempo del ganador | El jugador termina |
+|---|---|---|---|---|---|
+| fase 7 | 30,9 | 24,7 | 4,2 s | 240,1 s | 11,9.º |
+| v3 fase 4 | 16,1 | 11,9 | 9,4 s | 251,2 s | 2,6.º |
+| v3 fase 6 | 14,7 | 11,5 | 3,8 s | 250,4 s | 3,8.º |
+| v4 fase 5 | 12,5 | 9,2 | 7,3 s | 251,2 s | 2,4.º |
+| v4 fase 6 | **11,5** | **8,9** | 5,9 s | 247,9 s | 3,4.º |
+
+Escenarios (`rl/scenario_eval.js`, toques provocados por km):
+
+| Red | Pelotón | Largada | Persecución | Carrera |
+|---|---|---|---|---|
+| fase 7 | 0,77 | 4,10 | 0,65 | 0,82 |
+| v3 fase 4 | 0,34 | 2,98 | 0,76 | 0,52 |
+| v4 fase 5 | 0,62 | 2,17 | 0,72 | 0,39 |
+| v4 fase 6 | 0,53 | **1,98** | **0,58** | **0,34** |
+
+- **La más limpia de todas**: la v4 fase 6 toca un 57 % menos que la fase 7 en 22 autos (provoca un 65 % menos) y
+  un 22 % menos que la v3 fase 6. En la carrera tipo juego, 11,5 toques por auto contra 30,9.
+- **Largadas**: los toques provocados bajan a la mitad que en la fase 7 y un tercio menos que en la v3.
+- **Ritmo**: en tráfico de redes, el ganador es 1 % más rápido que con la v3 y 3 % más lento que con la fase 7.
+  Sola, la vuelta es un 2–3 % más lenta que la de la fase 7: se compensa en el juego con más agarre.
+- **Pasto**: sigue más alto que en la fase 7; en 22 autos se abre para no tocar.
+- Contra la IA de siempre sigue perdiendo puestos: la IA de siempre es más agresiva y la red le cede lugar.
+
 ## Métricas por fase
 
 - Vuelta lanzada sola (`rl/eval.js`): que no empeore.

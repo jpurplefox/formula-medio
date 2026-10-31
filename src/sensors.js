@@ -22,7 +22,10 @@ export const OPPONENTS = 6;
 const CAR_VALUES = 12;
 export const SETUP_VALUES = SETUP_KEYS.length + 1; // la variación del auto y el desgaste de las gomas
 export const SETUP_START = CAR_VALUES; // dónde empiezan (las redes viejas no los tienen)
-const SETUP_SPREAD = { power: 0.05, topSpeed: 0.05, grip: 0.05, brakes: 0.05, wear: 0.3 }; // lo que se toma como ±1
+// lo que se toma como ±1. Era 0,05 en motor, punta, agarre y frenos; con autos más distintos (hasta -15 % y +20 %,
+// para poder subir la dificultad dándoles más agarre) pasó a 0,2 y los pesos de las redes ya entrenadas se
+// reescalaron igual (rl/rescale_setup.py), así manejan exactamente como antes
+export const SETUP_SPREAD = { power: 0.2, topSpeed: 0.2, grip: 0.2, brakes: 0.2, wear: 0.3 };
 const POSITION_VALUES = 5;
 const OPPONENT_VALUES = 7;
 export const OBS_SIZE = CAR_VALUES + SETUP_VALUES + POSITION_VALUES + LOOK_AHEAD.length + RAY_ANGLES.length + OPPONENTS * OPPONENT_VALUES;

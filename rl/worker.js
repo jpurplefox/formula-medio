@@ -13,6 +13,8 @@
 //       agente que terminó una vuelta o un episodio (y la última observación de ese episodio).
 //       Los que terminan arrancan otro episodio solos: la observación que se devuelve ya es la del nuevo.
 //   1 = reset: reinicia todos y responde con el bloque binario de las observaciones.
+//   2 = ajustes de las carreras: le siguen 4 bytes con el largo y un JSON, por ejemplo { contactScale, progress }
+//       (rl/race.js). No responde.
 
 import { OBS_SIZE } from '../src/sensors.js';
 import { RaceEnv } from './env.js';
@@ -90,6 +92,12 @@ process.stdin.on('data', (chunk) => {
     if (op === 1) {
       pending = pending.subarray(1);
       resetAll();
+    } else if (op === 2) {
+      if (pending.length < 5 || pending.length < 5 + pending.readUInt32LE(1)) return;
+      const size = pending.readUInt32LE(1);
+      const settings = JSON.parse(pending.subarray(5, 5 + size).toString());
+      pending = pending.subarray(5 + size);
+      for (const sim of sims) Object.assign(sim, settings);
     } else if (op === 0) {
       if (pending.length < STEP_BYTES) return;
       const bytes = pending.subarray(1, STEP_BYTES);
