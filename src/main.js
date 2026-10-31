@@ -5,7 +5,7 @@ import { GLRenderer } from './glrenderer.js';
 import { Car, DEFAULT_PROFILE, LAUNCH_WINDOW, isSolid, lookup, slipstream, wheelAngle } from './car.js';
 import { racingLine } from './racingline.js';
 import { boardTexture, treeTexture } from './sprites.js';
-import { carModel, TCAM, WHEEL_R } from './carmodel.js';
+import { carModel, STEERING, TCAM, WHEEL_R } from './carmodel.js';
 import { Driver, gridSlots, lineFrame, pointAt } from './ai.js';
 import { collideCars } from './collision.js';
 import { Cockpit } from './cockpit.js';
@@ -23,6 +23,7 @@ const EYE_HEIGHT = 2.4; // vista exterior: metros sobre el piso
 const CAM_BEHIND = 8; // vista exterior: metros detrás del centro del auto
 const COCKPIT_EYE = 0.74; // vista de cabina: altura de los ojos del piloto (m)
 const COCKPIT_BACK = 0.1; // vista de cabina: los ojos, detrás del centro del auto (m)
+const WHEEL_TURN_RATE = 6; // 1/s: qué tan rápido sigue el volante a la dirección
 const CAR_PROFILE = 'cars/f1-2023.json'; // generado con tools/car_profile.py
 const SHIFT_LIGHTS = 15;
 const REPLAY_DELAY = 6; // segundos de resultado antes de que empiece la repetición
@@ -95,16 +96,17 @@ const ghostModel = carModel('#3aa0ff', '#ffffff');
 // el modelo 3D de cada equipo se arma la primera vez que hace falta (la decoración tarda un poco)
 const teamModels = new Map();
 // el modelo de cada auto: { team, slot, number } (los dos de un equipo cambian el número y el color de la T)
-const modelFor = ({ team: t, slot, number }) => {
-  const key = `${t.id}/${slot}`;
-  if (!teamModels.has(key)) teamModels.set(key, carModel(t.color, t.helmet, number, t.accent, TCAM[slot]));
+// sharp: la decoración con el doble de resolución, para el auto propio (desde la cabina se ve de muy cerca)
+const modelFor = ({ team: t, slot, number }, sharp = 1) => {
+  const key = `${t.id}/${slot}/${sharp}`;
+  if (!teamModels.has(key)) teamModels.set(key, carModel(t.color, t.helmet, number, t.accent, TCAM[slot], { sharp }));
   return teamModels.get(key);
 };
 let wheelSpin = 0; // cuánto giraron las ruedas (rad), para animarlas
 let lastDraw = 0;
 const treeTex = treeTexture();
 const boardTex = new Map([200, 150, 100, 50].map((d) => [d, boardTexture(d)]));
-const cockpit = new Cockpit(VIEW_W, VIEW_H);
+const cockpit = new Cockpit();
 let cockpitView = true; // C alterna cabina / exterior
 let showGuide = true; // G muestra u oculta la trazada ideal
 const guides = new WeakMap(); // trazada ideal de cada circuito, se calcula una vez
@@ -284,7 +286,7 @@ function resetGame(track) {
   const spawn = slots[others.length];
   const car = Object.assign(new Car(spawn.x, spawn.y, spawn.angle, carProfile), { manual: manualGears });
   const mine = teamCar(team, 0);
-  const player = { name: 'Vos', team: team.name, code: 'VOS', number: mine.number, color: team.color, car, driver: null, race: newRace(track, car), model: modelFor(mine), dist: 0, gridBack: spawn.back };
+  const player = { name: 'Vos', team: team.name, code: 'VOS', number: mine.number, color: team.color, car, driver: null, race: newRace(track, car), model: modelFor(mine, 2), dist: 0, gridBack: spawn.back };
   const rivals = others.map((o, i) => {
     const t = o.team, s = slots[grid[i]], c = new Car(s.x, s.y, s.angle, carProfile);
     // con la red, la dificultad es el auto: más o menos agarre y potencia
@@ -671,6 +673,7 @@ async function drawReplay() {
       model: e.model, x: p.x, y: p.y, z: heightAt(p.x, p.y), angle: p.angle, meters: M,
       pitch: Math.atan(p.slope), roll: r.bodies[k].roll, dive: r.bodies[k].dive,
       steer: wheelAngle(p.steer, p.speed), spin: (p.dist / WHEEL_R) % (Math.PI * 2), head: r.heads[k], ...tyres(g, p.dist), shadow: true,
+      wheelTurn: p.steer * STEERING.turn,
     };
   });
   const cam = replayCamera(r.mode, pose, track, tvCams.get(track), r.tv, r.t, renderer.w / 2 / 0.7);
@@ -805,13 +808,14 @@ async function draw(time) {
       model: e.model, x: c.x, y: c.y, z: heightAt(c.x, c.y), angle: c.angle, meters: M,
       pitch: Math.atan(c.slope), roll: e.body?.roll, dive: e.body?.dive,
       steer: wheelAngle(c.steer, c.speed, c.profile), spin: e.spin, head: e.head, ...tyres(g, e.dist, c.wear), shadow: true,
+      wheelTurn: c.steer * STEERING.turn,
     });
   }
 
   // cámara en la cabina o un poco detrás del auto, a la altura del terreno,
   // con traqueteo en el pasto, en los pianos y al chocar
   const shake =
-    (car.onGrass ? Math.min(1, Math.abs(car.speed) / 25) * 1.5 : 0) +
+    car.grass * Math.min(1, Math.abs(car.speed) / 25) * 3 +
     (car.onKerb ? Math.min(1, Math.abs(car.speed) / 35) * 1.2 : 0) +
     car.bump * 4;
   // contra un muro, la cámara de afuera se acerca hasta que deja de estar adentro
@@ -839,6 +843,8 @@ async function draw(time) {
   const dt = Math.min(0.1, Math.max(0, (time - lastDraw) / 1000));
   lastDraw = time;
   wheelSpin = (wheelSpin + (car.speed * dt) / WHEEL_R) % (Math.PI * 2);
+  // el volante sigue a la dirección con un poco de demora, como las manos (con teclado la dirección salta)
+  g.player.wheelTurn = (g.player.wheelTurn ?? 0) + (car.steer * STEERING.turn - (g.player.wheelTurn ?? 0)) * Math.min(1, dt * WHEEL_TURN_RATE);
   // desde la cabina se ve el mismo auto, sin el casco (ahí está la cámara) y sin rolido; la pendiente,
   // en la misma medida en que la cámara la sigue, así la carrocería queda quieta en la pantalla
   models.push({
@@ -848,13 +854,13 @@ async function draw(time) {
     // (ahí el cabeceo mueve la vista: ver cam.pitch)
     roll: cockpitView ? 0 : g.player.body?.roll, dive: cockpitView ? 0 : g.player.body?.dive,
     steer: wheelAngle(car.steer, car.speed, car.profile), spin: wheelSpin, head: g.player.head, ...tyres(g, g.player.dist, car.wear), shadow: true, hide: cockpitView ? 'helmet' : null,
+    // el volante gira con la dirección y muestra la marcha; desde la cabina la pintura de tan cerca brilla menos
+    wheelTurn: g.player.wheelTurn, screen: cockpit.screen(car), gloss: cockpitView ? 0.35 : 1,
   });
   playEngines(g.entries.map((e) => ({ rpm: e.car.rpm, throttle: e.car.throttle, gear: e.car.gear, x: e.car.x * M, y: e.car.y * M, angle: e.car.angle, speed: e.car.speed })),
     cam, M, Math.cos(car.angle) * car.speed, Math.sin(car.angle) * car.speed, cockpitView ? g.entries.indexOf(g.player) : -1);
   await renderer.render(track, cam, sprites, models);
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
-
-  if (cockpitView) cockpit.draw(ctx, car, shakeY * 0.6);
 
   if (g.countdown > 0 || g.raceTime < 1) drawLights(g);
 

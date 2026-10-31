@@ -92,7 +92,7 @@ export function replayCamera(mode, pose, track, tvCams, state, t, P) {
     look = at(0, 0.6);
     zoom = Math.max(1, Math.min(5, (dist(c) * M) / 22));
   } else if (mode === 'onboard') {
-    cam = at(-0.35, 1.15); // arriba de la toma de aire, como la cámara de TV de los autos
+    cam = at(-0.28, 1.13); // arriba de la toma de aire, apenas delante de la T (si no, se ve su borde en el horizonte)
     look = at(30, 0);
   } else if (mode === 'heli') {
     cam = at(-35, 20);

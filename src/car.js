@@ -3,7 +3,7 @@
 // El comportamiento del auto sale de un perfil medido con telemetría real (tools/car_profile.py):
 // relación de marchas, RPM, aceleración y desaceleración por velocidad, frenada y agarre lateral.
 
-import { KERB_W, kerbAt, sampleField } from './track.js';
+import { sampleField, surfaceAt } from './track.js';
 import { collideWalls } from './collision.js';
 
 // Perfil por defecto, por si no se carga uno (valores parecidos a los medidos en Interlagos 2023)
@@ -19,7 +19,21 @@ export const DEFAULT_PROFILE = {
   lateralGrip: { base: 25.5, perV2: 0.0018 },
 };
 
-const GRASS_MAX = 25; // m/s ≈ 90 km/h
+// Superficies (surfaceAt de track.js dice cuál hay debajo de cada rueda):
+//   grip      fracción del agarre de esa rueda
+//   drag      cuánto frena esa rueda (m/s², pasando DRAG_FROM); si frena más de un lado, el auto tira para ese lado
+//   maxSpeed  con las dos traseras ahí, el motor ya no empuja más allá de esta velocidad (m/s)
+export const SURFACES = {
+  road: { grip: 1, drag: 0, maxSpeed: Infinity },
+  kerb: { grip: 1, drag: 0, maxSpeed: Infinity },
+  grass: { grip: 0.6, drag: 5, maxSpeed: 25 }, // con las cuatro: 20 m/s² de freno y no pasa de ~90 km/h
+};
+const DRAG_FROM = 15; // m/s
+const PULL = 0.006; // giro (rad/s) por cada m/s² que una rueda frena más que la del otro lado
+const SURFACE_RATE = 5; // 1/s: al cambiar de superficie, el agarre y el freno de la rueda cambian en ~0,2 s
+// dónde apoya cada rueda, en m desde el centro del auto (adelante, a la derecha), como en carmodel.js:
+// delantera izquierda, delantera derecha, trasera izquierda, trasera derecha
+export const WHEELS = [[1.65, -0.8], [1.65, 0.8], [-1.7, -0.79], [-1.7, 0.79]];
 const REVERSE_MAX = 8;
 const REVERSE_ACCEL = 5;
 const MAX_YAW = 1.6; // rad/s: giro máximo a baja velocidad
@@ -131,7 +145,11 @@ export class Car {
     this.speed = 0;
     this.steer = 0; // -1..1 suavizado, para animar el auto
     this.draft = 0; // rebufo, 0..1 (lo calcula el juego con slipstream antes de cada update)
-    this.onGrass = false;
+    this.wheels = ['road', 'road', 'road', 'road']; // qué pisa cada rueda (ver WHEELS)
+    this.wheelGrip = [1, 1, 1, 1]; // agarre y freno de cada rueda según lo que pisa, cambiando de a poco
+    this.wheelDrag = [0, 0, 0, 0];
+    this.grass = 0; // fracción de las ruedas en el pasto
+    this.onGrass = false; // dos ruedas o más en el pasto: afuera de la pista
     this.onKerb = false;
     this.bump = 0;
     this.slope = 0;
@@ -216,11 +234,21 @@ export class Car {
   }
 
   update(dt, input, track) {
-    const p = this.profile;
-    const edge = sampleField(track.sdf, track.W, this.x, this.y);
-    // los pianos están por fuera del límite de pista: pisarlos no es ir al pasto
-    this.onKerb = edge < 0 && edge > -KERB_W * kerbAt(track, this.x, this.y);
-    this.onGrass = edge < 0 && !this.onKerb;
+    const p = this.profile, M = track.meters;
+    // qué pisa cada rueda, en su lugar (los pianos están por fuera del límite de pista: pisarlos no es ir al pasto)
+    const ca0 = Math.cos(this.angle), sa0 = Math.sin(this.angle);
+    this.wheels = WHEELS.map(([f, r]) => surfaceAt(track, this.x + (ca0 * f - sa0 * r) / M, this.y + (sa0 * f + ca0 * r) / M));
+    const surf = this.wheels.map((w) => SURFACES[w]);
+    // la goma no pasa de agarrar a patinar de golpe: entra de a poco en lo que pisa
+    const blend = Math.min(1, dt * SURFACE_RATE);
+    surf.forEach((sf, i) => {
+      this.wheelGrip[i] += (sf.grip - this.wheelGrip[i]) * blend;
+      this.wheelDrag[i] += (sf.drag - this.wheelDrag[i]) * blend;
+    });
+    const wg = this.wheelGrip;
+    this.grass = this.wheels.filter((w) => w === 'grass').length / 4;
+    this.onGrass = this.grass >= 0.5;
+    this.onKerb = this.wheels.includes('kerb');
 
     const v = Math.abs(this.speed);
     // pedales y volante pueden ir a medias (joystick): 0..1 y -1..1; el teclado manda true/false
@@ -263,7 +291,7 @@ export class Car {
       const launch = this.launchTime > 0 ? this.launchFactor : 1;
       // el rebufo devuelve la parte de la resistencia del aire que se ahorra
       const draft = power > 0 ? this.draft * DRAFT_DRAG * this.drag(v) : 0;
-      const full = this.speed < (this.onGrass ? GRASS_MAX : Infinity) ? (lookup(p.accel, v) * power * setup.power + draft) * aero * launch : 0;
+      const full = this.speed < Math.max(surf[2].maxSpeed, surf[3].maxSpeed) ? (lookup(p.accel, v) * power * setup.power + draft) * aero * launch : 0;
       drive = thr * (full + losses);
       // frenada medida: más fuerte a más velocidad, por la carga aerodinámica (ya incluye las pérdidas)
       braking = brk * Math.max(0, (p.brake.base + p.brake.perV2 * v * v) * setup.brakes * tyres - losses);
@@ -272,7 +300,6 @@ export class Car {
     // el peso se pasa según lo que empujan o frenan las gomas, con un poco de demora
     this.aLon += (drive - braking - this.aLon) * Math.min(1, dt * TRANSFER_RATE);
 
-    const M = track.meters;
     // pendiente en la dirección de marcha (suavizada): la gravedad frena en subida y empuja en bajada
     const fx = Math.cos(this.angle), fy = Math.sin(this.angle);
     const ahead = sampleField(track.height, track.W, this.x + fx * 1.5, this.y + fy * 1.5);
@@ -280,9 +307,11 @@ export class Car {
     this.slope += ((ahead - behind) / 3 - this.slope) * Math.min(1, dt * 8);
     this.speed -= GRAVITY * this.slope * dt;
 
-    // el pasto frena mucho
-    if (this.onGrass && Math.abs(this.speed) > GRASS_MAX * 0.6) {
-      this.speed -= Math.sign(this.speed) * Math.min(Math.abs(this.speed), 20 * dt);
+    // cada rueda frena según lo que pisa (el pasto, mucho); si de un lado frena más, el auto tira para ese lado
+    let drag = 0, pull = 0;
+    if (Math.abs(this.speed) > DRAG_FROM) {
+      this.wheelDrag.forEach((d, i) => { drag += d; pull += Math.sign(WHEELS[i][1]) * d; });
+      this.speed -= Math.sign(this.speed) * Math.min(Math.abs(this.speed), drag * dt);
     }
 
     const sp = Math.abs(this.speed);
@@ -290,7 +319,8 @@ export class Car {
     // carga sobre las gomas (por kg): el peso más la carga aerodinámica, que crece igual que el agarre
     const load = GRAVITY * (grip / p.lateralGrip.base);
     grip *= setup.grip * tyres;
-    if (this.onGrass) grip *= 0.5;
+    // cada eje agarra según lo que pisan sus dos ruedas
+    const frontSurf = (wg[0] + wg[1]) / 2, rearSurf = (wg[2] + wg[3]) / 2;
     // balance: qué parte del peso pasa adelante (frenando) o atrás (acelerando), y cuánto agarra cada eje
     // para doblar con esa carga y lo que le queda después de frenar o empujar
     const shift = Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT, (-this.aLon * CG_H) / (WHEELBASE * load)));
@@ -300,8 +330,9 @@ export class Car {
     // los frenos reparten la fuerza según la carga de cada eje, así que el eje cargado la aguanta mejor
     // (con LOAD_EXP < 1, apenas); el empuje del motor va todo a las de atrás
     const braked = braking > 0 ? brk * BRAKE_USE : 0;
-    const front = grip * frontLoad * usage(braked * frontLoad ** (1 / LOAD_EXP - 1));
-    const rear = grip * rearLoad * usage(braked * rearLoad ** (1 / LOAD_EXP - 1) + drive / ((TRACTION * load) / GRAVITY) / rearLoad);
+    const front = grip * frontSurf * frontLoad * usage(braked * frontLoad ** (1 / LOAD_EXP - 1));
+    const traction = (TRACTION * rearSurf * load) / GRAVITY; // lo que pueden empujar las traseras sobre lo que pisan
+    const rear = grip * rearSurf * rearLoad * usage(braked * rearLoad ** (1 / LOAD_EXP - 1) + drive / traction / rearLoad);
     this.grip = [front / grip, rear / grip]; // para mostrarlo o probarlo: 1 es el agarre de siempre
 
     // dirección: el giro está limitado por lo que agarran las gomas de adelante (v²/r ≤ agarre), que crece con
@@ -318,18 +349,20 @@ export class Car {
     // pero la velocidad sigue para donde iba: esa diferencia queda como deslizamiento de costado
     const turn = this.spin * dt, c = Math.cos(turn), s = Math.sin(turn);
     [this.speed, this.slip] = [this.speed * c + this.slip * s, -this.speed * s + this.slip * c];
-    this.omega = steerYaw + this.spin;
+    this.omega = steerYaw + this.spin + pull * PULL * Math.sign(this.speed);
     this.angle += this.omega * dt;
     // las gomas frenan el deslizamiento y el giro; mientras la cola está suelta, el giro no y el deslizamiento
     // apenas: el auto queda cruzado y la trompa apunta más adentro de lo que va
     const settle = (value, rate) => value - Math.sign(value) * Math.min(Math.abs(value), rate * dt);
+    // el agarre de todo el auto, para el deslizamiento, el giro de los golpes y el desgaste
+    const allSurf = (frontSurf + rearSurf) / 2, whole = grip * allSurf;
     // desgaste: cuánto se exige el agarre (doblar + empujar o frenar, sobre lo que agarran) y el deslizamiento
     if (this.wearRate) {
-      const use = (sp * Math.abs(this.omega) + Math.abs(this.aLon)) / grip + Math.abs(this.slip) / 5;
+      const use = (sp * Math.abs(this.omega) + Math.abs(this.aLon)) / whole + Math.abs(this.slip) / 5;
       this.wear = Math.min(1, this.wear + this.wearRate * setup.wear * (WEAR_BASE + WEAR_USE * (1 - WEAR_BASE) * use) * sp * dt);
     }
-    this.slip = settle(this.slip, grip * SLIP_GRIP * (loose > 0 ? LOOSE_SLIP : 1));
-    this.spin = settle(this.spin, (SPIN_DAMP + grip * SPIN_GRIP) * (this.onGrass ? 0.5 : 1) * (loose > 0 ? 0 : 1));
+    this.slip = settle(this.slip, whole * SLIP_GRIP * (loose > 0 ? LOOSE_SLIP : 1));
+    this.spin = settle(this.spin, (SPIN_DAMP + whole * SPIN_GRIP) * allSurf * (loose > 0 ? 0 : 1));
 
     // movimiento (hacia adelante y de costado) y choques contra los muros
     const ca = Math.cos(this.angle), sa = Math.sin(this.angle);

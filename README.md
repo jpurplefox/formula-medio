@@ -121,7 +121,12 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
    largo real de la vuelta (de la telemetría, o `lengthMeters`). El auto se comporta según un **perfil medido con
    telemetría real** (ver abajo): aceleración y desaceleración por velocidad, frenada y agarre lateral que crecen
    con la velocidad (carga aerodinámica), y una caja de 8 marchas con RPM, corte y luces de cambio.
-   Además: pasto que frena, choques y gravedad en las pendientes, y **rebufo**: detrás de otro auto (hasta 45 m
+   **Superficie por rueda**: cada rueda mira qué pisa (asfalto, piano o pasto; `SURFACES` en `src/car.js` y
+   `surfaceAt` en `src/track.js`). Cada eje agarra según sus dos ruedas (una trasera en el pasto suelta la cola,
+   una delantera quita dirección), cada rueda en el pasto frena y, si frena más de un lado, el auto tira para ese
+   lado; con las dos traseras afuera el motor no empuja más de ~90 km/h. Otro material al borde de la pista (grava,
+   asfalto) es una entrada más en `SURFACES`.
+   Además: choques y gravedad en las pendientes, y **rebufo**: detrás de otro auto (hasta 45 m
    y dentro de su estela, de 1,6 m de costado) hay menos resistencia del aire, hasta un 30 % pegado a él. Eso da
    unos 13 km/h más al final de una recta de 600 m, gana 0,3 s y sube la velocidad punta hasta el corte de 8.ª.
    Vale para vos y para los rivales.
@@ -204,10 +209,11 @@ Una red neuronal aprende a manejar sola, con la misma física del juego, por eta
    rivales con la IA de siempre a ritmos variados; largan en grilla, en fila o repartidos por la pista. Además de
    los metros, se castigan los toques entre autos (mucho más al que le pega al de adelante).
 
-**Qué ve** (`src/sensors.js`, 94 números): su auto (velocidad, deslizamiento, giro, volante, pedales, marcha,
+**Qué ve** (`src/sensors.js`, 98 números; las redes entrenadas antes del agarre por rueda usan los primeros 94): su auto (velocidad, deslizamiento, giro, volante, pedales, marcha,
 rpm, agarre de cada eje, rebufo, cuánto mejor o peor es que el promedio y el desgaste de las gomas), su posición en la pista, cuánto dobla la pista a 20, 40… 450 m (lo que un piloto
 sabe de memoria), 19 rayos que miden la distancia al borde de la pista de -90° a +90°, y los 6 rivales más
-cercanos (posición, velocidad relativa y hacia dónde apuntan; en la etapa 1 quedan en cero).
+cercanos (posición, velocidad relativa y hacia dónde apuntan; en la etapa 1 quedan en cero) y el agarre de cada
+rueda según lo que pisa (así sabe de qué lado se fue al pasto).
 **Qué decide**: volante y pedal (de frenar a fondo a acelerar a fondo), 20 veces por segundo, progresivos.
 **Qué la premia** (`rl/env.js`): los metros que avanza sobre la línea central; la castigan el pasto, los golpes
 contra el muro y quedarse quieta o ir para atrás. Cada episodio larga en un punto cualquiera de un circuito al azar.

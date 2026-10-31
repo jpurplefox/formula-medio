@@ -15,6 +15,7 @@ const SIDEWALL = rgb(52, 52, 56);
 const RIM = rgb(118, 120, 128);
 const RIM_FACE = rgb(90, 94, 102); // cara de la llanta (lleva la textura con los rayos)
 const MIRROR = rgb(120, 140, 160);
+const PADDING = rgb(32, 33, 38); // acolchado de la cabina
 const RAIN_LIGHT = rgb(255, 60, 60);
 const VISOR = rgb(20, 22, 28);
 const CARBON_S = 400; // texeles de carbono por metro (cada celda del tejido, 2 cm)
@@ -275,6 +276,51 @@ function helmetAt(phi, w, out = 1) {
   const k = Math.sqrt(Math.max(0, 1 - (w < 0 ? (w / (1.25 + 0.9 * chin)) ** 2 : w * w))) * out;
   return [hx + rx * k * Math.cos(phi), ry * k * Math.sin(phi), hz + rz * w];
 }
+// Volante: se arma de frente (la cara mira hacia -x, al piloto) y se inclina sobre su columna, que baja hacia
+// adelante STEERING.tilt rad. Todas sus piezas llevan `column` (el pivote y el eje), así el render las gira con la
+// dirección. La pantalla (slot 6) muestra la marcha y las luces de cambio: la dibuja cockpit.js en cada cuadro.
+export const STEERING = { x: 0.3, z: 0.6, tilt: 0.35, turn: 1 }; // turn: rad que gira con el volante a fondo
+export const SCREEN_TEX = { size: 1, screen: true }; // la textura la pone el juego (m.screen)
+const GRIP = rgb(20, 20, 22), BUTTONS = ['#e23b3b', '#2c9be0', '#f2c230', '#41c46a'];
+function steeringParts() {
+  const { x: px, z: pz, tilt } = STEERING, c = Math.cos(tilt), s = Math.sin(tilt);
+  // el eje apunta del volante hacia el piloto: así, doblando a la derecha (giro +), la parte de arriba va a la derecha
+  const column = { x: px, y: 0, z: pz, ax: -c, ay: 0, az: s };
+  // de la pieza armada de frente (x hacia adelante, z hacia arriba) a su lugar, inclinada sobre la columna
+  const place = (part) => {
+    const tr = ([x, y, z]) => [px + x * c + z * s, y, pz - x * s + z * c];
+    const rot = ([x, y, z]) => [x * c + z * s, y, -x * s + z * c];
+    part.verts = part.verts.map(tr);
+    for (const f of part.faces) f.n = rot(f.n);
+    return { ...part, column };
+  };
+  const parts = [
+    // cuerpo de carbono, más angosto abajo, y las empuñaduras de goma a los costados
+    loft([sec(-0.015, 0, 0.1, -0.05, 0.045, 0.02), sec(0.015, 0, 0.095, -0.045, 0.04, 0.02)], CARBON),
+    // (redondas y finas, un poco curvas hacia afuera abajo, como las de verdad): anillos horizontales apilados
+    ...[-1, 1].map((k) => loft([[0.035, 0.118, 0.012], [0.0, 0.126, 0.017], [-0.04, 0.126, 0.017], [-0.075, 0.12, 0.012]]
+      .map(([z, y, r]) => [...Array(10).keys()].map((i) => {
+        const t = (i / 10) * Math.PI * 2;
+        return [r * Math.cos(t), k * y + r * Math.sin(t), z];
+      })), GRIP)),
+    // levas de cambio, detrás de las empuñaduras
+    ...[-1, 1].map((k) => box(0.024, 0.03, k * 0.1, 0.035, -0.02, 0.035, CARBON, 0.005)),
+    // botones de colores a los costados de la pantalla
+    ...BUTTONS.map((b, i) => box(-0.019, -0.015, (i % 2 ? 1 : -1) * 0.075, 0.009, i < 2 ? 0.0 : -0.03, (i < 2 ? 0.0 : -0.03) + 0.018, hex(b), 0.004)),
+  ];
+  // la pantalla: una placa oscura sobre la cara; su tapa de adelante (la que mira al piloto) lleva la textura
+  const screen = box(-0.019, -0.015, 0, 0.05, -0.022, 0.034, COCKPIT, 0.004);
+  const face = screen.faces[0];
+  face.tex = SCREEN_TEX;
+  face.slot = 6;
+  face.uv = face.idx.map((i) => {
+    const [, y, z] = screen.verts[i];
+    return [(y + 0.05) / 0.1, (0.034 - z) / 0.056];
+  });
+  parts.push(screen);
+  return parts.map(place);
+}
+
 const HELMET_LEVELS = [0.99, 0.94, 0.85, 0.72, 0.56, 0.38, 0.18, 0, -0.15, -0.3, -0.45, -0.58, -0.68, -0.75];
 function helmetParts(color) {
   const { x: hx, z: hz, rz } = HELMET;
@@ -308,7 +354,7 @@ function helmetParts(color) {
 // slot: qué textura es, para el renderer de WebGL (1 decoración, 2 carbono, 3 flanco, 4 banda, 5 llanta)
 let carbon = null, sidewall = null, tread = null, rimTex = null;
 
-function skin(parts, body, livery) {
+function skin(parts, body, livery, sharp = 1) {
   carbon ??= carbonTexture();
   sidewall ??= sidewallTexture();
   tread ??= treadTexture();
@@ -320,12 +366,12 @@ function skin(parts, body, livery) {
       const top = az >= ax && az >= ay, side = !top && ay >= ax;
       let uv = null;
       if (f.color === body) {
-        if (top) uv = pts.map(([x, y]) => [(x + HALF_L) * LIVERY_S, TOP + (y + HALF_W) * LIVERY_S]);
+        if (top) uv = pts.map(([x, y]) => [(x + HALF_L) * LIVERY_S * sharp, (TOP + (y + HALF_W) * LIVERY_S) * sharp]);
         else if (side) {
           const row = f.n[1] > 0 ? SIDE_R : SIDE_L;
-          uv = pts.map(([x, , z]) => [(x + HALF_L) * LIVERY_S, row + (TALL - z) * LIVERY_S]);
+          uv = pts.map(([x, , z]) => [(x + HALF_L) * LIVERY_S * sharp, (row + (TALL - z) * LIVERY_S) * sharp]);
         }
-        if (uv) Object.assign(f, { tex: livery, slot: 1, dens: LIVERY_S });
+        if (uv) Object.assign(f, { tex: livery, slot: 1, dens: LIVERY_S * sharp });
       } else if (f.color === CARBON) {
         uv = pts.map(([x, y, z]) => (top ? [x, y] : side ? [x, z] : [y, z]).map((c) => c * CARBON_S));
         Object.assign(f, { tex: carbon, slot: 2, dens: CARBON_S });
@@ -358,7 +404,8 @@ function skin(parts, body, livery) {
 // cámara de arriba (la "T"): como en la F1, negra en el primer auto de cada equipo y amarilla en el segundo
 export const TCAM = ['#161616', '#f2e600'];
 
-export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', accent = '#f4f4f4', tcam = TCAM[0]) {
+// sharp: decoración con más resolución (para el auto propio, que desde la cabina se ve de muy cerca)
+export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', accent = '#f4f4f4', tcam = TCAM[0], { sharp = 1 } = {}) {
   const body = hex(color), head = hex(helmet);
   const parts = [];
   const add = (...p) => parts.push(...p);
@@ -368,22 +415,29 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
   add(box(-1.95, 1.1, 0, 0.85, 0.03, 0.08, CARBON, 0.03));
   add(loft([sec(-1.95, 0, 0.7, 0.03, 0.1, 0.03), sec(-2.55, 0, 0.6, 0.1, 0.35, 0.05)], CARBON));
 
-  // monocasco y trompa: una sola pieza que se angosta y baja hacia adelante
+  // monocasco y trompa: una sola pieza que se angosta y baja hacia adelante. Donde va el piloto queda baja: la
+  // cabina es un hueco entre dos paredes (abajo), con el tablero adelante, así el volante queda adentro
   add(loft([
-    sec(-0.45, 0, 0.42, 0.1, 0.7, 0.14),
-    sec(0.3, 0, 0.38, 0.12, 0.66, 0.13),
+    sec(-0.45, 0, 0.42, 0.1, 0.5, 0.1),
+    sec(0.42, 0, 0.37, 0.12, 0.5, 0.1),
+    sec(0.5, 0, 0.36, 0.12, 0.64, 0.13),
     sec(1.15, 0, 0.26, 0.16, 0.56, 0.11),
     sec(1.7, 0, 0.2, 0.16, 0.46, 0.09),
-    sec(2.2, 0, 0.14, 0.14, 0.34, 0.07),
-    sec(2.62, 0, 0.09, 0.12, 0.23, 0.045),
-    // la punta: se afina y se redondea hasta el borde de ataque del alerón
-    sec(2.74, 0, 0.068, 0.115, 0.2, 0.04),
-    sec(2.83, 0, 0.042, 0.115, 0.172, 0.028),
-    sec(2.88, 0, 0.02, 0.12, 0.155, 0.016),
-    sec(2.9, 0, 0.006, 0.128, 0.146, 0.006),
+    sec(2.2, 0, 0.15, 0.14, 0.34, 0.07),
+    sec(2.62, 0, 0.12, 0.12, 0.23, 0.05),
+    // la punta: ancha hasta el final, como un hocico, y redondeada hasta el borde de ataque del alerón
+    sec(2.74, 0, 0.11, 0.115, 0.205, 0.045),
+    sec(2.82, 0, 0.097, 0.118, 0.19, 0.04),
+    sec(2.87, 0, 0.078, 0.124, 0.177, 0.03),
+    sec(2.9, 0, 0.045, 0.132, 0.165, 0.016),
   ], body));
-  // abertura de la cabina (oscura, apenas por encima del monocasco)
-  add(box(-0.45, 0.2, 0, 0.26, 0.55, 0.672, COCKPIT, 0.08));
+  // las paredes de la cabina (de la pintura del auto) y adentro el piso y el tablero, oscuros
+  both((s) => add(loft([
+    rounded(-0.45, [[0.24, 0.45], [0.42, 0.45], [0.42, 0.7], [0.24, 0.7]].map(([y, z]) => [s * y, z]), [0.01, 0.02, 0.14, 0.03]),
+    rounded(0.46, [[0.24, 0.45], [0.365, 0.45], [0.365, 0.645], [0.24, 0.645]].map(([y, z]) => [s * y, z]), [0.01, 0.02, 0.12, 0.03]),
+  ], body)));
+  add(box(-0.45, 0.46, 0, 0.245, 0.45, 0.52, COCKPIT, 0.02));
+  add(loft([sec(0.4, 0, 0.245, 0.5, 0.6, 0.02), sec(0.47, 0, 0.245, 0.5, 0.645, 0.02)], COCKPIT));
   // cubierta del motor
   add(loft([
     sec(-0.45, 0, 0.42, 0.1, 0.74, 0.15),
@@ -411,8 +465,9 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
   // hasta el borde del pontón. Abajo, el costado se mete hacia adentro (el undercut) y deja ver el piso.
   // Cada estación: x, borde de adentro (in) y de afuera (out), altura del techo adentro y afuera, piso y undercut.
   const POD = [
-    { x: 0.8, in: 0.37, out: 0.8, top: 0.56, edge: 0.52, bot: 0.16, cut: 0.14 },
-    { x: 0.62, in: 0.3, out: 0.82, top: 0.56, edge: 0.54, bot: 0.13, cut: 0.17 },
+    // la boca nace del costado del chasis: su borde de adentro queda metido en el monocasco
+    { x: 0.8, in: 0.24, out: 0.8, top: 0.56, edge: 0.52, bot: 0.16, cut: 0.14 },
+    { x: 0.62, in: 0.23, out: 0.82, top: 0.57, edge: 0.54, bot: 0.13, cut: 0.17 },
     { x: 0.35, in: 0.22, out: 0.83, top: 0.62, edge: 0.55, bot: 0.12, cut: 0.2 },
     { x: -0.3, in: 0.22, out: 0.81, top: 0.63, edge: 0.5, bot: 0.12, cut: 0.2 },
     { x: -0.9, in: 0.22, out: 0.72, top: 0.6, edge: 0.42, bot: 0.12, cut: 0.16 },
@@ -465,6 +520,18 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
   add({ ...box(-0.34, -0.02, 0, 0.2, 0.58, 0.69, hex(color, 0.7), 0.07), tag: 'helmet', suit: true });
   add({ ...loft([sec(-0.3, 0, 0.15, 0.62, 0.73, 0.05), sec(-0.17, 0, 0.13, 0.64, 0.75, 0.05)], CARBON), tag: 'helmet' });
   add(...helmetParts(head));
+  add(...steeringParts());
+  // apoyacabeza acolchado alrededor del casco y un borde de carbono que rodea la abertura de la cabina
+  add(loft([sec(-0.45, 0, 0.25, 0.6, 0.72, 0.05), sec(-0.3, 0, 0.25, 0.6, 0.72, 0.05)], PADDING));
+  both((s) => add(loft([sec(-0.42, s * 0.205, 0.045, 0.6, 0.715, 0.03), sec(-0.2, s * 0.205, 0.04, 0.6, 0.7, 0.03)], PADDING)));
+  const rim = [];
+  for (let i = 0; i <= 40; i++) {
+    const t = (i / 40) * Math.PI * 2; // un óvalo de esquinas redondeadas sobre el borde de las paredes
+    const cx = Math.cos(t), cy = Math.sin(t);
+    const x = 0.45 * Math.sign(cx) * Math.abs(cx) ** 0.4;
+    rim.push([x, 0.245 * Math.sign(cy) * Math.abs(cy) ** 0.4, 0.703 - 0.055 * (x + 0.45) / 0.9]);
+  }
+  add(tube(rim, 0.012, CARBON, 6));
   // halo: un arco sobre la cabeza que se apoya atrás y en un pilar central adelante
   // (visto desde arriba es media elipse: adelante en x = 0,58 y atrás, a los costados de la cabeza)
   const haloAt = (t) => [-0.15 + 0.73 * Math.cos(t), 0.29 * Math.sin(t), 0.74 + 0.12 * Math.cos(t)];
@@ -529,5 +596,5 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
       add(...wheel(x, s, y, w, front, hex(accent)));
     });
   }
-  return skin(parts, body, liveryTexture(color, accent, number));
+  return skin(parts, body, liveryTexture(color, accent, number, sharp), sharp);
 }

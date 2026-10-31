@@ -347,6 +347,15 @@ export function kerbAt(track, x, y) {
   return kerbAmount(sampleField(track.lat, track.W, x, y) > 0 ? track.kerbRight : track.kerbLeft, st);
 }
 
+// Qué hay en un punto: 'road' (la pista), 'kerb' (el piano, por fuera del borde) o 'grass'. Las propiedades de
+// cada superficie (agarre, freno) están en SURFACES de car.js; para poner otro material al costado de la pista
+// (grava, asfalto) alcanza con devolverlo acá donde corresponda y agregarlo allá.
+export function surfaceAt(track, x, y) {
+  const edge = sampleField(track.sdf, track.W, x, y);
+  if (edge >= 0) return 'road';
+  return edge > -KERB_W * kerbAt(track, x, y) ? 'kerb' : 'grass';
+}
+
 export function kerbAmount(amounts, st) {
   const n = amounts.length;
   const i = Math.floor(st), t = st - i;

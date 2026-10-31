@@ -2,15 +2,19 @@
 // Los pesos vienen de rl/export.py: capas lineales con tanh entre ellas.
 
 import { rescue } from './ai.js';
-import { OBS_SIZE, observe, SETUP_START, SETUP_VALUES } from './sensors.js';
+import { OBS_SIZE, observe, SETUP_START, SETUP_VALUES, WHEEL_VALUES } from './sensors.js';
 import { stationAt } from './track.js';
 
 export class Policy {
   // opponents: si aprendió a mirar a los demás autos (etapa 2); si no, se le pasan en cero, como al entrenar
   constructor({ obs_size, layers, opponents = false }) {
-    // las redes de antes del desgaste y la variación de autos no reciben esos valores: se les sacan
-    this.legacy = obs_size === OBS_SIZE - SETUP_VALUES;
-    if (obs_size !== OBS_SIZE && !this.legacy) throw new Error(`La red espera ${obs_size} valores y los sensores dan ${OBS_SIZE}`);
+    // las redes de antes del agarre por rueda leen sólo lo de adelante (va al final); las de antes del desgaste y
+    // la variación de autos, además, no reciben esos valores: se les sacan
+    this.size = obs_size;
+    this.legacy = obs_size === OBS_SIZE - WHEEL_VALUES - SETUP_VALUES;
+    if (obs_size !== OBS_SIZE && obs_size !== OBS_SIZE - WHEEL_VALUES && !this.legacy) {
+      throw new Error(`La red espera ${obs_size} valores y los sensores dan ${OBS_SIZE}`);
+    }
     this.opponents = opponents;
     this.layers = layers.map((l) => {
       const w = floats(l.w);
@@ -24,11 +28,12 @@ export class Policy {
 
   // obs → [volante, pedal], los dos entre -1 y 1
   act(obs) {
-    let x = obs;
+    let x = obs.subarray(0, this.legacy ? this.size + SETUP_VALUES : this.size);
     if (this.legacy) {
-      x = new Float32Array(OBS_SIZE - SETUP_VALUES);
-      x.set(obs.subarray(0, SETUP_START));
-      x.set(obs.subarray(SETUP_START + SETUP_VALUES), SETUP_START);
+      const y = new Float32Array(this.size);
+      y.set(x.subarray(0, SETUP_START));
+      y.set(x.subarray(SETUP_START + SETUP_VALUES), SETUP_START);
+      x = y;
     }
     this.layers.forEach(({ w, b }, k) => {
       const y = new Float32Array(b.length);

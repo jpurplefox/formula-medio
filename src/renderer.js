@@ -536,13 +536,22 @@ export class Renderer {
       const bx = lx - hd.x, by = ly - hd.y;
       return [hd.x + bx * ch - by * sh, hd.y + bx * sh + by * ch, lz];
     };
+    // el volante gira alrededor de su columna (Rodrigues)
+    const ct = Math.cos(m.wheelTurn || 0), stn = Math.sin(m.wheelTurn || 0);
+    const column = (co, lx, ly, lz) => {
+      const ax = co.ax, ay = co.ay, az = co.az, vx = lx - co.x, vy = ly - co.y, vz = lz - co.z;
+      const d = (ax * vx + ay * vy + az * vz) * (1 - ct);
+      return [co.x + vx * ct + (ay * vz - az * vy) * stn + ax * d, co.y + vy * ct + (az * vx - ax * vz) * stn + ay * d,
+        co.z + vz * ct + (ax * vy - ay * vx) * stn + az * d];
+    };
     for (const part of m.model) {
       if (part.tag && part.tag === m.hide) continue;
-      const wh = part.wheel, hd = part.head;
+      const wh = part.wheel, hd = part.head, co = part.column;
       const n = part.verts.length;
       const wx = new Float64Array(n), wy = new Float64Array(n), wz = new Float64Array(n);
       for (let i = 0; i < n; i++) {
-        const [lx, ly, lz] = wh ? turn(wh, ...part.verts[i]) : lean(...(hd ? look(hd, ...part.verts[i]) : part.verts[i]));
+        const v = part.verts[i];
+        const [lx, ly, lz] = wh ? turn(wh, ...v) : lean(...(hd ? look(hd, ...v) : co ? column(co, ...v) : v));
         wx[i] = m.x + (Fx * lx + Rx * ly + Ux * lz) * k;
         wy[i] = m.y + (Fy * lx + Ry * ly + Uy * lz) * k;
         wz[i] = m.z + (Fz * lx + Rz * ly + Uz * lz) * k;
@@ -554,6 +563,7 @@ export class Renderer {
         if (wh) [lx, ly, lz] = turn({ x: 0, y: 0, z: 0, front: wh.front }, lx, ly, lz);
         else {
           if (hd) [lx, ly, lz] = look({ x: 0, y: 0 }, lx, ly, lz);
+          if (co) [lx, ly, lz] = column({ ...co, x: 0, y: 0, z: 0 }, lx, ly, lz);
           [lx, ly, lz] = lean(lx, ly, lz, 0);
         }
         const nx = Fx * lx + Rx * ly + Ux * lz, ny = Fy * lx + Ry * ly + Uy * lz, nz = Fz * lx + Rz * ly + Uz * lz;
@@ -565,7 +575,9 @@ export class Renderer {
         // en el mapa y crece hacia abajo: el sol está hacia -x, -y
         const sun = -nx * SUN[0] - ny * SUN[1] + nz * SUN[2];
         const light = 0.5 + 0.6 * Math.max(0, sun) + 0.12 * nz;
-        const uv = face.uv;
+        // la pantalla del volante, sin WebGL, queda apagada (su color)
+        const tex = face.slot === 6 ? null : face.tex;
+        const uv = tex ? face.uv : null;
         const poly = clipNear(idx.map((i, a) => (uv ? toCam(wx[i], wy[i], wz[i], uv[a][0], uv[a][1]) : toCam(wx[i], wy[i], wz[i]))));
         if (poly.length < 3) continue;
         const depth = (fx - cam.x) * dirX + (fy - cam.y) * dirY;
@@ -578,8 +590,8 @@ export class Renderer {
         }
         const fog = fogFactor(depth);
         // texeles que cubre un píxel de pantalla, para elegir el mipmap
-        const fp = face.tex ? (face.dens * depth * m.meters) / P : 0;
-        polys.push({ pts, color: mix(shade(face.color, light), fog), tex: face.tex, fp, light, fog });
+        const fp = tex ? (face.dens * depth * m.meters) / P : 0;
+        polys.push({ pts, color: mix(shade(face.color, light), fog), tex, fp, light, fog });
       }
     }
     if (!polys.length) return;

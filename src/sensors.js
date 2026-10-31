@@ -8,6 +8,8 @@
 //   rayos       distancia hasta el borde de la pista en 19 direcciones, de -90° a +90° (más juntos al frente)
 //   rivales     los 6 más cercanos (hasta 120 m): posición y velocidad relativas y hacia dónde apuntan.
 //               Los lugares sin rival quedan en cero (en la primera etapa, solo en pista, siempre)
+//   ruedas      el agarre de cada rueda según lo que pisa (1 en el asfalto, menos en el pasto), así sabe de qué
+//               lado se fue. Va al final: las redes de antes, que no lo tienen, leen sólo lo de adelante
 //
 // Todo va más o menos entre -1 y 1. Las distancias de la pista se miden en metros, así sirve en cualquier
 // circuito sin importar el tamaño de sus celdas.
@@ -28,7 +30,9 @@ export const SETUP_START = CAR_VALUES; // dónde empiezan (las redes viejas no l
 export const SETUP_SPREAD = { power: 0.2, topSpeed: 0.2, grip: 0.2, brakes: 0.2, wear: 0.3 };
 const POSITION_VALUES = 5;
 const OPPONENT_VALUES = 7;
-export const OBS_SIZE = CAR_VALUES + SETUP_VALUES + POSITION_VALUES + LOOK_AHEAD.length + RAY_ANGLES.length + OPPONENTS * OPPONENT_VALUES;
+export const WHEEL_VALUES = 4;
+export const OBS_SIZE = CAR_VALUES + SETUP_VALUES + POSITION_VALUES + LOOK_AHEAD.length + RAY_ANGLES.length
+  + OPPONENTS * OPPONENT_VALUES + WHEEL_VALUES;
 
 const RAY_MAX = 200; // m
 const OPPONENT_RANGE = 120; // m
@@ -111,7 +115,7 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
   put(lat / halfWidthAt(track, u));
   put(Math.sin(rel));
   put(Math.cos(rel));
-  put(car.onGrass ? 1 : 0);
+  put(car.grass ?? (car.onGrass ? 1 : 0)); // fracción de las ruedas en el pasto
   put(car.onKerb ? 1 : 0);
 
   // la pista más adelante: cuánto cambia su rumbo respecto del auto
@@ -149,6 +153,9 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
     put(Math.sin(oa));
     put(Math.cos(oa));
   }
+
+  // agarre de cada rueda: delantera izquierda, derecha, trasera izquierda, derecha
+  for (const g of car.wheelGrip ?? [1, 1, 1, 1]) put(g);
   return out;
 }
 

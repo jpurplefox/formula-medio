@@ -31,7 +31,8 @@ function tint(hex, k) {
 function label(g, str, X, Y, h, m, fill, stroke = null) {
   g.save();
   const k = (h * LIVERY_S) / 100; // la letra se dibuja de 100 px de alto y se escala
-  g.setTransform(m[0] * k, m[1] * k, m[2] * k, m[3] * k, X, Y);
+  const sc = g.getTransform().a; // el atlas puede dibujarse más grande (sharp en liveryTexture)
+  g.setTransform(m[0] * k * sc, m[1] * k * sc, m[2] * k * sc, m[3] * k * sc, X * sc, Y * sc);
   g.font = `italic 900 100px ${FONT}`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
@@ -116,11 +117,13 @@ function drawTop(g, color, accent, number) {
 }
 
 // Atlas de la decoración de un auto
-// color: carrocería; accent: franja, sponsors y detalles
-export function liveryTexture(color, accent, number) {
+// color: carrocería; accent: franja, sponsors y detalles; sharp: el atlas en sharp veces más resolución (para el
+// auto propio, que desde la cabina se ve de muy cerca); las coordenadas de textura se multiplican igual
+export function liveryTexture(color, accent, number, sharp = 1) {
   const c = document.createElement('canvas');
-  c.width = c.height = SIZE;
+  c.width = c.height = SIZE * sharp;
   const g = c.getContext('2d');
+  g.scale(sharp, sharp);
   g.fillStyle = color;
   g.fillRect(0, 0, SIZE, SIZE);
   drawSide(g, SIDE_R, color, accent, number, false);

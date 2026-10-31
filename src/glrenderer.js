@@ -245,6 +245,8 @@ in float aTex, aWheel, aGloss;
 uniform vec4 uWheels[4];
 uniform vec2 uSpin, uSteer, uHead; // coseno y seno
 uniform vec3 uNeck; // pivote de la cabeza
+uniform vec3 uColumn, uColumnAxis; // el volante gira alrededor de su columna
+uniform vec2 uTurn; // coseno y seno de cuánto gira el volante
 uniform vec3 uPos, uF, uR, uU;
 uniform vec4 uBody; // carrocería: coseno y seno del rolido (+: el costado derecho sube) y del cabeceo (+: la trompa baja)
 uniform float uK;
@@ -257,6 +259,8 @@ out vec3 vNormal, vView;
 vec3 spin(vec3 n) { return vec3(n.x * uSpin.x + n.z * uSpin.y, n.y, -n.x * uSpin.y + n.z * uSpin.x); }
 vec3 steer(vec3 n) { return vec3(n.x * uSteer.x - n.y * uSteer.y, n.x * uSteer.y + n.y * uSteer.x, n.z); }
 vec3 look(vec3 n) { return vec3(n.x * uHead.x - n.y * uHead.y, n.x * uHead.y + n.y * uHead.x, n.z); }
+// giro alrededor del eje de la columna (Rodrigues)
+vec3 turn(vec3 n) { return n * uTurn.x + cross(uColumnAxis, n) * uTurn.y + uColumnAxis * dot(uColumnAxis, n) * (1.0 - uTurn.x); }
 // la carrocería rola sobre el eje largo y cabecea sobre el eje de costado, a la altura del centro de rolido
 vec3 lean(vec3 n) {
   n = vec3(n.x, n.y * uBody.x - n.z * uBody.y, n.y * uBody.y + n.z * uBody.x);
@@ -268,7 +272,12 @@ void main() {
   // el vidrio de los espejos es convexo: la normal se abre hacia los bordes (aUV va de -1 a 1 sobre el vidrio),
   // así el reflejo cambia de un lado al otro y abarca más
   if (aGloss > 1.5 && aGloss < 2.5) sm = normalize(sm + vec3(0.0, aUV.x, aUV.y) * 0.45);
-  if (aWheel > 4.5) {
+  if (aWheel > 5.5) {
+    // el volante gira sobre su columna
+    p = uColumn + turn(p - uColumn);
+    n = turn(n);
+    sm = turn(sm);
+  } else if (aWheel > 4.5) {
     // la cabeza del piloto gira alrededor del cuello
     p = uNeck + look(p - uNeck);
     n = look(n);
@@ -310,8 +319,9 @@ void main() {
 
 const MODEL_FS = `#version 300 es
 precision highp float;
-uniform sampler2D uLivery, uCarbon, uSidewall, uTread, uRim;
+uniform sampler2D uLivery, uCarbon, uSidewall, uTread, uRim, uScreen;
 uniform float uAlpha, uWear, uShine; // gomas: cuánto se gastaron y cuánto brillo de nuevas les queda (0..1)
+uniform float uGlossK; // cuánto del brillo de la pintura y el carbono (el auto propio visto desde la cabina, menos)
 in vec3 vColor;
 in vec2 vUV;
 flat in int vTex;
@@ -346,8 +356,11 @@ void main() {
   vec3 c = vTex == 1 ? texture(uLivery, vUV).rgb : vTex == 2 ? texture(uCarbon, vUV).rgb
     : vTex == 3 ? texture(uSidewall, vUV).rgb : vTex == 4 ? mix(NEW_TREAD, texture(uTread, vUV).rgb, uWear) : vTex == 5 ? texture(uRim, vUV).rgb : vColor;
   c = min(c * vLight, vec3(1.0));
+  // la pantalla del volante tiene luz propia
+  if (vTex == 6) c = texture(uScreen, vUV).rgb;
   // la banda de las gomas nuevas brilla hasta que se gasta un poco
   float gloss = vTex == 4 ? 0.5 * uShine : vGloss;
+  if (gloss <= 1.0) gloss *= uGlossK; // los espejos y la visera, igual
   if (gloss > 0.0) {
     // barniz: refleja poco de frente y mucho de costado (Fresnel), y un brillo chico y fuerte donde rebota el sol
     vec3 v = normalize(vView), n = normalize(vNormal);
@@ -622,6 +635,22 @@ export class GLRenderer {
   }
 
   // texturas de los autos y de los sprites (se suben una vez)
+  // la pantalla del volante: el canvas que dibuja el juego en cada cuadro (sin canvas, apagada)
+  screenTexture(canvas) {
+    const gl = this.gl;
+    if (!this.screenTex) {
+      this.screenTex = this.texture(new Uint8Array([5, 7, 10, 255]), 1, 1, { clamp: true });
+      this.screenOff = this.screenTex;
+    }
+    if (!canvas) return this.screenOff;
+    if (this.screenOff === this.screenTex) this.screenTex = this.texture(canvas, canvas.width, canvas.height, { clamp: true });
+    else {
+      gl.bindTexture(gl.TEXTURE_2D, this.screenTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    }
+    return this.screenTex;
+  }
+
   glTexture(tex) {
     let t = this.texCache.get(tex);
     if (!t) {
@@ -644,11 +673,11 @@ export class GLRenderer {
     const wheels = [];
     const texs = {};
     let helmetStart = -1;
-    let neck = { x: 0, y: 0, z: 0 };
+    let neck = { x: 0, y: 0, z: 0 }, column = { x: 0, y: 0, z: 0, ax: 1, ay: 0, az: 0 };
     const parts = [...model.filter((p) => p.tag !== 'helmet'), ...model.filter((p) => p.tag === 'helmet')];
     for (const part of parts) {
       if (part.tag === 'helmet' && helmetStart < 0) helmetStart = data.length / STRIDE;
-      // a qué rueda pertenece (1 a 4), o 5 si es la cabeza del piloto
+      // a qué rueda pertenece (1 a 4), 5 si es la cabeza del piloto y 6 si es el volante
       let w = 0;
       if (part.wheel) {
         let k = wheels.indexOf(part.wheel);
@@ -657,6 +686,9 @@ export class GLRenderer {
       } else if (part.head) {
         w = 5;
         neck = part.head;
+      } else if (part.column) {
+        w = 6;
+        column = part.column;
       }
       // caras de la pieza que tocan cada vértice
       const touching = part.verts.map(() => []);
@@ -710,7 +742,7 @@ export class GLRenderer {
     this.attrib(m, 'aSmooth', 3, STRIDE, 13);
     this.attrib(m, 'aGloss', 1, STRIDE, 16);
     gl.bindVertexArray(null);
-    g = { vao, count, helmetStart: helmetStart < 0 ? count : helmetStart, wheels, neck, texs };
+    g = { vao, count, helmetStart: helmetStart < 0 ? count : helmetStart, wheels, neck, column, texs };
     this.modelCache.set(model, g);
     return g;
   }
@@ -831,15 +863,20 @@ export class GLRenderer {
       gl.uniform2f(mp.u.uSteer, Math.cos(st), Math.sin(st));
       gl.uniform2f(mp.u.uHead, Math.cos(m.head || 0), Math.sin(m.head || 0));
       gl.uniform3f(mp.u.uNeck, g.neck.x, g.neck.y, g.neck.z);
+      gl.uniform3f(mp.u.uColumn, g.column.x, g.column.y, g.column.z);
+      gl.uniform3f(mp.u.uColumnAxis, g.column.ax, g.column.ay, g.column.az);
+      gl.uniform2f(mp.u.uTurn, Math.cos(m.wheelTurn || 0), Math.sin(m.wheelTurn || 0));
       const wv = new Float32Array(16);
       g.wheels.forEach((w, i) => wv.set([w.x, w.y, w.z, w.front ? 1 : 0], i * 4));
       gl.uniform4fv(mp.u.uWheels, wv);
       gl.uniform1f(mp.u.uAlpha, alpha);
       gl.uniform1f(mp.u.uWear, m.wear ?? 1);
       gl.uniform1f(mp.u.uShine, m.shine ?? 0);
+      gl.uniform1f(mp.u.uGlossK, m.gloss ?? 1);
       // primero se crean todas (crear una la deja atada a la unidad activa) y después se atan
       const texs = [1, 2, 3, 4, 5].map((k) => g.texs[k] && this.glTexture(g.texs[k]));
-      ['uLivery', 'uCarbon', 'uSidewall', 'uTread', 'uRim'].forEach((name, i) => {
+      if (g.texs[6]) texs.push(this.screenTexture(m.screen));
+      ['uLivery', 'uCarbon', 'uSidewall', 'uTread', 'uRim', 'uScreen'].forEach((name, i) => {
         if (texs[i]) this.bind(i, texs[i], mp, name);
       });
       gl.bindVertexArray(g.vao);
