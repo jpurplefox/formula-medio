@@ -1,7 +1,8 @@
 # Plan: red más grande y entrenamiento por currículum
 
-Plan para la ronda de la IA por refuerzo que vino después de la etapa 2. Ya está implementado y entrenado: los
-resultados están al final (fases 5–7) y la red recomendada es `models/fase7.json`.
+Plan para la ronda de la IA por refuerzo que vino después de la etapa 2, con cuatro intentos de currículum. **La
+red del juego es `models/v4/fase6.json`** (cuarto intento, la más limpia); para volver a entrenarla, ver "Cómo se
+corre" al final.
 
 ## 1. Red más grande (experimento barato, primero)
 
@@ -136,7 +137,7 @@ autos distintos rotando), pasto y posición media contra la IA de siempre en Dif
 
 ## Tercer intento: limpio primero, velocidad después
 
-Con lo aprendido, el currículum se rearma desde cero (`sh rl/curriculum3.sh`, modelos en `models/v3/`) y se compara
+Con lo aprendido, el currículum se rearma desde cero (modelos en `models/v3/`) y se compara
 con la fase 7. La idea: aprender primero a manejar limpio y recién después a ir rápido y a pasar.
 
 | Fase | Qué aprende | Premio | Mezcla |
@@ -182,7 +183,7 @@ posición media contra la IA de siempre en Difícil; vuelta sola con `rl/eval.js
 
 ## Cuarto intento: mantener el ritmo en vez de premiar pasadas
 
-`sh rl/curriculum4.sh` (~1,5 h, modelos en `models/v4/`). Parte de la v3 fase 4 (la que menos tocaba) y cambia
+Modelos en `models/v4/` (~1,5 h). Parte de la v3 fase 4 (la que menos tocaba) y cambia
 cuatro cosas:
 
 - **Sin premio por pasar; piso de ritmo siempre** (salvo amontonado: más de 3 autos a menos de 30 m). Para no perder
@@ -252,12 +253,27 @@ Escenarios (`rl/scenario_eval.js`, toques provocados por km):
 
 ## Cómo se corre
 
+`rl/curriculum.sh` entrena desde cero la receta de la red del juego: las fases 1–4 del tercer intento y las 5–6
+del cuarto (~4,5 h). Hace falta `rl/.venv` y los circuitos exportados en `rl/tracks/` (README, "IA por refuerzo").
+
 ```bash
-sh rl/curriculum.sh        # las 7 fases seguidas (~4 h); sh rl/curriculum.sh 3 rehace desde la fase 3
+NOMBRE=v5 sh rl/curriculum.sh        # modelos en models/v5/, logs y checkpoints en rl/runs/v5faseN
+NOMBRE=v5 sh rl/curriculum.sh 5      # rehace desde la fase 5 (usa rl/runs/v5fase4/model.zip)
 ```
 
-Cada fase parte del modelo final de la anterior y se exporta a `models/faseN.json`. Al continuar un modelo, la
-tasa de aprendizaje de cada fase va de su valor inicial (`--lr`) a 0 dentro de esa fase.
+Cada fase parte del modelo final de la anterior y se exporta a `models/$NOMBRE/faseN.json`. Al continuar un modelo,
+la tasa de aprendizaje de cada fase va de su valor inicial (`--lr`) a 0 dentro de esa fase. Al terminar mide la
+nueva contra la del juego en la carrera tipo juego; si es mejor, se cambia `CURRENT_NET` en `src/main.js`.
+
+Para cambiar la receta, lo que más pesa:
+- `--contact-budget` (fracción de los toques provocados de la fase 7 que se permiten) y `--contact-scale`.
+- `--rewards`: `progress`, `pass`, `paceFloor`, `paceAlways`, `crowd`, `grass`, `wall` (`rl/race.js`, `rl/env.js`).
+- `--spread`: cuánto varían los autos (de −15 % a +20 % hoy). Pasar de ±20 % obliga a cambiar `SETUP_SPREAD` en
+  `src/sensors.js` y a reescalar las redes viejas con `rl/rescale_setup.py`.
+- La desventaja del de adelante en las persecuciones: `CHASE_HANDICAP` en `rl/race.js`.
+
+Los scripts de los intentos anteriores (`curriculum.sh` de 7 fases, `curriculum3.sh`, `curriculum4.sh`) están en
+el commit b3253db.
 
 - Red: política 384×384, crítico 512×512.
 - Escenarios y premios: `rl/race.js`. Variación de autos y gomas al azar: `randomSetup` y `randomTyres` en `rl/env.js`.
@@ -266,6 +282,7 @@ tasa de aprendizaje de cada fase va de su valor inicial (`--lr`) a 0 dentro de e
 ## Cómo se mide
 
 ```bash
+JUEGO=1 node rl/race_eval.js models/v4/fase6.json                   # carrera tipo juego: 21 redes y un "jugador"
 node rl/eval.js models/fase4.json                                   # vuelta lanzada sola, autos iguales
 node rl/scenario_eval.js models/etapa2.json models/fase4.json       # cada escenario, mismas carreras
 SPREAD=0.05 node rl/race_eval.js models/fase4.json                  # 22 autos distintos, con rotación

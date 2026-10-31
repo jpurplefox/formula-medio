@@ -10,7 +10,7 @@ import { Driver, gridSlots, lineFrame, pointAt } from './ai.js';
 import { collideCars } from './collision.js';
 import { Cockpit } from './cockpit.js';
 import { CAMERA_MODES, CAMERA_NAMES, Recorder, replayCamera, tvCameras } from './replay.js';
-import { DIFFICULTIES, LAP_OPTIONS, TEAMS, car as teamCar, rivalCars, rivalPaces } from './teams.js';
+import { DIFFICULTIES, LAP_OPTIONS, TEAMS, car as teamCar, gridOrder, rivalCars, rivalPaces, rivalSetups } from './teams.js';
 import { EngineAudio } from './audio.js';
 import { NeuralDriver, Policy } from './policy.js';
 
@@ -260,8 +260,11 @@ function pollPad() {
 let game = null;
 let lastGame = null; // la última carrera, para conservar el mejor tiempo y el fantasma al volver del menú
 let carProfile = DEFAULT_PROFILE;
-// Con ?ia=models/etapa1.json en la dirección, los rivales manejan con la red entrenada (rl/) en vez de ai.js
-const NEURAL_URL = new URLSearchParams(location.search).get('ia');
+// Los rivales manejan con la red entrenada (rl/CURRICULO.md); con ?ia=models/fase7.json, con otra, y con ?ia=clasica,
+// con la IA de siempre (ai.js), que es también la que queda si la red no carga
+const CURRENT_NET = 'models/v4/fase6.json';
+const IA_PARAM = new URLSearchParams(location.search).get('ia') || CURRENT_NET;
+const NEURAL_URL = IA_PARAM === 'clasica' ? null : IA_PARAM;
 let neuralPolicy = null;
 let manualGears = false;
 
@@ -274,23 +277,25 @@ function resetGame(track) {
   const trial = settings.mode === 'trial';
   // en contrarreloj no hay rivales
   const others = trial ? [] : rivalCars(team);
-  const paces = rivalPaces(difficulty, others.length);
-  // grilla: los rivales adelante (los más rápidos primero) y vos al final
-  const slots = gridSlots(track, others.length + 1);
+  const paces = rivalPaces(difficulty, others.length), setups = rivalSetups(difficulty, others.length);
+  // grilla: los rivales adelante (los mejores autos tienden a largar primero) y vos al final
+  const slots = gridSlots(track, others.length + 1), grid = gridOrder(others.length);
   const spawn = slots[others.length];
   const car = Object.assign(new Car(spawn.x, spawn.y, spawn.angle, carProfile), { manual: manualGears });
   const mine = teamCar(team, 0);
-  const player = { name: 'Vos', code: 'VOS', number: mine.number, color: team.color, car, driver: null, race: newRace(track, car), model: modelFor(mine), dist: 0, gridBack: spawn.back };
+  const player = { name: 'Vos', team: team.name, code: 'VOS', number: mine.number, color: team.color, car, driver: null, race: newRace(track, car), model: modelFor(mine), dist: 0, gridBack: spawn.back };
   const rivals = others.map((o, i) => {
-    const t = o.team, c = new Car(slots[i].x, slots[i].y, slots[i].angle, carProfile);
+    const t = o.team, s = slots[grid[i]], c = new Car(s.x, s.y, s.angle, carProfile);
+    // con la red, la dificultad es el auto: más o menos agarre y potencia
+    if (neuralPolicy) c.setup = setups[i];
     return {
-      name: `${t.name} #${o.number}`, code: t.code, number: o.number, color: t.color, car: c, race: newRace(track, c),
+      name: o.name, team: t.name, code: o.code, number: o.number, color: t.color, car: c, race: newRace(track, c),
       driver: neuralPolicy ? new NeuralDriver(neuralPolicy) : new Driver(paces[i], i + 1),
-      model: modelFor(o), spin: 0, dist: 0, gridBack: slots[i].back,
+      model: modelFor(o), spin: 0, dist: 0, gridBack: s.back,
       // en la grilla cada rival acelera hasta unas vueltas propias y reacciona al semáforo con su tiempo
       revTarget: LAUNCH_WINDOW[0] - 300 + Math.random() * 1500, react: 0.12 + Math.random() * 0.22,
     };
-  });
+  }).sort((a, b) => a.gridBack - b.gridBack); // en orden de grilla: así los muestra la tabla antes de largar
   const wearRate = 1 / (wearLaps({ trial, laps: settings.laps }) * track.length * track.meters);
   for (const e of [...rivals, player]) e.car.wearRate = wearRate;
   game = {
@@ -567,7 +572,7 @@ function drawResults(g) {
     const f = g.finished.find((x) => x.entry === e);
     const gap = !f ? 'en pista' : i === 0 ? fmt(f.time) : `+${(f.time - first).toFixed(3)}`;
     const me = e === g.player ? ' class="me"' : '';
-    return `<tr${me}><td>${i + 1}</td><td><i style="background:${e.color}"></i>${e.name}</td><td>${gap}</td></tr>`;
+    return `<tr${me}><td>${i + 1}</td><td><i style="background:${e.color}"></i>${e.name}<small>${e.team}</small></td><td>${gap}</td></tr>`;
   });
   const html = `<h3>Resultado</h3><table>${rows.join('')}</table><p>R para correr de nuevo · Esc menú</p>`;
   if (hud.results.innerHTML !== html) hud.results.innerHTML = html;

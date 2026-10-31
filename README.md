@@ -18,12 +18,16 @@ Antes de largar hay un **menú** (que se acuerda de lo último que elegiste):
   (solo en pista, vueltas sin límite y un **fantasma** semitransparente que repite tu mejor vuelta, para ver
   dónde ganás o perdés tiempo). En carrera no hay fantasma.
 - **Equipo:** Hierrari, Merchoedes, Red Toro, McLarrón, Austin Martini, Allpain, Willyams, Audiós, Haash,
-  AlfaTorito o Cadillaque, cada uno con sus colores (carrocería, detalles de la decoración y casco) y los números de sus dos autos
-  (`src/teams.js`). Como en la F1, la cámara de arriba (la "T") es negra en el primer auto de cada equipo y
+  AlfaTorito o Cadillaque, cada uno con sus colores (carrocería, detalles de la decoración y casco) y sus dos
+  pilotos, inventados a partir de la grilla de 2026, con sus números (Jorge Rústico y Kimi Antojo en Merchoedes,
+  Carlos Le Clic y Luis Jamónton en Hierrari, Max Verstapón, Lando Nórdico, Franco Colapasto…; `src/teams.js`). Como en la F1, la cámara de arriba (la "T") es negra en el primer auto de cada equipo y
   amarilla en el segundo. Vos manejás el primero de tu equipo; los 21 rivales son los dos autos de cada uno de
-  los otros equipos y tu compañero.
-- **Dificultad:** Fácil, Normal, Difícil o Experto: el ritmo de los rivales (en Interlagos, de vueltas de ~75–80 s
-  en Fácil a ~69–70 s en Experto).
+  los otros equipos y tu compañero. Los equipos que mejor vienen en el campeonato (`STANDINGS` en `src/teams.js`,
+  hoy Merchoedes primero) suelen largar adelante (con algo de azar, como en una clasificación) y tienen los mejores
+  autos dentro de la dificultad elegida. La tabla muestra la sigla de cada piloto y el resultado, su nombre.
+- **Dificultad:** Fácil, Normal, Difícil o Experto. Con la red entrenada (la de por defecto) cambia el agarre y la
+  potencia de los rivales: en Fácil, de 0,9 veces los tuyos (el mejor equipo) a 0,85 (el peor); en Experto, de 1,1
+  a 1,06. Con la IA de siempre, su ritmo (en Interlagos, de vueltas de ~75–80 s en Fácil a ~69–70 s en Experto).
 - **Circuito:** Interlagos, Monza, Albert Park, Barcelona, Montreal, Spa, Silverstone o Red Bull Ring, todos con
   alturas reales, o cargar uno propio; y **vueltas** (1, 3, 5 o 10; dificultad y vueltas son sólo para carrera).
 - **Sonido:** prendido o apagado y volumen general, de los motores y de la música del menú.
@@ -172,7 +176,8 @@ Controles: **C** cambia la cámara, **←/→** (o J/L) el auto que se sigue, **
 
 ## Rivales
 
-Cada rival (`src/ai.js`) es un auto con la misma física que el tuyo, manejado por un piloto automático:
+Los rivales manejan con la red entrenada por refuerzo (ver "IA por refuerzo"). La IA de siempre, que sigue
+disponible con `?ia=clasica`, se describe acá: cada rival (`src/ai.js`) es un auto con la misma física que el tuyo, manejado por un piloto automático:
 - **Volante:** persigue un punto de la trazada ideal unos metros más adelante (*pure pursuit*) y gira lo
   justo para llegar, dentro de lo que permite el agarre.
 - **Pedales:** acelera o frena para ir a la velocidad que la trazada indica en ese punto, multiplicada por su
@@ -214,7 +219,9 @@ python3 -m venv rl/.venv && rl/.venv/bin/pip install torch stable-baselines3 gym
    `rl/.venv/bin/tensorboard --logdir rl/runs`).
 3. Exportar la red a JSON: `rl/.venv/bin/python rl/export.py rl/runs/etapa1/model.zip models/etapa1.json`.
 4. Medirla contra la IA de siempre: `node rl/eval.js models/etapa1.json`.
-5. Verla en el juego: `http://localhost:8123/?ia=models/etapa1.json` (los rivales manejan con la red).
+5. Verla en el juego: `http://localhost:8123/?ia=models/etapa1.json` (los rivales manejan con esa red). Sin `?ia`
+   manejan con la red elegida (`CURRENT_NET` en `src/main.js`, hoy `models/v4/fase6.json`); con `?ia=clasica`,
+   con la IA de siempre (`src/ai.js`), que es también la que queda si la red no carga.
 
 Para que el entrenamiento no se desarme (PPO es inestable), la tasa de aprendizaje baja de a poco hasta 0, cada
 actualización usa 32.768 pasos y las recompensas se normalizan; conviene igual medir los puntos de control con
@@ -244,12 +251,14 @@ Un premio por pasar y por defender le enseñó a zigzaguear y a meterse aunque h
 Contra la etapa 1, en carreras de 22 autos se toca un 18 % menos y pisa un 26 % menos el pasto, con el mismo ritmo
 (posición media 6,9 contra 7,2); con 8 autos, un 29 % menos de toques.
 
-**Currículum** (`rl/curriculum.sh`, `models/fase1.json` a `models/fase7.json`): red más grande (política 384×384,
+**Currículum** (`models/fase1.json` a `models/fase7.json`): red más grande (política 384×384,
 crítico 512×512), autos con potencia, agarre y frenos algo distintos y gomas que se gastan, y fases que enseñan de a
 una cosa (manejar sola, no chocar, pasar, carreras completas) y después tres fases más dedicadas a manejar limpio.
-**`models/fase7.json` es la recomendada**: un 44 % menos de toques que la fase 1 y la que menos pisa el pasto, a
-cambio de quedar a mitad de tabla contra la IA de siempre (la fase 1 es la más rápida). Detalle, resultados y lo que
-salió mal en el camino: `rl/CURRICULO.md`.
+La fase 7 tocaba un 44 % menos que la fase 1. Dos intentos más (`models/v3/`, `models/v4/`) priorizaron manejar
+limpio antes que rápido: **`models/v4/fase6.json` es la red del juego**, con un 63 % menos de toques que la fase 7
+en la carrera tipo juego (21 redes y un "jugador") y un 3 % más lenta, que se compensa dándoles más agarre.
+Para volver a entrenarla desde cero: `NOMBRE=v5 sh rl/curriculum.sh` (~4,5 h). Detalle, resultados y lo que salió
+mal en el camino: `rl/CURRICULO.md`.
 
 ## Trazada ideal
 

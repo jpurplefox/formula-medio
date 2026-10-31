@@ -9,7 +9,8 @@
 //
 // Con JUEGO=1 es la carrera del juego: todos los autos con la red salvo uno, la IA de siempre al ritmo más alto de
 // Difícil, que hace de jugador (largando del medio). Informa toques por auto de la red, cuántos provocó, pasto y en
-// cuánto tiempo terminó el primero las vueltas (el ritmo).
+// cuánto tiempo terminó el primero las vueltas (el ritmo). Con DIFICULTAD (facil, normal, dificil, experto) las redes
+// llevan el agarre y la potencia de esa dificultad en el juego (src/teams.js) y el jugador, su ritmo más alto.
 //
 // Con SPREAD (por ejemplo 0.05) cada auto de la grilla es un poco distinto, siempre igual para una misma semilla,
 // y cada carrera se corre dos veces intercambiando qué autos maneja la red: así ningún resultado depende de la
@@ -25,14 +26,17 @@ import { racingLine } from '../src/racingline.js';
 import { trackHeading } from '../src/sensors.js';
 import { sampleField, stationAt } from '../src/track.js';
 import { loadTrack, TRACK_IDS } from './tracks.js';
+import { DIFFICULTIES, rivalSetups } from '../src/teams.js';
 
 const [file, ids, lapsArg] = process.argv.slice(2);
 const policy = new Policy(JSON.parse(readFileSync(file, 'utf8')));
 const profile = JSON.parse(readFileSync(new URL('../cars/f1-2023.json', import.meta.url), 'utf8'));
 const DT = 1 / 60, CARS = Number(process.env.CARS ?? 22), LAPS = Number(lapsArg ?? 3);
-const PACES = [1.06, 0.98]; // Difícil
 const SPREAD = Number(process.env.SPREAD ?? 0);
 const GAME = process.env.JUEGO === '1', PLAYER = Math.floor(CARS / 2);
+const LEVEL = GAME && DIFFICULTIES.find((d) => d.id === process.env.DIFICULTAD);
+const PACES = LEVEL ? [LEVEL.paces[0], LEVEL.paces[0]] : [1.06, 0.98]; // Difícil
+const LEVEL_SETUPS = LEVEL && rivalSetups(LEVEL, CARS - 1);
 
 function race(track, seed, swap) {
   const rand = rng(seed);
@@ -45,6 +49,7 @@ function race(track, seed, swap) {
     const car = new Car(s.x, s.y, s.angle, profile);
     const net = GAME ? k !== PLAYER : k % 2 === (swap ? 1 : 0);
     if (SPREAD) car.setup = setups[k];
+    if (LEVEL && net) car.setup = LEVEL_SETUPS[k < PLAYER ? k : k - 1];
     car.wearRate = 1 / (LAPS * track.length * track.meters);
     const pace = PACES[0] + ((PACES[1] - PACES[0]) * ai) / (CARS / 2 - 1);
     if (!net) ai++;
