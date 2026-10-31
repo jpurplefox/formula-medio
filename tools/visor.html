@@ -1,0 +1,81 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Visor del auto</title>
+<style>
+  body { margin: 0; background: #8fa3b5; font: 13px system-ui; }
+  canvas { display: block; }
+  #ui { position: fixed; top: 8px; left: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  button { padding: 4px 10px; }
+</style>
+<div id="ui"></div>
+<canvas id="c"></canvas>
+<script type="module">
+// Visor del modelo del auto (src/carmodel.js) para revisar la forma: arrastrar para girar, rueda para acercar.
+// Dibuja las caras con su color plano y la luz del sol, de atrás para adelante (sin texturas).
+import { carModel } from '../src/carmodel.js';
+
+const q = new URLSearchParams(location.search);
+const model = carModel(q.get('color') ?? '#d8261c');
+const only = q.get('pieza'); // ?pieza=helmet muestra sólo las piezas con ese tag
+const c = document.getElementById('c'), ctx = c.getContext('2d');
+const views = { '3/4 adelante': [35, 22], 'costado': [90, 2], 'arriba': [90, 89], 'frente': [0, 6], '3/4 atrás': [145, 25], 'abajo-costado': [70, 10] };
+let [yaw, pitch] = views[q.get('vista')] ?? views['3/4 adelante'];
+let zoom = Number(q.get('zoom') ?? 1), wire = q.has('aristas'), target = [0, 0, 0.4];
+const ui = document.getElementById('ui');
+for (const name of Object.keys(views)) {
+  const b = document.createElement('button');
+  b.textContent = name;
+  b.onclick = () => { [yaw, pitch] = views[name]; draw(); };
+  ui.appendChild(b);
+}
+const wb = document.createElement('button');
+wb.textContent = 'aristas';
+wb.onclick = () => { wire = !wire; draw(); };
+ui.appendChild(wb);
+
+const SUN = (() => { const v = [0.4, 0.5, 0.75], l = Math.hypot(...v); return v.map((x) => x / l); })();
+function draw() {
+  c.width = innerWidth; c.height = innerHeight;
+  ctx.fillStyle = '#8fa3b5'; ctx.fillRect(0, 0, c.width, c.height);
+  const a = yaw * Math.PI / 180, p = pitch * Math.PI / 180;
+  // cámara: mira al centro del auto desde la dirección (yaw, pitch); yaw 0 = desde adelante
+  const fwd = [-Math.cos(p) * Math.cos(a), -Math.cos(p) * Math.sin(a), -Math.sin(p)];
+  const right = [Math.sin(a), -Math.cos(a), 0];
+  const up = [fwd[1] * right[2] - fwd[2] * right[1], fwd[2] * right[0] - fwd[0] * right[2], fwd[0] * right[1] - fwd[1] * right[0]];
+  const S = Math.min(c.width, c.height) / 6.5 * zoom, cx = c.width / 2, cy = c.height / 2;
+  const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  const polys = [];
+  for (const part of model) {
+    if (only && part.tag !== only) continue;
+    for (const f of part.faces) {
+      if (dot(f.n, fwd) > 0) continue;
+      const pts = f.idx.map((i) => { const v = part.verts[i]; const w = [v[0] - target[0], v[1] - target[1], v[2] - target[2]]; return [cx + dot(w, right) * S, cy - dot(w, up) * S, dot(w, fwd)]; });
+      const depth = pts.reduce((s, q) => s + q[2], 0) / pts.length;
+      const k = 0.45 + 0.55 * Math.max(0, dot(f.n, SUN));
+      const col = f.color;
+      polys.push([depth, pts, `rgb(${(col & 255) * k},${((col >> 8) & 255) * k},${((col >> 16) & 255) * k})`]);
+    }
+  }
+  polys.sort((u, v) => v[0] - u[0]);
+  for (const [, pts, col] of polys) {
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+    ctx.fillStyle = col; ctx.fill();
+    ctx.strokeStyle = wire ? 'rgba(0,0,0,0.35)' : col; ctx.lineWidth = wire ? 0.6 : 0.8; ctx.stroke();
+  }
+}
+let drag = null;
+c.onpointerdown = (e) => (drag = [e.clientX, e.clientY]);
+onpointerup = () => (drag = null);
+onpointermove = (e) => {
+  if (!drag) return;
+  yaw -= (e.clientX - drag[0]) * 0.4; pitch = Math.max(-89, Math.min(89, pitch + (e.clientY - drag[1]) * 0.4));
+  drag = [e.clientX, e.clientY]; draw();
+};
+c.onwheel = (e) => { zoom *= e.deltaY < 0 ? 1.1 : 0.9; draw(); };
+onresize = draw;
+// setView(yaw, pitch, zoom, [x, y, z] del punto al que mira), para la consola
+window.setView = (y, p, z = zoom, t = target) => { yaw = y; pitch = p; zoom = z; target = t; draw(); };
+draw();
+</script>
