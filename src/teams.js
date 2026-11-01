@@ -32,15 +32,15 @@ export const TEAMS = [
 // (fracción de la velocidad de su trazada; en Interlagos, 1,1 da vueltas de ~68,8 s, 1,06 de ~69,7 s,
 // 0,98 de ~71,9 s, 0,93 de ~75 s y 0,87 de ~80 s). En las curvas lentas no pasan de 0,975 (ai.js).
 // Con la red entrenada (rl/) el ritmo no se elige: lo da el auto. setups: agarre y potencia del más rápido y del más
-// lento (1 = el tuyo). La red se entrenó con autos de 0,85 a 1,2: más abajo pisa mucho el pasto sin ir más lenta, y
-// con más de ~1,05 casi no gana tiempo pero toca menos. Medido con JUEGO=1 DIFICULTAD=… node rl/race_eval.js: el
-// ganador tarda de 267 s (Fácil) a 246 s (Experto) y un jugador al ritmo más rápido de la IA de siempre en esa
-// dificultad termina entre 2.º y 4.º.
+// lento (1 = el tuyo). La red (v5) se entrenó con autos de 0,85 a 1,2; un poco más abajo sigue sin pisar el pasto.
+// Medido con JUEGO=1 DIFICULTAD=… node rl/race_eval.js: el ganador tarda 260 s (Fácil), 251 s (Normal), 243 s
+// (Difícil) y 237 s (Experto), y un jugador al ritmo más rápido de la IA de siempre en esa dificultad termina
+// 5.º, 4.º, 6.º y 9.º.
 export const DIFFICULTIES = [
-  { id: 'facil', name: 'Fácil', hint: 'Vueltas de ~75 a 80 s', paces: [0.93, 0.87], setups: [0.9, 0.85] },
-  { id: 'normal', name: 'Normal', hint: 'Vueltas de ~71,5 a 74 s', paces: [0.985, 0.945], setups: [0.95, 0.9] },
-  { id: 'dificil', name: 'Difícil', hint: 'Vueltas de ~69,5 a 72 s', paces: [1.06, 0.98], setups: [1, 0.95] },
-  { id: 'experto', name: 'Experto', hint: 'Vueltas de ~69 a 70 s, todos juntos', paces: [1.1, 1.06], setups: [1.1, 1.06] },
+  { id: 'facil', name: 'Fácil', hint: 'Vueltas de ~75 a 80 s', paces: [0.93, 0.87], setups: [0.83, 0.78] },
+  { id: 'normal', name: 'Normal', hint: 'Vueltas de ~71,5 a 74 s', paces: [0.985, 0.945], setups: [0.89, 0.84] },
+  { id: 'dificil', name: 'Difícil', hint: 'Vueltas de ~69,5 a 72 s', paces: [1.06, 0.98], setups: [0.95, 0.9] },
+  { id: 'experto', name: 'Experto', hint: 'Vueltas de ~69 a 70 s, todos juntos', paces: [1.1, 1.06], setups: [1.02, 0.98] },
 ];
 
 const spread = ([fast, slow], count) =>

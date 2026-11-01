@@ -21,9 +21,10 @@
 //   - zigzag defendiendo: en recta y con alguien pegado atrás, cambiar de dirección más de una vez
 //   - ir lento con la pista libre (piso de ritmo, si la fase lo usa)
 //
-// Cada fase puede escalar partes del premio (rewards: progress, pass, paceFloor, paceAlways, crowd) y el castigo
+// Cada fase puede escalar partes del premio (rewards: progress, pass, paceFloor, paceAlways, paceCrowd, crowd) y el castigo
 // por toque provocado se multiplica por contactScale, que el entrenamiento ajusta solo según un presupuesto de
 // toques (rl/train.py). progress (de 0 a 1, cuánto lleva la fase) achica la desventaja del rival en persecución.
+// boost hace a los rivales más rápidos (ver el constructor).
 //
 // Cada auto es un poco distinto (motor, punta, agarre, frenos, desgaste: ± spread) y las gomas pueden estar
 // gastadas; la red lo recibe como entradas. Con autos distintos, pasar y defender aparecen solos.
@@ -79,6 +80,8 @@ const PACE_FLOOR = 0.75, PACE_PENALTY = 1, FREE_ROAD = 40;
 // salvo en un amontonamiento: más de CROWD_CLOSE autos a menos de CROWD_NEAR m (largadas, pelotones). Ahí, con
 // crowd, un toque provocado cuesta crowd veces más y el peligro se mira con TTC_CROWD veces más anticipación
 const CROWD_NEAR = 30, CROWD_CLOSE = 3, TTC_CROWD = 1.5;
+// Con paceCrowd (una fracción, como PACE_FLOOR) el piso también cuenta amontonado, pero más bajo: en una largada
+// meterse en fila levantando el pie cuesta tiempo, así que si hay lugar conviene seguir a la par
 // Persecución: desventaja del rival de adelante (menos agarre y motor) al principio y al final de la fase
 const CHASE_HANDICAP = [0.2, 0.08];
 
@@ -134,8 +137,11 @@ export class RaceSim {
   // agents: cuántos autos aprenden; opponents: redes que manejan algunos rivales; mix: peso de cada escenario
   // (en pasos de entrenamiento, no en carreras); spread: variación de los autos (raceSpread en carrera completa)
   constructor({ trackIds, agents = 4, seed = 1, opponents = [], mix = { race: 1 }, spread = 0.02, raceSpread = spread,
-    rewards = {}, contactScale = 1, progress = 0 }) {
-    this.rewards = { progress: 1, pass: 1, paceFloor: 0, paceAlways: 0, crowd: 1, ...rewards };
+    rewards = {}, contactScale = 1, progress = 0, boost = 0 }) {
+    // boost: los rivales con esa fracción más de agarre y potencia, y la IA de siempre a más ritmo (de 1 a 1,1):
+    // para seguir mejorando el ritmo detrás de autos más rápidos que uno mismo
+    this.boost = boost;
+    this.rewards = { progress: 1, pass: 1, paceFloor: 0, paceAlways: 0, paceCrowd: 0, crowd: 1, ...rewards };
     this.contactScale = contactScale;
     this.progress = progress;
     this.trackIds = trackIds;
@@ -177,7 +183,7 @@ export class RaceSim {
   }
 
   // rival de la IA de siempre (pace: fracción de la trazada ideal) o, a veces, una red ya entrenada
-  bot(k, pace = 0.9 + 0.18 * this.rand(), neural = 0) {
+  bot(k, pace = this.boost ? 1 + 0.1 * this.rand() : 0.9 + 0.18 * this.rand(), neural = 0) {
     if (this.opponents.length && this.rand() < neural) return new NeuralDriver(this.opponents[Math.floor(this.rand() * this.opponents.length)]);
     return new Driver(pace, k + 1);
   }
@@ -286,6 +292,10 @@ export class RaceSim {
     this.cars = spots.map((s) => {
       const car = this.place(s.u, s.side, s.v);
       car.setup = s.setup ?? randomSetup(r, spread);
+      // los rivales más rápidos (salvo los que ya traen su auto, como el de adelante en las persecuciones)
+      if (s.kind === 'bot' && !s.setup && this.boost) {
+        car.setup = { ...car.setup, grip: car.setup.grip * (1 + this.boost), power: car.setup.power * (1 + this.boost) };
+      }
       randomTyres(car, r, track);
       const e = { kind: s.kind, car, u: stationAt(track, car.x, car.y), start: wrap(s.u - front, L) * M, dist: 0, lastHit: -1e9, lastGrass: -1e9 };
       if (s.kind === 'bot') {
@@ -514,12 +524,14 @@ export class RaceSim {
   // un amontonamiento), por debajo de PACE_FLOOR de la velocidad de la trazada para su auto paga en proporción a lo
   // que le falta
   slow(e, dt) {
-    const free = this.rewards.paceAlways ? !this.crowded(e) : !this.cars.some((o) => {
+    const crowded = this.rewards.paceAlways && this.crowded(e);
+    const free = this.rewards.paceAlways ? !crowded || this.rewards.paceCrowd > 0 : !this.cars.some((o) => {
       if (o === e) return false;
       const [fwd, side] = this.rel(e, o);
       return fwd > 0 && fwd < FREE_ROAD && Math.abs(side) < 4;
     });
-    const floor = PACE_FLOOR * this.lineSpeed(e.u) * Math.sqrt(Math.min(1, e.car.setup.grip));
+    const level = crowded ? this.rewards.paceCrowd : PACE_FLOOR;
+    const floor = level * this.lineSpeed(e.u) * Math.sqrt(Math.min(1, e.car.setup.grip));
     if (!free || e.car.speed >= floor) return 0;
     e.slow += dt;
     return PACE_PENALTY * dt * (1 - Math.max(0, e.car.speed) / floor);

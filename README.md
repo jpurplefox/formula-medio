@@ -233,7 +233,7 @@ python3 -m venv rl/.venv && rl/.venv/bin/pip install torch stable-baselines3 gym
 3. Exportar la red a JSON: `rl/.venv/bin/python rl/export.py rl/runs/etapa1/model.zip models/etapa1.json`.
 4. Medirla contra la IA de siempre: `node rl/eval.js models/etapa1.json`.
 5. Verla en el juego: `http://localhost:8123/?ia=models/etapa1.json` (los rivales manejan con esa red). Sin `?ia`
-   manejan con la red elegida (`CURRENT_NET` en `src/main.js`, hoy `models/v4/fase6.json`); con `?ia=clasica`,
+   manejan con la red elegida (`CURRENT_NET` en `src/main.js`, hoy `models/v5/fase7.json`); con `?ia=clasica`,
    con la IA de siempre (`src/ai.js`), que es también la que queda si la red no carga.
 
 Para que el entrenamiento no se desarme (PPO es inestable), la tasa de aprendizaje baja de a poco hasta 0, cada
@@ -268,9 +268,10 @@ Contra la etapa 1, en carreras de 22 autos se toca un 18 % menos y pisa un 26 % 
 crítico 512×512), autos con potencia, agarre y frenos algo distintos y gomas que se gastan, y fases que enseñan de a
 una cosa (manejar sola, no chocar, pasar, carreras completas) y después tres fases más dedicadas a manejar limpio.
 La fase 7 tocaba un 44 % menos que la fase 1. Dos intentos más (`models/v3/`, `models/v4/`) priorizaron manejar
-limpio antes que rápido: **`models/v4/fase6.json` es la red del juego**, con un 63 % menos de toques que la fase 7
-en la carrera tipo juego (21 redes y un "jugador") y un 3 % más lenta, que se compensa dándoles más agarre.
-Para volver a entrenarla desde cero: `NOMBRE=v5 sh rl/curriculum.sh` (~4,5 h). Detalle, resultados y lo que salió
+limpio antes que rápido, y el quinto (`models/v5/`, con el agarre por rueda y el pasto que frena) sumó ritmo en las
+largadas y una fase contra rivales más rápidos: **`models/v5/fase7.json` es la red del juego**, con un 36 % menos de
+toques que la v4, un tercio del pasto y algo más rápida (en el juego los rivales llevan menos agarre y potencia).
+Para volver a entrenarla desde cero: `NOMBRE=v6 sh rl/curriculum.sh` (~3 h). Detalle, resultados y lo que salió
 mal en el camino: `rl/CURRICULO.md`.
 
 ## Trazada ideal

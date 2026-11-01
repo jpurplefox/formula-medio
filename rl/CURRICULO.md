@@ -1,7 +1,7 @@
 # Plan: red más grande y entrenamiento por currículum
 
-Plan para la ronda de la IA por refuerzo que vino después de la etapa 2, con cuatro intentos de currículum. **La
-red del juego es `models/v4/fase6.json`** (cuarto intento, la más limpia); para volver a entrenarla, ver "Cómo se
+Plan para la ronda de la IA por refuerzo que vino después de la etapa 2, con cinco intentos de currículum. **La
+red del juego es `models/v5/fase7.json`** (quinto intento); para volver a entrenarla, ver "Cómo se
 corre" al final.
 
 ## 1. Red más grande (experimento barato, primero)
@@ -244,6 +244,35 @@ Escenarios (`rl/scenario_eval.js`, toques provocados por km):
 - **Pasto**: sigue más alto que en la fase 7; en 22 autos se abre para no tocar.
 - Contra la IA de siempre sigue perdiendo puestos: la IA de siempre es más agresiva y la red le cede lugar.
 
+## Quinto intento (v5): agarre por rueda y ritmo en las largadas
+
+Modelos en `models/v5/` (~3 h desde cero con `rl/curriculum.sh`). Cambia el juego: el agarre se calcula por rueda
+según la superficie (el pasto frena y tira para afuera), los trazados salen de la telemetría y la red recibe 98
+entradas (el agarre de cada rueda al final). La receta suma `paceCrowd` en las fases 5–7 (piso de ritmo también
+amontonado, para no hacer fila en las largadas) y la fase 7, contra rivales 8 % más rápidos.
+
+Carrera tipo juego (`JUEGO=1`, Difícil de entonces, con el rescate en el pasto de abajo):
+
+| Red | Toques por auto | Provocados | Pasto por auto | Ganador | Jugador |
+|---|---|---|---|---|---|
+| v4 fase 6 | 10,5 | 8,4 | 9,5 s | 243,2 s | 2,1.º |
+| v5 fase 3 | 7,3 | 5,9 | — | 243,6 s | 2,4.º |
+| v5 fase 4 | **4,6** | **3,3** | — | 242,1 s | 3,0.º |
+| v5 fase 5 | 7,7 | 6,0 | — | 241,3 s | 4,4.º |
+| v5 fase 6 | 6,7 | 4,9 | 2,9 s | 240,3 s | 4,9.º |
+| v5 fase 7 | 6,7 | 5,0 | **2,7 s** | **239,8 s** | 6,9.º |
+
+- **La fase 1 sola ya es más rápida** que la v4 y la IA de siempre: 1 a 5 s por vuelta según el circuito.
+- **Las fases 5–7 cambian limpieza por ritmo**: la 4 es la que menos toca; la 7 la más rápida (6–8 s por carrera
+  más que la v4 con el mismo auto), con los mismos toques que la 6. En el juego se compensa con menos agarre y
+  potencia para los rivales (`setups` en `src/teams.js`, de 0,83 en Fácil a 1,02 en Experto).
+- **Largadas**: la fase 6 avanza un 8 % más que la v4 con los mismos toques provocados; la 7 vuelve a tocar algo más.
+- **Lo que salió mal: autos perdidos en el pasto.** Medido sin cambios, la v5 pasaba 23–27 s por auto en el pasto,
+  pero no por cortar curvas (con una sola rueda afuera casi nunca va): 2 a 6 autos por carrera se quedaban minutos
+  dando vueltas ahí. Al entrenar se la rescata a los 6 s en el pasto, así que nunca aprendió a volver de lejos, y
+  en el juego sólo se la rescataba quieta (en el pasto anda a ~90 km/h). Ahora `NeuralDriver` (`src/policy.js`)
+  también la rescata a los 6 s en el pasto, igual que al entrenar.
+
 ## Métricas por fase
 
 - Vuelta lanzada sola (`rl/eval.js`): que no empeore.
@@ -253,8 +282,10 @@ Escenarios (`rl/scenario_eval.js`, toques provocados por km):
 
 ## Cómo se corre
 
-`rl/curriculum.sh` entrena desde cero la receta de la red del juego: las fases 1–4 del tercer intento y las 5–6
-del cuarto (~4,5 h). Hace falta `rl/.venv` y los circuitos exportados en `rl/tracks/` (README, "IA por refuerzo").
+`rl/curriculum.sh` entrena desde cero la receta de la red del juego: las fases 1–4 del tercer intento, las 5–6
+del cuarto y una 7 de ritmo contra rivales más rápidos (~3 h). En la fase 7 los rivales llevan 8 % más de agarre y
+potencia (`--rivals-boost 0.08`) y la IA de siempre corre a 1–1,1 de ritmo: entre redes iguales el ritmo sólo
+mejora hasta el del de adelante, así que hace falta tener adelante autos más rápidos. Hace falta `rl/.venv` y los circuitos exportados en `rl/tracks/` (README, "IA por refuerzo").
 
 ```bash
 NOMBRE=v5 sh rl/curriculum.sh        # modelos en models/v5/, logs y checkpoints en rl/runs/v5faseN
@@ -267,7 +298,9 @@ nueva contra la del juego en la carrera tipo juego; si es mejor, se cambia `CURR
 
 Para cambiar la receta, lo que más pesa:
 - `--contact-budget` (fracción de los toques provocados de la fase 7 que se permiten) y `--contact-scale`.
-- `--rewards`: `progress`, `pass`, `paceFloor`, `paceAlways`, `crowd`, `grass`, `wall` (`rl/race.js`, `rl/env.js`).
+- `--rewards`: `progress`, `pass`, `paceFloor`, `paceAlways`, `paceCrowd`, `crowd`, `grass`, `wall` (`rl/race.js`,
+  `rl/env.js`). `paceCrowd` (desde el quinto intento de la receta, 0,6): el piso de ritmo también amontonado, más
+  bajo, para que en las largadas meterse en fila levantando el pie cueste tiempo y convenga seguir a la par.
 - `--spread`: cuánto varían los autos (de −15 % a +20 % hoy). Pasar de ±20 % obliga a cambiar `SETUP_SPREAD` en
   `src/sensors.js` y a reescalar las redes viejas con `rl/rescale_setup.py`.
 - La desventaja del de adelante en las persecuciones: `CHASE_HANDICAP` en `rl/race.js`.
@@ -282,7 +315,7 @@ el commit b3253db.
 ## Cómo se mide
 
 ```bash
-JUEGO=1 node rl/race_eval.js models/v4/fase6.json                   # carrera tipo juego: 21 redes y un "jugador"
+JUEGO=1 node rl/race_eval.js models/v5/fase7.json                   # carrera tipo juego: 21 redes y un "jugador"
 node rl/eval.js models/fase4.json                                   # vuelta lanzada sola, autos iguales
 node rl/scenario_eval.js models/etapa2.json models/fase4.json       # cada escenario, mismas carreras
 SPREAD=0.05 node rl/race_eval.js models/fase4.json                  # 22 autos distintos, con rotación

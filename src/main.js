@@ -265,7 +265,7 @@ let lastGame = null; // la última carrera, para conservar el mejor tiempo y el 
 let carProfile = DEFAULT_PROFILE;
 // Los rivales manejan con la red entrenada (rl/CURRICULO.md); con ?ia=models/fase7.json, con otra, y con ?ia=clasica,
 // con la IA de siempre (ai.js), que es también la que queda si la red no carga
-const CURRENT_NET = 'models/v4/fase6.json';
+const CURRENT_NET = 'models/v5/fase7.json';
 const IA_PARAM = new URLSearchParams(location.search).get('ia') || CURRENT_NET;
 const NEURAL_URL = IA_PARAM === 'clasica' ? null : IA_PARAM;
 let neuralPolicy = null;

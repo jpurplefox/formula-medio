@@ -193,6 +193,8 @@ def main():
                    help="escala inicial del castigo por toque provocado (por defecto, con la que terminó la fase anterior)")
     p.add_argument("--contact-budget", type=float,
                    help="toques provocados permitidos, como fracción de los de la fase 7 (0.5: la mitad); ver ContactBudget")
+    p.add_argument("--rivals-boost", type=float, default=0,
+                   help="rivales más rápidos: esta fracción más de agarre y potencia (p. ej. 0.08), y la IA de siempre a más ritmo")
     p.add_argument("--seed", type=int, default=0)
     args = p.parse_args()
 
@@ -205,7 +207,8 @@ def main():
     if args.race:
         mix = {k: float(w) for k, w in (part.split(":") for part in args.mix.split(","))}
         opponents = [f for f in args.opponents.split(",") if f]
-        config |= dict(agents=args.agents, mix=mix, opponents=opponents, raceSpread=args.race_spread or args.spread)
+        config |= dict(agents=args.agents, mix=mix, opponents=opponents, raceSpread=args.race_spread or args.spread,
+                       boost=args.rivals_boost)
     env = RacingVecEnv(args.workers, args.envs, args.tracks.split(","), args.seed,
                        mode="race" if args.race else "solo", config=config)
     # recompensas escaladas para que el crítico (la red que estima el valor) no se desajuste; las observaciones

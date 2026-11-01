@@ -1,20 +1,20 @@
 #!/bin/sh
-# Entrena desde cero la receta de la red del juego (rl/CURRICULO.md): las fases 1–4 del tercer intento y las 5–6
-# del cuarto. Cada fase parte del modelo final de la anterior y se exporta a models/$NOMBRE/faseN.json; al final mide
-# la nueva contra la elegida en la carrera tipo juego. No pisa la red del juego: si la nueva es mejor, se cambia a
-# mano CURRENT_NET en src/main.js (~4,5 h en una Mac M4 Pro).
+# Entrena desde cero la receta de la red del juego (rl/CURRICULO.md): las fases 1–4 del tercer intento, las 5–6
+# del cuarto y una 7 contra rivales más rápidos. Cada fase parte del modelo final de la anterior y se exporta a
+# models/$NOMBRE/faseN.json; al final mide las dos últimas contra la elegida en la carrera tipo juego. No pisa la red
+# del juego: si una nueva es mejor, se cambia a mano CURRENT_NET en src/main.js (~3 h en una Mac M4 Pro).
 #
-#   sh rl/curriculum.sh [primera fase]      (por defecto 1; por ejemplo 5 para rehacer sólo las dos últimas)
+#   sh rl/curriculum.sh [primera fase]      (por defecto 1; por ejemplo 7 para rehacer sólo la última)
 #   NOMBRE=v6 sh rl/curriculum.sh           (carpeta de los modelos y prefijo de rl/runs; por defecto "nueva")
 #
-# Hace falta rl/.venv y los circuitos exportados en rl/tracks/ (README, "IA por refuerzo").
+# Hace falta rl/.venv (README, "IA por refuerzo"); los circuitos de F1 salen de tracks/*.layout.json.
 set -e
 cd "$(dirname "$0")/.."
 PY=rl/.venv/bin/python
 FROM=${1:-1}
 N=${NOMBRE:-nueva}
 OUT=models/$N
-ACTUAL=models/v4/fase6.json
+ACTUAL=models/v5/fase7.json
 mkdir -p "$OUT" rl/runs
 
 # castigo por toque provocado ajustado solo: la mitad de los toques que provoca la fase 7 (fases 2–4), el 80 %
@@ -23,8 +23,8 @@ STRICT="--contact-budget 0.5"
 BUDGET="--contact-budget 0.8"
 # sin premio por pasar y con piso de ritmo: limpio pero sin quedarse
 CLEAN="--rewards progress:0.7,pass:0,paceFloor:1"
-# ritmo siempre (salvo amontonado), toques más caros amontonado (largadas)
-PACE="--rewards progress:1,pass:0,paceFloor:1,paceAlways:1,crowd:2.5"
+# ritmo siempre (amontonado, un piso más bajo: meterse en fila cuesta tiempo), toques más caros amontonado (largadas)
+PACE="--rewards progress:1,pass:0,paceFloor:1,paceAlways:1,paceCrowd:0.6,crowd:2.5"
 # autos de -15 % a +20 %: para poder subir la dificultad en el juego dándoles más agarre
 CARS="--spread 0.15,0.2"
 
@@ -71,8 +71,15 @@ if [ "$FROM" -le 6 ]; then
     --opponents "models/fase7.json,$OUT/fase4.json,$OUT/fase5.json" --steps 30000000 \
     --resume "rl/runs/${N}fase5/model.zip" --critic-warmup 1000000 --lr 5e-5
 fi
+if [ "$FROM" -le 7 ]; then
+  # ritmo contra rivales más rápidos: entre ellos sólo mejora hasta el ritmo del de adelante. Rivales con 8 % más de
+  # agarre y potencia (la IA de siempre, de 1 a 1,1 de ritmo) y, como redes, la de la fase 6 y la más rápida que hubo
+  run fase7 --race --envs 4 --mix race:60,start:15,chase:10,pack:5,solo:10 $CARS $PACE $BUDGET --rivals-boost 0.08 \
+    --opponents "models/fase7.json,$OUT/fase6.json" --steps 20000000 \
+    --resume "rl/runs/${N}fase6/model.zip" --critic-warmup 1000000 --lr 3e-5
+fi
 
-# la nueva contra la del juego, en la carrera tipo juego (toques, pasto y ritmo)
-for m in "$ACTUAL" "$OUT/fase6.json"; do
+# las nuevas contra la del juego, en la carrera tipo juego (toques, pasto y ritmo)
+for m in "$ACTUAL" "$OUT/fase6.json" "$OUT/fase7.json"; do
   echo "$m"; JUEGO=1 node rl/race_eval.js "$m" 2>&1 | tail -1
 done

@@ -60,6 +60,7 @@ function floats(b64) {
 // Piloto con la red: decide 20 veces por segundo (como al entrenar) y entre medio mantiene los controles
 export const DECISION_DT = 1 / 20;
 const STUCK_TIME = 3; // s casi quieta hasta que se la rescata
+const GRASS_TIME = 6; // s seguidos en el pasto hasta que se la rescata (como al entrenar)
 
 export class NeuralDriver {
   // opponents: si le pasa los demás autos a la red (por defecto, si la red aprendió a mirarlos)
@@ -69,6 +70,7 @@ export class NeuralDriver {
     this.obs = new Float32Array(OBS_SIZE);
     this.wait = 0;
     this.stuck = 0;
+    this.grass = 0;
     this.u = 0;
     this.input = { throttle: 0, brake: 0, steer: 0 };
   }
@@ -80,9 +82,13 @@ export class NeuralDriver {
     // trabada (contra un muro o en un amontonamiento): vuelve a la pista, como la IA de siempre. Al entrenar
     // también se la rescata, pero a los 6 s: acá se le da la mitad para que no frene la carrera
     this.stuck = Math.abs(car.speed) < 1 ? this.stuck + dt : 0;
-    if (this.stuck > STUCK_TIME) {
+    // perdida en el pasto: al entrenar se la rescata a los 6 s, así que nunca aprendió a volver de lejos (y en el
+    // pasto no se queda quieta: anda a ~90 km/h)
+    this.grass = car.onGrass ? this.grass + dt : 0;
+    if (this.stuck > STUCK_TIME || this.grass > GRASS_TIME) {
       rescue(track, line, car, this.u);
       this.stuck = 0;
+      this.grass = 0;
     }
     this.wait -= dt;
     if (this.wait <= 0) {
