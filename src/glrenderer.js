@@ -272,7 +272,16 @@ void main() {
   // el vidrio de los espejos es convexo: la normal se abre hacia los bordes (aUV va de -1 a 1 sobre el vidrio),
   // así el reflejo cambia de un lado al otro y abarca más
   if (aGloss > 1.5 && aGloss < 2.5) sm = normalize(sm + vec3(0.0, aUV.x, aUV.y) * 0.45);
-  if (aWheel > 5.5) {
+  if (aWheel > 6.5) {
+    // montado en la mangueta (el tambor del freno): no gira con la rueda, pero dobla con la dirección
+    vec4 wh = uWheels[int(aWheel + 0.5) - 7];
+    if (wh.w != 0.0) {
+      vec3 kp = wh.xyz + vec3(0.0, wh.w, 0.0);
+      p = kp + steer(p - kp);
+      n = steer(n);
+      sm = steer(sm);
+    }
+  } else if (aWheel > 5.5) {
     // el volante gira sobre su columna
     p = uColumn + turn(p - uColumn);
     n = turn(n);
@@ -288,14 +297,15 @@ void main() {
     p = wh.xyz + spin(p - wh.xyz);
     n = spin(n);
     sm = spin(sm);
-    if (wh.w > 0.5) {
-      p = wh.xyz + steer(p - wh.xyz);
+    if (wh.w != 0.0) {
+      vec3 kp = wh.xyz + vec3(0.0, wh.w, 0.0);
+      p = kp + steer(p - kp);
       n = steer(n);
       sm = steer(sm);
     }
   }
   // todo menos las ruedas (que quedan apoyadas en el piso) se mueve con la suspensión
-  if (aWheel < 0.5 || aWheel > 4.5) {
+  if (aWheel < 0.5 || (aWheel > 4.5 && aWheel < 6.5)) {
     p = BODY_PIVOT + lean(p - BODY_PIVOT);
     n = lean(n);
     sm = lean(sm);
@@ -677,12 +687,13 @@ export class GLRenderer {
     const parts = [...model.filter((p) => p.tag !== 'helmet'), ...model.filter((p) => p.tag === 'helmet')];
     for (const part of parts) {
       if (part.tag === 'helmet' && helmetStart < 0) helmetStart = data.length / STRIDE;
-      // a qué rueda pertenece (1 a 4), 5 si es la cabeza del piloto y 6 si es el volante
+      // a qué rueda pertenece (1 a 4), 5 si es la cabeza del piloto y 6 si es el volante; lo que va montado en la
+      // mangueta (fixed: dobla con la rueda pero no gira), 7 a 10
       let w = 0;
       if (part.wheel) {
         let k = wheels.indexOf(part.wheel);
         if (k < 0) k = wheels.push(part.wheel) - 1;
-        w = k + 1;
+        w = k + (part.fixed ? 7 : 1);
       } else if (part.head) {
         w = 5;
         neck = part.head;
@@ -867,7 +878,7 @@ export class GLRenderer {
       gl.uniform3f(mp.u.uColumnAxis, g.column.ax, g.column.ay, g.column.az);
       gl.uniform2f(mp.u.uTurn, Math.cos(m.wheelTurn || 0), Math.sin(m.wheelTurn || 0));
       const wv = new Float32Array(16);
-      g.wheels.forEach((w, i) => wv.set([w.x, w.y, w.z, w.front ? 1 : 0], i * 4));
+      g.wheels.forEach((w, i) => wv.set([w.x, w.y, w.z, w.front ? w.pivot : 0], i * 4));
       gl.uniform4fv(mp.u.uWheels, wv);
       gl.uniform1f(mp.u.uAlpha, alpha);
       gl.uniform1f(mp.u.uWear, m.wear ?? 1);
