@@ -173,11 +173,34 @@ function wing(hw, at, color, stations = 7) {
   }), color);
 }
 
+// recorta un polígono [x, z] a la franja za <= z <= zb
+function band(pts, za, zb) {
+  const cut = (poly, inside, z) => poly.flatMap((p, i) => {
+    const q = poly[(i + 1) % poly.length], a = inside(p[1]), b = inside(q[1]);
+    const cross = a !== b ? [[p[0] + ((z - p[1]) / (q[1] - p[1])) * (q[0] - p[0]), z]] : [];
+    return a ? [p, ...cross] : cross;
+  });
+  return cut(cut(pts, (z) => z >= za, za), (z) => z <= zb, zb);
+}
+
 // placa lateral de un alerón: de perfil, un polígono convexo de esquinas redondeadas (puntos [x, z]),
-// de espesor t centrada en y
-function endplate(y, poly, radii, t, color) {
-  const side = (yy) => rounded(0, poly, radii, 3).map(([, x, z]) => [x, yy, z]);
-  return loft([side(y - t / 2), side(y + t / 2)], color);
+// de espesor t centrada en y. bend ([z, dy] de abajo hacia arriba) la dobla vista de atrás: corre la placa dy hacia
+// afuera (o adentro, si es negativo) a cada altura; entre dos alturas es un tramo plano inclinado
+function endplate(y, poly, radii, t, color, bend = null) {
+  const outline = rounded(0, poly, radii, 3).map(([, x, z]) => [x, z]);
+  const piece = (pts, za = 0, da = 0, zb = 1, db = 0) => {
+    const off = (z) => Math.sign(y) * (da + ((z - za) / (zb - za)) * (db - da));
+    const side = (yy) => pts.map(([x, z]) => [x, yy + off(z), z]);
+    return loft([side(y - t / 2), side(y + t / 2)], color);
+  };
+  if (!bend) return piece(outline);
+  const parts = [];
+  for (let i = 0; i < bend.length - 1; i++) {
+    const [za, da] = bend[i], [zb, db] = bend[i + 1];
+    const pts = band(outline, i ? za : -Infinity, i < bend.length - 2 ? zb : Infinity);
+    if (pts.length > 2) parts.push(piece(pts, za, da, zb, db));
+  }
+  return parts;
 }
 const box = (x0, x1, yc, hw, z0, z1, color, r = 0) => loft([sec(x0, yc, hw, z0, z1, r), sec(x1, yc, hw, z0, z1, r)], color);
 
@@ -290,8 +313,8 @@ function wheel(x, s, yc, width, front, nut) {
 // Casco: cortes horizontales apilados de arriba hacia abajo, con la visera oscura que lo envuelve por delante y un
 // alerón chico arriba, atrás. Todo gira junto alrededor del cuello (head: el pivote) para que el piloto mire hacia
 // donde va. Se oculta en la vista de cabina, porque ahí está la cámara.
-// el piloto va sentado bien abajo: la parte de arriba del casco queda apenas debajo del halo que lo protege
-const HELMET = { x: -0.08, z: 0.65, rx: 0.15, ry: 0.12, rz: 0.13 };
+// el piloto va sentado bien abajo: la parte de arriba del casco asoma apenas por encima del halo que lo protege
+const HELMET = { x: -0.08, z: 0.69, rx: 0.15, ry: 0.12, rz: 0.13 };
 // Un casco de verdad no es una pelota: abajo no se cierra (se angosta menos que arriba y termina en una base
 // plana, donde entra el cuello) y adelante, debajo de la visera, la mentonera baja casi recta, siguiendo la misma
 // superficie (sin escalón), en vez de curvarse hacia adentro como la nuca.
@@ -697,14 +720,18 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
     [0.015, 0.03, 0.05, 0.12, 0.03], 0.02, CARBON)));
 
   // alerón trasero: plano principal y flap con perfil de ala (un poco más bajos en el centro, como una cuchara),
-  // placas laterales con el borde de arriba redondeado, ala baja y pilar; abajo, la luz de lluvia
+  // placas laterales con el borde de arriba redondeado, ala baja y pilar; abajo, la luz de lluvia. Va casi encima
+  // del eje trasero (sobresale poco detrás de las ruedas); la placa baja hacia atrás hasta el ala baja, que queda
+  // detrás de la cubierta, sobre el difusor
   const spoon = (y) => -0.02 * (1 - (y / 0.51) ** 2);
-  add(wing(0.51, (y) => ({ le: [-2.37, 0.765 + spoon(y)], te: [-2.66, 0.81 + spoon(y)], t: 0.045 }), CARBON));
-  add(wing(0.51, (y) => ({ le: [-2.6, 0.865 + spoon(y)], te: [-2.8, 0.965 + spoon(y)], t: 0.03 }), body));
-  both((s) => add(endplate(s * 0.52, [[-2.68, 0.34], [-2.33, 0.34], [-2.33, 0.92], [-2.46, 1.01], [-2.84, 1.01], [-2.86, 0.58]],
-    [0.06, 0.02, 0.08, 0.05, 0.05, 0.08], 0.02, body)));
-  add(wing(0.45, () => ({ le: [-2.33, 0.36], te: [-2.6, 0.4], t: 0.035 }), CARBON));
-  add(box(-2.5, -2.2, 0, 0.03, 0.4, 0.78, CARBON, 0.01));
+  add(wing(0.51, (y) => ({ le: [-2.02, 0.765 + spoon(y)], te: [-2.31, 0.81 + spoon(y)], t: 0.045 }), CARBON));
+  add(wing(0.51, (y) => ({ le: [-2.25, 0.865 + spoon(y)], te: [-2.45, 0.965 + spoon(y)], t: 0.03 }), body));
+  // vistas de atrás, las placas suben inclinadas hacia afuera desde el ala baja y arriba se paran derechas
+  const EP_BEND = [[0.34, -0.2], [0.58, -0.06], [0.7, 0], [1.1, 0]];
+  both((s) => add(...endplate(s * 0.52, [[-2.62, 0.34], [-2.28, 0.34], [-1.98, 0.62], [-1.98, 0.92], [-2.11, 1.01], [-2.49, 1.01]],
+    [0.06, 0.1, 0.08, 0.08, 0.05, 0.05], 0.02, body, EP_BEND)));
+  add(wing(0.33, () => ({ le: [-2.33, 0.36], te: [-2.6, 0.4], t: 0.035 }), CARBON));
+  add(box(-2.42, -2.12, 0, 0.03, 0.4, 0.78, CARBON, 0.01));
   add(box(-2.64, -2.58, 0, 0.05, 0.25, 0.32, RAIN_LIGHT));
 
   // suspensión (dos triángulos por rueda, de la carrocería a la mangueta, adentro de la llanta) y ruedas. Además,
