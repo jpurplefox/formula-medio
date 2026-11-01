@@ -134,7 +134,7 @@ vec3 ground(vec2 p, float fw, float s, float k, float st, float side, float lit)
   if ((uFlags & 2) != 0 && st >= 0.0) {
     // la goma del mapa (rubber.js): a lo largo según st, a lo ancho según de qué lado y cuánto
     float v = (side / uRubberSize.y + 1.0) * 0.5;
-    if (v > 0.0 && v < 1.0) dark = RUBBER_DARK * texture(uRubber, vec2(st / uRubberSize.x, v)).r;
+    if (v > 0.0 && v < 1.0) dark = RUBBER_DARK * texture(uRubber, vec2(v, st / uRubberSize.x)).r;
   }
   road = shade(road, light * (1.0 - dark));
   vec2 a2 = p - uStart.xy;
@@ -570,19 +570,20 @@ export class GLRenderer {
     return t;
   }
 
-  // la goma (rubber.js) en una textura de filas × carriles: se vuelve a subir cuando el mapa cambia
+  // la goma (rubber.js) en una textura de carriles (ancho) × filas (alto), como están los bytes: se vuelve a subir
+  // cuando el mapa cambia
   rubberTexture(map) {
     const gl = this.gl;
     if (this.rubberMap !== map) {
       if (this.rubberTex) gl.deleteTexture(this.rubberTex);
-      this.rubberTex = this.texture(map.bytes, map.rows, map.lanes, { format: 'R8' });
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      this.rubberTex = this.texture(map.bytes, map.lanes, map.rows, { format: 'R8' });
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       this.rubberMap = map;
       this.rubberVersion = map.version;
     } else if (this.rubberVersion !== map.version) {
       gl.bindTexture(gl.TEXTURE_2D, this.rubberTex);
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, map.rows, map.lanes, gl.RED, gl.UNSIGNED_BYTE, map.bytes);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, map.lanes, map.rows, gl.RED, gl.UNSIGNED_BYTE, map.bytes);
       this.rubberVersion = map.version;
     }
     return this.rubberTex;
