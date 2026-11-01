@@ -82,8 +82,8 @@ function drawSide(g, row, color, accent, number, mirror) {
   label(g, 'VOXEL', X(1.9), Y(0.3), 0.08, right, accent);
   // placas del alerón trasero: arriba blancas con el sponsor
   g.fillStyle = accent;
-  g.fillRect(X(-2.9), Y(1.0), 0.6 * S, 0.24 * S);
-  label(g, 'RAYCAST', X(-2.585), Y(0.88), 0.11, right, color);
+  g.fillRect(X(-2.55), Y(1.0), 0.6 * S, 0.24 * S);
+  label(g, 'RAYCAST', X(-2.235), Y(0.88), 0.11, right, color);
 }
 
 // Visto desde arriba: franja blanca por el centro, número en la trompa (se lee mirando el auto de frente, como en
@@ -110,7 +110,7 @@ function drawTop(g, color, accent, number) {
   // sponsor sobre la cubierta del motor
   label(g, 'RAYCAST', X(-1.45), Y(0), 0.1, up, accent, '#111111');
   // flap del alerón trasero
-  label(g, 'RAYCAST', X(-2.7), Y(0), 0.13, up, accent);
+  label(g, 'RAYCAST', X(-2.35), Y(0), 0.13, up, accent);
   // puntas del alerón delantero
   g.fillStyle = accent;
   for (const s of [-1, 1]) g.fillRect(X(2.2), Y(s > 0 ? 0.72 : -0.96), 0.35 * S, 0.24 * S);
