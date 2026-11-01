@@ -686,7 +686,7 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
   add(tube(halo, HALO_R, CARBON, 12));
   // el pilar no cae vertical: baja inclinado hacia adelante (PILLAR_LEAN metros hacia adelante por cada metro
   // que baja) desde el frente del arco hasta clavarse en la trompa
-  const PILLAR_R = 0.026, PILLAR_LEAN = 0.9, PILLAR_DROP = 0.32;
+  const PILLAR_R = 0.017, PILLAR_LEAN = 0.9, PILLAR_DROP = 0.32;
   const [px, , pz] = haloAt(0);
   const pillarX = (z) => px + PILLAR_LEAN * (pz - z); // x del eje del pilar a la altura z
   // (arranca un poco debajo del eje del arco, para que no asome por encima)
@@ -694,7 +694,7 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
   // unión del pilar con el arco: una lámina a los dos lados del pilar, que baja desde el arco con un borde
   // cóncavo (un cuarto de elipse) que arranca tangente al arco y termina tangente al pilar, así el pilar se abre
   // en curva hacia arriba en vez de formar una T. Sigue la inclinación del pilar.
-  const FILLET_W = 0.15, FILLET_DROP = 0.15;
+  const FILLET_W = 0.09, FILLET_DROP = 0.1;
   const fillet = [];
   for (let j = 0; j <= 24; j++) {
     const y = -FILLET_W + (j / 24) * 2 * FILLET_W;
