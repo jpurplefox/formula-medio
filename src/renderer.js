@@ -518,15 +518,19 @@ export class Renderer {
     let bx0 = w, by0 = h, bx1 = -1, by1 = -1;
     const cs = Math.cos(m.spin || 0), ss = Math.sin(m.spin || 0);
     const st = m.steer || 0, cst = Math.cos(st), sst = Math.sin(st);
-    // la rueda gira sobre su eje y, si es delantera, dobla con la dirección (sirve para puntos y para normales)
-    const turn = (wh, lx, ly, lz) => {
-      const ax = lx - wh.x, az = lz - wh.z;
-      lx = wh.x + ax * cs + az * ss;
-      lz = wh.z - ax * ss + az * cs;
+    // la rueda gira sobre su eje y, si es delantera, dobla con la dirección (sirve para puntos y para normales);
+    // lo montado en la mangueta (fixed) sólo dobla
+    const turn = (wh, lx, ly, lz, fixed) => {
+      if (!fixed) {
+        const ax = lx - wh.x, az = lz - wh.z;
+        lx = wh.x + ax * cs + az * ss;
+        lz = wh.z - ax * ss + az * cs;
+      }
       if (wh.front) {
-        const bx = lx - wh.x, by = ly - wh.y;
+        // dobla sobre el eje de la mangueta, en la punta de los brazos de la suspensión
+        const py = wh.y + (wh.pivot || 0), bx = lx - wh.x, by = ly - py;
         lx = wh.x + bx * cst - by * sst;
-        ly = wh.y + bx * sst + by * cst;
+        ly = py + bx * sst + by * cst;
       }
       return [lx, ly, lz];
     };
@@ -551,7 +555,7 @@ export class Renderer {
       const wx = new Float64Array(n), wy = new Float64Array(n), wz = new Float64Array(n);
       for (let i = 0; i < n; i++) {
         const v = part.verts[i];
-        const [lx, ly, lz] = wh ? turn(wh, ...v) : lean(...(hd ? look(hd, ...v) : co ? column(co, ...v) : v));
+        const [lx, ly, lz] = wh ? turn(wh, ...v, part.fixed) : lean(...(hd ? look(hd, ...v) : co ? column(co, ...v) : v));
         wx[i] = m.x + (Fx * lx + Rx * ly + Ux * lz) * k;
         wy[i] = m.y + (Fy * lx + Ry * ly + Uy * lz) * k;
         wz[i] = m.z + (Fz * lx + Rz * ly + Uz * lz) * k;
@@ -560,7 +564,7 @@ export class Renderer {
         const idx = face.idx;
         // normal de la cara (viene del modelo, apuntando hacia afuera) llevada al mundo, y centro de la cara
         let [lx, ly, lz] = face.n;
-        if (wh) [lx, ly, lz] = turn({ x: 0, y: 0, z: 0, front: wh.front }, lx, ly, lz);
+        if (wh) [lx, ly, lz] = turn({ x: 0, y: 0, z: 0, front: wh.front }, lx, ly, lz, part.fixed);
         else {
           if (hd) [lx, ly, lz] = look({ x: 0, y: 0 }, lx, ly, lz);
           if (co) [lx, ly, lz] = column({ ...co, x: 0, y: 0, z: 0 }, lx, ly, lz);
