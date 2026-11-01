@@ -438,9 +438,54 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
   const add = (...p) => parts.push(...p);
   const both = (fn) => { fn(1); fn(-1); };
 
-  // piso y difusor
-  add(box(-1.95, 1.1, 0, 0.85, 0.03, 0.08, CARBON, 0.03));
-  add(loft([sec(-1.95, 0, 0.7, 0.03, 0.1, 0.03), sec(-2.55, 0, 0.6, 0.1, 0.35, 0.05)], CARBON));
+  // piso y difusor. Visto de arriba el piso no es un rectángulo: nace angosto detrás de las ruedas de adelante con
+  // el borde redondeado, se abre hasta su ancho máximo al costado de los pontones y antes de las ruedas de atrás se
+  // mete hacia adentro en curva, para dejarles lugar; atrás sigue el difusor, entre las dos ruedas
+  // (cada estación: x y medio ancho)
+  // (adelante nace pegado a los costados de la trompa y se abre en una curva cóncava, cada vez más rápido, hasta
+  // su ancho de siempre; las aletas van más afuera, sobre su propia base)
+  const FLOOR = [[1.42, 0.15], [1.32, 0.18], [1.22, 0.23], [1.13, 0.3], [1.05, 0.4], [0.98, 0.52], [0.92, 0.63],
+    [0.85, 0.71], [0.72, 0.76], [0.45, 0.8], [-0.4, 0.8], [-0.8, 0.77],
+    [-1.05, 0.69], [-1.25, 0.57], [-1.45, 0.5], [-1.95, 0.48]];
+  add(loft(FLOOR.map(([x, hw]) => sec(x, 0, hw, 0.03, 0.08, 0.025)), CARBON));
+  // aletas detrás de las ruedas de adelante, que ordenan el aire sucio que sale de la rueda y lo mandan por fuera
+  // de los pontones. Vistas de arriba van en diagonal: la grande nace casi en el borde de afuera de la rueda y se
+  // cierra un poco hacia atrás, por fuera del piso, parada sobre su propia base (una plancha angosta, aparte del
+  // piso); las dos chicas, más bajas y más cerradas, van paradas sobre el piso.
+  // fin(s, adelante [x, y], atrás [x, y], perfil [u, z] con u de 0 (adelante) a 1 (atrás), radios)
+  const fin = (s, [xa, ya], [xb, yb], profile, radii, t = 0.012) => {
+    const len = Math.hypot(xb - xa, yb - ya), nx = -(yb - ya) / len, ny = (xb - xa) / len;
+    const side = (o) => rounded(0, profile.map(([u, z]) => [u * len, z]), radii, 3)
+      .map(([, u, z]) => [xa + (xb - xa) * (u / len) + nx * o, s * (ya + (yb - ya) * (u / len) + ny * o), z]);
+    return loft([side(-t / 2), side(t / 2)], CARBON);
+  };
+  // base de una aleta: una plancha angosta (medio ancho w) a lo largo de la aleta, con las puntas redondeadas
+  const foot = (s, [xa, ya], [xb, yb], w) => {
+    const len = Math.hypot(xb - xa, yb - ya), ux = (xb - xa) / len, uy = (yb - ya) / len;
+    const ring = (u) => {
+      const k = Math.min(1, Math.sqrt(Math.max(0, 1 - ((2 * u) / len - 1) ** 8))) * w; // se angosta en las puntas
+      const cx = xa + ux * u, cy = ya + uy * u;
+      return [[-1, 0.03], [1, 0.03], [1, 0.045], [-1, 0.045]].map(([o, z]) => [cx - uy * o * k, s * (cy + ux * o * k), z]);
+    };
+    return loft([...Array(9).keys()].map((i) => ring((i / 8) * len)), CARBON);
+  };
+  both((s) => {
+    add(foot(s, [1.07, 0.935], [0.69, 0.88], 0.04));
+    // la base se une al piso: atrás, una plancha que se abre desde el borde del piso hasta la aleta, y adelante
+    // una lámina fina que cruza el hueco. La plancha de atrás no es un bloque: vista de arriba nace en punta junto a
+    // la base y se abre hacia atrás en curva hasta meterse en el piso, y de costado su techo baja en rampa desde la
+    // altura del piso hasta la de la base, así se lee como una sola pieza con los dos.
+    // (cada corte: x, borde de adentro, ya metido en el piso, y de afuera, sobre la base de la aleta)
+    add(loft([[0.9, 0.86, 0.9], [0.86, 0.8, 0.905], [0.82, 0.75, 0.9], [0.77, 0.72, 0.895], [0.71, 0.71, 0.885],
+      [0.68, 0.72, 0.88]].map(([x, yin, yout]) => rounded(x, [[yin, 0.03], [yout, 0.03], [yout, 0.045], [yin, 0.08]]
+      .map(([y, z]) => [s * y, z]), [0.003, 0.006, 0.006, 0.003])), CARBON));
+    add(loft([sec(0.98, s * 0.73, 0.2, 0.035, 0.048, 0.006), sec(0.93, s * 0.76, 0.17, 0.035, 0.048, 0.006)], CARBON));
+    add(fin(s, [1.05, 0.935], [0.71, 0.88], [[0, 0.06], [1, 0.06], [1, 0.3], [0.8, 0.38], [0.08, 0.46], [0, 0.4]],
+      [0.01, 0.02, 0.04, 0.12, 0.04, 0.02], 0.014));
+    add(fin(s, [0.87, 0.66], [0.66, 0.6], [[0, 0.06], [1, 0.06], [1, 0.2], [0.1, 0.27], [0, 0.22]], [0.01, 0.01, 0.03, 0.03, 0.02]));
+    add(fin(s, [0.94, 0.56], [0.74, 0.5], [[0, 0.06], [1, 0.06], [1, 0.17], [0.1, 0.22], [0, 0.18]], [0.01, 0.01, 0.03, 0.03, 0.02]));
+  });
+  add(loft([sec(-1.95, 0, 0.48, 0.03, 0.1, 0.03), sec(-2.55, 0, 0.46, 0.1, 0.35, 0.05)], CARBON));
 
   // monocasco y trompa: una sola pieza que se angosta y baja hacia adelante. Donde va el piloto queda baja: la
   // cabina es un hueco entre dos paredes (abajo), con el tablero adelante, así el volante queda adentro
@@ -448,15 +493,20 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
     sec(-0.45, 0, 0.42, 0.1, 0.5, 0.1),
     sec(0.42, 0, 0.37, 0.12, 0.5, 0.1),
     sec(0.5, 0, 0.36, 0.12, 0.64, 0.13),
-    sec(1.15, 0, 0.26, 0.16, 0.56, 0.11),
-    sec(1.7, 0, 0.2, 0.16, 0.46, 0.09),
-    sec(2.2, 0, 0.15, 0.14, 0.34, 0.07),
-    sec(2.62, 0, 0.12, 0.12, 0.23, 0.05),
+    // de perfil el lomo es una sola curva convexa suave, de la cabina a la punta: casi plano atrás y cayendo de a
+    // poco más rápido hacia adelante (sin quiebre a la altura de las ruedas ni tramo recto)
+    sec(1.15, 0, 0.26, 0.16, 0.635, 0.11),
+    sec(1.45, 0, 0.23, 0.16, 0.606, 0.1),
+    sec(1.7, 0, 0.2, 0.16, 0.557, 0.09),
+    sec(1.95, 0, 0.17, 0.15, 0.493, 0.08),
+    sec(2.1, 0, 0.16, 0.145, 0.448, 0.075),
+    sec(2.4, 0, 0.135, 0.13, 0.345, 0.06),
+    sec(2.62, 0, 0.12, 0.12, 0.259, 0.05),
     // la punta: ancha hasta el final, como un hocico, y redondeada hasta el borde de ataque del alerón
-    sec(2.74, 0, 0.11, 0.115, 0.205, 0.045),
-    sec(2.82, 0, 0.097, 0.118, 0.19, 0.04),
-    sec(2.87, 0, 0.078, 0.124, 0.177, 0.03),
-    sec(2.9, 0, 0.045, 0.132, 0.165, 0.016),
+    sec(2.74, 0, 0.11, 0.112, 0.209, 0.045),
+    sec(2.82, 0, 0.097, 0.108, 0.174, 0.035),
+    sec(2.87, 0, 0.078, 0.108, 0.151, 0.022),
+    sec(2.9, 0, 0.045, 0.112, 0.138, 0.012),
   ], body));
   // las paredes de la cabina y adentro el piso y el tablero, oscuros. Por fuera, el costado de la cabina es el
   // techo de los pontones (que a la altura de la cabina arranca del borde de la abertura); la pared es sólo la cara
@@ -465,24 +515,67 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
   both((s) => add(loft([wall(-0.45, 0.7, s), wall(0.46, 0.645, s)], body)));
   add(box(-0.45, 0.46, 0, 0.245, 0.45, 0.52, COCKPIT, 0.02));
   add(loft([sec(0.4, 0, 0.245, 0.5, 0.6, 0.02), sec(0.47, 0, 0.245, 0.5, 0.645, 0.02)], COCKPIT));
+  // pontones a los costados: toma de aire adelante y se van cerrando hacia atrás, hasta morir contra la cubierta
+  // del motor (la "botella de Coca-Cola"). No son tubos sueltos: el lado de adentro queda metido en el monocasco
+  // y el techo es una rampa que baja desde el hombro del chasis hacia afuera, así la carrocería sigue de corrido
+  // hasta el borde del pontón. A la altura de la cabina el techo arranca del borde de la abertura: es el costado
+  // de la cabina. Abajo, el costado se mete hacia adentro (el undercut) y deja ver el piso.
+  // Cada estación: x, borde de adentro (in) y de afuera (out), altura del techo adentro y afuera, piso y undercut.
+  const POD = [
+    // la boca nace del costado del chasis: su borde de adentro queda metido en el monocasco
+    { x: 0.58, in: 0.24, out: 0.63, top: 0.56, edge: 0.52, bot: 0.16, cut: 0.12 },
+    { x: 0.46, in: 0.23, out: 0.66, top: 0.6, edge: 0.54, bot: 0.13, cut: 0.14 },
+    { x: 0.3, in: 0.25, out: 0.67, top: 0.69, edge: 0.55, bot: 0.12, cut: 0.16 },
+    // detrás de la cabina se cierran en una curva convexa (vistos de arriba: aguantan el ancho y se cierran cada
+    // vez más rápido) y el techo cae hacia el piso, así llegan finos y bajos a las ruedas de atrás
+    { x: -0.3, in: 0.25, out: 0.65, top: 0.7, edge: 0.49, bot: 0.12, cut: 0.15 },
+    { x: -0.75, in: 0.23, out: 0.6, top: 0.6, edge: 0.4, bot: 0.12, cut: 0.12 },
+    { x: -1.15, in: 0.2, out: 0.52, top: 0.47, edge: 0.3, bot: 0.12, cut: 0.08 },
+    { x: -1.5, in: 0.15, out: 0.42, top: 0.36, edge: 0.22, bot: 0.12, cut: 0.05 },
+    { x: -1.8, in: 0.1, out: 0.31, top: 0.3, edge: 0.19, bot: 0.12, cut: 0.03 },
+    // la cola se pega a la base del cubremotor: el techo arranca a la altura de su hombro y se afina con él
+    { x: -2.05, in: 0.05, out: 0.15, top: 0.29, edge: 0.21, bot: 0.13, cut: 0.01 },
+    { x: -2.3, in: 0.03, out: 0.075, top: 0.27, edge: 0.23, bot: 0.15, cut: 0.005 },
+  ];
+  // altura del techo del pontón (sin los redondeos) en x, a la distancia y del centro, y cuánto cae hacia afuera
+  const podRoof = (x, y) => {
+    let i = POD.findIndex((st) => st.x <= x);
+    if (i <= 0) i = i < 0 ? POD.length - 1 : 1;
+    const a = POD[i - 1], b = POD[i], w = Math.min(1, Math.max(0, (a.x - x) / (a.x - b.x)));
+    const lerp = (k) => a[k] + (b[k] - a[k]) * w;
+    const slope = (lerp('top') - lerp('edge')) / (lerp('out') - lerp('in'));
+    return { z: lerp('top') - (y - lerp('in')) * slope, slope };
+  };
   // cubierta del motor y toma de aire, de una sola forma: cada corte es una carpa angosta. Abajo queda metida en
   // los pontones y el flanco arranca justo donde termina el techo de cada pontón (el hombro, casi sin redondear),
   // así la carrocería sube de corrido desde el borde del pontón hasta la cresta. Detrás de la cabeza la cresta es
-  // la toma de aire; hacia atrás baja de a poco y se afina en la aleta, hasta morir antes del alerón.
+  // la toma de aire; hacia atrás baja de a poco y se afina en la aleta, hasta morir antes del alerón. Adelante,
+  // los hombros suben a cada lado de la cabeza hasta donde se apoya el halo y de ahí bajan hacia atrás.
   // Cada estación: x, medio ancho y altura de abajo, del hombro (donde arranca el flanco) y de la cresta.
-  const tent = ({ x, bw, bz, sw, sz, tw, tz }, d = 0) => rounded(x, [
-    [bw - d, bz + d], [sw - d, sz], [tw - d, tz - d], [-tw + d, tz - d], [-sw + d, sz], [-bw + d, bz + d],
-  ], [0.03, 0.04, tw * 0.9, tw * 0.9, 0.04, 0.03]);
+  // Con roof, el flanco cae recto desde el hombro hasta el techo del pontón y ahí dobla en ángulo recto con un
+  // radio chico (FILLET), en una pestaña que sigue el techo del pontón y se mete en él: la arista queda marcada
+  // pero la luz pasa de una cara a la otra de a poco.
+  const FILLET = 0.018;
+  const tent = ({ x, bw, bz, sw, sz, tw, tz }, d = 0, roof = false) => {
+    if (!roof) {
+      return rounded(x, [[bw - d, bz + d], [sw - d, sz], [tw - d, tz - d], [-tw + d, tz - d], [-sw + d, sz], [-bw + d, bz + d]],
+        [0.03, 0.04, tw * 0.9, tw * 0.9, 0.04, 0.03]);
+    }
+    const { z, slope } = podRoof(x, sw), zj = z + 0.004, L = 0.06;
+    const half = [[bw, bz], [sw + L, zj - L * (slope + 0.25)], [sw, zj], [sw, sz], [tw, tz]];
+    return rounded(x, [...half, ...half.map(([y, zz]) => [-y, zz]).reverse()],
+      [0.03, 0.005, FILLET, 0.07, tw * 0.9, tw * 0.9, 0.07, FILLET, 0.005, 0.03], 5);
+  };
   add(loft([
-    // el frente queda escondido: la cresta adentro de la toma y los hombros debajo del apoyacabeza
-    { x: -0.42, bw: 0.4, bz: 0.1, sw: 0.24, sz: 0.6, tw: 0.065, tz: 0.8 },
-    { x: -0.6, bw: 0.38, bz: 0.1, sw: 0.27, sz: 0.63, tw: 0.09, tz: 0.97 },
-    { x: -0.95, bw: 0.27, bz: 0.1, sw: 0.24, sz: 0.55, tw: 0.08, tz: 0.95 },
-    { x: -1.25, bw: 0.22, bz: 0.1, sw: 0.2, sz: 0.45, tw: 0.06, tz: 0.86 },
+    // el frente, detrás del apoyacabeza: la cresta queda adentro de la toma y los hombros, donde se apoya el halo
+    { x: -0.42, bw: 0.4, bz: 0.1, sw: 0.32, sz: 0.775, tw: 0.065, tz: 0.8 },
+    { x: -0.6, bw: 0.38, bz: 0.1, sw: 0.3, sz: 0.75, tw: 0.09, tz: 0.97 },
+    { x: -0.95, bw: 0.3, bz: 0.1, sw: 0.25, sz: 0.62, tw: 0.08, tz: 0.95 },
+    { x: -1.25, bw: 0.22, bz: 0.1, sw: 0.2, sz: 0.47, tw: 0.06, tz: 0.86 },
     { x: -1.55, bw: 0.17, bz: 0.11, sw: 0.155, sz: 0.36, tw: 0.04, tz: 0.74 },
     { x: -1.95, bw: 0.12, bz: 0.13, sw: 0.105, sz: 0.3, tw: 0.02, tz: 0.56 },
     { x: -2.3, bw: 0.07, bz: 0.18, sw: 0.06, sz: 0.28, tw: 0.012, tz: 0.41 },
-  ].map((st) => tent(st)), body));
+  ].map((st) => tent(st, 0, true)), body));
   // la boca de la toma, sobre la cabeza del piloto: es la punta de la cresta, que se estira hacia adelante por
   // encima del apoyacabeza y termina en la misma forma que tiene la cubierta (no es una pieza agregada).
   // Está inclinada como la de los pontones, con un labio alrededor y adentro un bloque oscuro
@@ -502,28 +595,7 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
   // cámara de TV en forma de T: un parante finito y arriba una barra a lo ancho, del color que distingue al auto
   add(box(-0.42, -0.34, 0, 0.025, 0.95, 1.07, hex(tcam), 0.01));
   add(box(-0.45, -0.31, 0, 0.17, 1.07, 1.11, hex(tcam), 0.018));
-  // pontones a los costados: toma de aire adelante y se van cerrando hacia atrás, hasta morir contra la cubierta
-  // del motor (la "botella de Coca-Cola"). No son tubos sueltos: el lado de adentro queda metido en el monocasco
-  // y el techo es una rampa que baja desde el hombro del chasis hacia afuera, así la carrocería sigue de corrido
-  // hasta el borde del pontón. A la altura de la cabina el techo arranca del borde de la abertura: es el costado
-  // de la cabina. Abajo, el costado se mete hacia adentro (el undercut) y deja ver el piso.
-  // Cada estación: x, borde de adentro (in) y de afuera (out), altura del techo adentro y afuera, piso y undercut.
-  const POD = [
-    // la boca nace del costado del chasis: su borde de adentro queda metido en el monocasco
-    { x: 0.8, in: 0.24, out: 0.8, top: 0.56, edge: 0.52, bot: 0.16, cut: 0.14 },
-    { x: 0.62, in: 0.23, out: 0.82, top: 0.57, edge: 0.54, bot: 0.13, cut: 0.17 },
-    { x: 0.35, in: 0.25, out: 0.83, top: 0.69, edge: 0.55, bot: 0.12, cut: 0.2 },
-    // detrás de la cabina se cierran en una curva convexa (vistos de arriba: aguantan el ancho y se cierran cada
-    // vez más rápido) y el techo cae hacia el piso, así llegan finos y bajos a las ruedas de atrás
-    { x: -0.3, in: 0.25, out: 0.79, top: 0.7, edge: 0.47, bot: 0.12, cut: 0.19 },
-    { x: -0.75, in: 0.23, out: 0.71, top: 0.6, edge: 0.38, bot: 0.12, cut: 0.15 },
-    { x: -1.15, in: 0.2, out: 0.6, top: 0.47, edge: 0.28, bot: 0.12, cut: 0.1 },
-    { x: -1.5, in: 0.15, out: 0.48, top: 0.36, edge: 0.21, bot: 0.12, cut: 0.06 },
-    { x: -1.8, in: 0.1, out: 0.34, top: 0.3, edge: 0.18, bot: 0.12, cut: 0.03 },
-    // la cola se pega a la base del cubremotor: el techo arranca a la altura de su hombro y se afina con él
-    { x: -2.05, in: 0.05, out: 0.15, top: 0.29, edge: 0.21, bot: 0.13, cut: 0.01 },
-    { x: -2.3, in: 0.03, out: 0.075, top: 0.27, edge: 0.23, bot: 0.15, cut: 0.005 },
-  ];
+  // pontones a los costados (sus estaciones, POD, van más arriba: la cubierta del motor se apoya en ellas)
   // sección del pontón en una estación, achicada d metros hacia adentro (para la boca)
   const podSec = (st, s, x = st.x, d = 0) => rounded(x, [
     [st.in + d, st.bot + d],
@@ -539,16 +611,16 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
   both((s) => {
     const [mouth, ...rest] = POD;
     const pod = loft([
-      lean(podSec(mouth, s, 0.78, MOUTH)),
-      lean(podSec(mouth, s, 0.81, MOUTH / 3)),
-      lean(podSec(mouth, s, 0.76)),
+      lean(podSec(mouth, s, mouth.x - 0.02, MOUTH)),
+      lean(podSec(mouth, s, mouth.x + 0.01, MOUTH / 3)),
+      lean(podSec(mouth, s, mouth.x - 0.04)),
       ...rest.map((st) => podSec(st, s)),
     ], body, CARBON);
     // el frente del labio mira hacia adelante y hacia la boca (loft lo orientaría hacia afuera del eje)
     for (const f of pod.faces.slice(2, 2 + POD_RING)) if (f.n[0] < 0) f.n = f.n.map((c) => -c);
     add(pod);
     // la abertura: un bloque oscuro que tapa la boca por dentro del labio
-    add(loft([podSec(mouth, s, 0.45, MOUTH), lean(podSec(mouth, s, 0.785, MOUTH))], COCKPIT));
+    add(loft([podSec(mouth, s, mouth.x - 0.35, MOUTH), lean(podSec(mouth, s, mouth.x - 0.015, MOUTH))], COCKPIT));
   });
   // espejos sobre su soporte: el vidrio mira hacia atrás, hundido en un marco, y la carcasa se redondea hacia
   // adelante como una cáscara
@@ -582,15 +654,16 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
   }
   add(tube(rim, 0.012, CARBON, 6));
   // halo: un arco por encima del casco que se apoya en un pilar central adelante y atrás, detrás de la cabeza,
-  // baja en curva a cada lado hasta apoyarse en el borde de la cabina. De perfil sube de a poco hacia adelante
-  // (visto desde arriba es media elipse: adelante en x = 0,4, a la altura de los espejos, y atrás en x = -0,3)
-  const haloAt = (t) => [-0.3 + 0.7 * Math.cos(t), 0.29 * Math.sin(t), 0.69 + 0.17 * Math.max(0, Math.cos(t)) ** 0.3];
+  // sobre los hombros del cubremotor, casi sin bajar. De perfil sube de a poco hacia adelante
+  // (visto desde arriba es media elipse: adelante en x = 0,4, a la altura de los espejos, y atrás en x = -0,4)
+  const HALO_R = 0.024;
+  const haloAt = (t) => [-0.4 + 0.8 * Math.cos(t), 0.29 * Math.sin(t), 0.78 + 0.08 * Math.max(0, Math.cos(t)) ** 0.8];
   const halo = [];
   for (let i = 0; i <= 40; i++) halo.push(haloAt(-Math.PI / 2 + (i / 40) * Math.PI));
-  add(tube(halo, 0.016, CARBON, 10));
+  add(tube(halo, HALO_R, CARBON, 12));
   // el pilar no cae vertical: baja inclinado hacia adelante (PILLAR_LEAN metros hacia adelante por cada metro
   // que baja) desde el frente del arco hasta clavarse en la trompa
-  const PILLAR_R = 0.018, PILLAR_LEAN = 0.9, PILLAR_DROP = 0.32;
+  const PILLAR_R = 0.026, PILLAR_LEAN = 0.9, PILLAR_DROP = 0.32;
   const [px, , pz] = haloAt(0);
   const pillarX = (z) => px + PILLAR_LEAN * (pz - z); // x del eje del pilar a la altura z
   // (arranca un poco debajo del eje del arco, para que no asome por encima)
@@ -607,7 +680,7 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
     const drop = FILLET_DROP * (1 - Math.sqrt(1 - (1 - g) ** 2));
     // arriba va por el eje del arco (queda adentro del tubo) y abajo se corre hacia el pilar
     const bottom = pillarX(z - drop) * (1 - g) + x * g;
-    fillet.push([[bottom - 0.014, y, z - drop], [bottom + 0.014, y, z - drop], [x + 0.014, y, z], [x - 0.014, y, z]]);
+    fillet.push([[bottom - 0.02, y, z - drop], [bottom + 0.02, y, z - drop], [x + 0.02, y, z], [x - 0.02, y, z]]);
   }
   add(loft(fillet, CARBON));
 
