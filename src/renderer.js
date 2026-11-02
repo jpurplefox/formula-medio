@@ -541,8 +541,10 @@ export class Renderer {
       return [hd.x + bx * ch - by * sh, hd.y + bx * sh + by * ch, lz];
     };
     // el volante gira alrededor de su columna (Rodrigues)
-    const ct = Math.cos(m.wheelTurn || 0), stn = Math.sin(m.wheelTurn || 0);
-    const column = (co, lx, ly, lz) => {
+    // (f: qué parte del giro sigue; los antebrazos lo siguen de a poco, de la muñeca al codo)
+    const wt = m.wheelTurn || 0;
+    const column = (co, lx, ly, lz, f = 1) => {
+      const ct = Math.cos(wt * f), stn = Math.sin(wt * f);
       const ax = co.ax, ay = co.ay, az = co.az, vx = lx - co.x, vy = ly - co.y, vz = lz - co.z;
       const d = (ax * vx + ay * vy + az * vz) * (1 - ct);
       return [co.x + vx * ct + (ay * vz - az * vy) * stn + ax * d, co.y + vy * ct + (az * vx - ax * vz) * stn + ay * d,
@@ -555,7 +557,7 @@ export class Renderer {
       const wx = new Float64Array(n), wy = new Float64Array(n), wz = new Float64Array(n);
       for (let i = 0; i < n; i++) {
         const v = part.verts[i];
-        const [lx, ly, lz] = wh ? turn(wh, ...v, part.fixed) : lean(...(hd ? look(hd, ...v) : co ? column(co, ...v) : v));
+        const [lx, ly, lz] = wh ? turn(wh, ...v, part.fixed) : lean(...(hd ? look(hd, ...v) : co ? column(co, ...v, part.follow?.[i]) : v));
         wx[i] = m.x + (Fx * lx + Rx * ly + Ux * lz) * k;
         wy[i] = m.y + (Fy * lx + Ry * ly + Uy * lz) * k;
         wz[i] = m.z + (Fz * lx + Rz * ly + Uz * lz) * k;
@@ -567,7 +569,7 @@ export class Renderer {
         if (wh) [lx, ly, lz] = turn({ x: 0, y: 0, z: 0, front: wh.front }, lx, ly, lz, part.fixed);
         else {
           if (hd) [lx, ly, lz] = look({ x: 0, y: 0 }, lx, ly, lz);
-          if (co) [lx, ly, lz] = column({ ...co, x: 0, y: 0, z: 0 }, lx, ly, lz);
+          if (co) [lx, ly, lz] = column({ ...co, x: 0, y: 0, z: 0 }, lx, ly, lz, part.follow ? idx.reduce((a, i) => a + part.follow[i], 0) / idx.length : 1);
           [lx, ly, lz] = lean(lx, ly, lz, 0);
         }
         const nx = Fx * lx + Rx * ly + Ux * lz, ny = Fy * lx + Ry * ly + Uy * lz, nz = Fz * lx + Rz * ly + Uz * lz;

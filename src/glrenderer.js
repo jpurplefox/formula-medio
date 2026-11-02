@@ -260,7 +260,8 @@ vec3 spin(vec3 n) { return vec3(n.x * uSpin.x + n.z * uSpin.y, n.y, -n.x * uSpin
 vec3 steer(vec3 n) { return vec3(n.x * uSteer.x - n.y * uSteer.y, n.x * uSteer.y + n.y * uSteer.x, n.z); }
 vec3 look(vec3 n) { return vec3(n.x * uHead.x - n.y * uHead.y, n.x * uHead.y + n.y * uHead.x, n.z); }
 // giro alrededor del eje de la columna (Rodrigues)
-vec3 turn(vec3 n) { return n * uTurn.x + cross(uColumnAxis, n) * uTurn.y + uColumnAxis * dot(uColumnAxis, n) * (1.0 - uTurn.x); }
+vec3 turnBy(vec3 n, vec2 t) { return n * t.x + cross(uColumnAxis, n) * t.y + uColumnAxis * dot(uColumnAxis, n) * (1.0 - t.x); }
+vec3 turn(vec3 n) { return turnBy(n, uTurn); }
 // la carrocería rola sobre el eje largo y cabecea sobre el eje de costado, a la altura del centro de rolido
 vec3 lean(vec3 n) {
   n = vec3(n.x, n.y * uBody.x - n.z * uBody.y, n.y * uBody.y + n.z * uBody.x);
@@ -272,7 +273,14 @@ void main() {
   // el vidrio de los espejos es convexo: la normal se abre hacia los bordes (aUV va de -1 a 1 sobre el vidrio),
   // así el reflejo cambia de un lado al otro y abarca más
   if (aGloss > 1.5 && aGloss < 2.5) sm = normalize(sm + vec3(0.0, aUV.x, aUV.y) * 0.45);
-  if (aWheel > 6.5) {
+  if (aWheel > 10.5) {
+    // los antebrazos del piloto: siguen al volante de a poco, de la muñeca (aWheel 12: entera) al codo (11: nada)
+    float a = atan(uTurn.y, uTurn.x) * (aWheel - 11.0);
+    vec2 t = vec2(cos(a), sin(a));
+    p = uColumn + turnBy(p - uColumn, t);
+    n = turnBy(n, t);
+    sm = turnBy(sm, t);
+  } else if (aWheel > 6.5) {
     // montado en la mangueta (el tambor del freno): no gira con la rueda, pero dobla con la dirección
     vec4 wh = uWheels[int(aWheel + 0.5) - 7];
     if (wh.w != 0.0) {
@@ -305,7 +313,7 @@ void main() {
     }
   }
   // todo menos las ruedas (que quedan apoyadas en el piso) se mueve con la suspensión
-  if (aWheel < 0.5 || (aWheel > 4.5 && aWheel < 6.5)) {
+  if (aWheel < 0.5 || (aWheel > 4.5 && aWheel < 6.5) || aWheel > 10.5) {
     p = BODY_PIVOT + lean(p - BODY_PIVOT);
     n = lean(n);
     sm = lean(sm);
@@ -688,7 +696,8 @@ export class GLRenderer {
     for (const part of parts) {
       if (part.tag === 'helmet' && helmetStart < 0) helmetStart = data.length / STRIDE;
       // a qué rueda pertenece (1 a 4), 5 si es la cabeza del piloto y 6 si es el volante; lo que va montado en la
-      // mangueta (fixed: dobla con la rueda pero no gira), 7 a 10
+      // mangueta (fixed: dobla con la rueda pero no gira), 7 a 10; lo que sigue al volante de a poco (follow: los
+      // antebrazos), de 11 a 12 en cada vértice
       let w = 0;
       if (part.wheel) {
         let k = wheels.indexOf(part.wheel);
@@ -730,7 +739,8 @@ export class GLRenderer {
         const vert = (a) => {
           const [x, y, z] = part.verts[face.idx[a]];
           const uv = face.uv ? face.uv[a] : [0, 0];
-          data.push(x, y, z, face.n[0], face.n[1], face.n[2], r, gg, b, uv[0] / size, uv[1] / size, tid, w, ...smooth[a], gloss);
+          const wv = part.follow ? 11 + part.follow[face.idx[a]] : w;
+          data.push(x, y, z, face.n[0], face.n[1], face.n[2], r, gg, b, uv[0] / size, uv[1] / size, tid, wv, ...smooth[a], gloss);
         };
         for (let a = 1; a < face.idx.length - 1; a++) {
           vert(0);

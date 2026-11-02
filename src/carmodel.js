@@ -124,8 +124,8 @@ function loft(rings, color, capColor = color, side = null) {
   return { verts, faces };
 }
 
-// tubo que pasa por los puntos de path: de sección cuadrada (medio lado t) o, con sides > 4, redondo (radio t).
-// flat < 1 lo aplasta en la dirección "hacia arriba" (sección ovalada, como un perfil)
+// tubo que pasa por los puntos de path: de sección cuadrada (medio lado t) o, con sides > 4, redondo (radio t; con
+// un radio por punto, se afina o se ensancha a lo largo). flat < 1 lo aplasta en la dirección "hacia arriba" (sección ovalada, como un perfil)
 function tube(path, t, color, sides = 4, flat = 1) {
   const rings = path.map((p, i) => {
     const a = path[Math.max(0, i - 1)], b = path[Math.min(path.length - 1, i + 1)];
@@ -140,7 +140,8 @@ function tube(path, t, color, sides = 4, flat = 1) {
     const corners = sides > 4
       ? [...Array(sides).keys()].map((i) => [Math.cos((i / sides) * Math.PI * 2), Math.sin((i / sides) * Math.PI * 2)])
       : [[1, 1], [-1, 1], [-1, -1], [1, -1]];
-    return corners.map(([s, q]) => [p[0] + (ux * s + vx * q * flat) * t, p[1] + (uy * s + vy * q * flat) * t, p[2] + (uz * s + vz * q * flat) * t]);
+    const r = Array.isArray(t) ? t[i] : t;
+    return corners.map(([s, q]) => [p[0] + (ux * s + vx * q * flat) * r, p[1] + (uy * s + vy * q * flat) * r, p[2] + (uz * s + vz * q * flat) * r]);
   });
   return loft(rings, color);
 }
@@ -332,7 +333,8 @@ function helmetAt(phi, w, out = 1) {
 export const STEERING = { x: 0.3, z: 0.6, tilt: 0.35, turn: 1 }; // turn: rad que gira con el volante a fondo
 export const SCREEN_TEX = { size: 1, screen: true }; // la textura la pone el juego (m.screen)
 const GRIP = rgb(20, 20, 22), BUTTONS = ['#e23b3b', '#2c9be0', '#f2c230', '#41c46a'];
-function steeringParts() {
+// suit: color del buzo (los antebrazos); glove: el de los guantes
+function steeringParts(suit, glove) {
   const { x: px, z: pz, tilt } = STEERING, c = Math.cos(tilt), s = Math.sin(tilt);
   // el eje apunta del volante hacia el piloto: así, doblando a la derecha (giro +), la parte de arriba va a la derecha
   const column = { x: px, y: 0, z: pz, ax: -c, ay: 0, az: s };
@@ -368,7 +370,49 @@ function steeringParts() {
     return [(y + 0.05) / 0.1, (0.034 - z) / 0.056];
   });
   parts.push(screen);
-  return parts.map(place);
+  // las manos del piloto, agarradas de las empuñaduras: giran con el volante, así se ve cuánto dobla cada uno.
+  // Mate, como la tela. El dorso es un óvalo apoyado del lado de afuera de la empuñadura; los cuatro dedos la rodean
+  // por delante (del índice, arriba, al meñique, más corto) y el pulgar se apoya sobre la cara del volante, junto a
+  // los botones. Después, el puño del guante, con una tira del color del buzo, que sigue en el antebrazo
+  const GY = 0.126; // centro de la empuñadura, a cada lado
+  const blob = (cx, cy, cz, rx, ry, rz) => loft([...Array(9).keys()].map((i) => {
+    const w = -0.94 + (1.88 * i) / 8, r = Math.sqrt(1 - w * w);
+    return [...Array(14).keys()].map((j) => {
+      const a = (j / 14) * Math.PI * 2;
+      return [cx + rx * r * Math.cos(a), cy + ry * r * Math.sin(a), cz + rz * w];
+    });
+  }), glove);
+  // arco alrededor de la empuñadura a la altura z, de un ángulo a otro (0: adelante; +: hacia afuera)
+  const around = (k, z, r, a0, a1) => [...Array(5).keys()].map((i) => {
+    const a = a0 + ((a1 - a0) * i) / 4;
+    return [r * Math.cos(a), k * (GY + r * Math.sin(a)), z];
+  });
+  for (const k of [-1, 1]) {
+    parts.push(...[
+      blob(-0.012, k * 0.14, -0.016, 0.027, 0.023, 0.05), // el dorso y la palma
+      ...[[0.016, 0.0105, -1.25], [-0.006, 0.0105, -1.3], [-0.028, 0.01, -1.25], [-0.049, 0.009, -1.05]]
+        .map(([z, r, end]) => tube(around(k, z, 0.026, 2.1, end), r, glove, 6)), // los dedos
+      // el pulgar: ancho en la base, metida en la palma, se afina hasta la punta redondeada, apoyada sobre la cara
+      tube([[-0.018, k * 0.13, -0.02], [-0.023, k * 0.12, -0.008], [-0.025, k * 0.112, 0.002], [-0.025, k * 0.106, 0.01],
+        [-0.024, k * 0.103, 0.0145], [-0.023, k * 0.102, 0.017]],
+      [0.0125, 0.0105, 0.0088, 0.0078, 0.0058, 0.0028], glove, 10),
+      tube([[-0.03, k * 0.142, -0.042], [-0.07, k * 0.15, -0.07]], 0.029, glove, 8), // el puño del guante
+      tube([[-0.036, k * 0.143, -0.046], [-0.047, k * 0.145, -0.053]], 0.0305, suit, 8), // la tira del puño, del color del buzo
+    ].map((p) => ({ ...p, suit: true })));
+  }
+  const placed = parts.map(place);
+  // los brazos: el antebrazo va de la muñeca (que gira entera con el volante) al codo (que queda quieto, al costado
+  // del cuerpo); en el medio gira de a poco (follow: cuánto sigue al volante cada vértice), así se dobla en vez de
+  // salirse de la cabina. El brazo, del hombro al codo, no se mueve (y no se ve desde la cabina, como los hombros)
+  for (const k of [-1, 1]) {
+    const [wx, wy, wz] = [-0.065, k * 0.15, -0.068], wrist = [px + wx * c + wz * s, wy, pz - wx * s + wz * c];
+    const elbow = [0.0, k * 0.235, 0.47], n = 6;
+    const path = [...Array(n).keys()].map((i) => wrist.map((a, j) => a + (elbow[j] - a) * (i / (n - 1))));
+    const arm = tube(path, 0.033, suit, 8);
+    placed.push({ ...arm, column, suit: true, follow: arm.verts.map((_, i) => 1 - Math.floor(i / 8) / (n - 1)) });
+    placed.push({ ...tube([[-0.15, k * 0.19, 0.52], elbow], 0.042, suit, 8), suit: true, tag: 'helmet' });
+  }
+  return placed;
 }
 
 const HELMET_LEVELS = [0.99, 0.94, 0.85, 0.72, 0.56, 0.38, 0.18, 0, -0.15, -0.3, -0.45, -0.58, -0.68, -0.75];
@@ -664,7 +708,7 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
   add({ ...box(-0.34, -0.02, 0, 0.2, 0.46, 0.55, hex(color, 0.7), 0.07), tag: 'helmet', suit: true });
   add({ ...loft([sec(-0.3, 0, 0.15, 0.49, 0.59, 0.05), sec(-0.17, 0, 0.13, 0.51, 0.6, 0.05)], CARBON), tag: 'helmet' });
   add(...helmetParts(head));
-  add(...steeringParts());
+  add(...steeringParts(hex(color, 0.7), hex(accent, 0.62)));
   // apoyacabeza acolchado alrededor del casco y un borde de carbono que rodea la abertura de la cabina
   add(loft([sec(-0.45, 0, 0.25, 0.6, 0.72, 0.05), sec(-0.3, 0, 0.25, 0.6, 0.72, 0.05)], PADDING));
   both((s) => add(loft([sec(-0.42, s * 0.205, 0.045, 0.6, 0.715, 0.03), sec(-0.2, s * 0.205, 0.04, 0.6, 0.7, 0.03)], PADDING)));
