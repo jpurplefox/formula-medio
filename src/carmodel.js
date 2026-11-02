@@ -355,8 +355,9 @@ function steeringParts(suit, glove) {
         const t = (i / 10) * Math.PI * 2;
         return [r * Math.cos(t), k * y + r * Math.sin(t), z];
       })), GRIP)),
-    // levas de cambio, detrás de las empuñaduras
-    ...[-1, 1].map((k) => box(0.024, 0.03, k * 0.1, 0.035, -0.02, 0.035, CARBON, 0.005)),
+    // levas de cambio, detrás de las empuñaduras (side: 0 la izquierda, que baja; 1 la derecha, que sube): las tira
+    // el piloto al cambiar (pull: cuánto se mueve la pieza con ese tirón)
+    ...[-1, 1].map((k) => ({ ...box(0.024, 0.03, k * 0.1, 0.035, -0.02, 0.035, CARBON, 0.005), side: (k + 1) / 2, pull: 1 })),
     // botones de colores a los costados de la pantalla
     ...BUTTONS.map((b, i) => box(-0.019, -0.015, (i % 2 ? 1 : -1) * 0.075, 0.009, i < 2 ? 0.0 : -0.03, (i < 2 ? 0.0 : -0.03) + 0.018, hex(b), 0.004)),
   ];
@@ -373,7 +374,9 @@ function steeringParts(suit, glove) {
   // las manos del piloto, agarradas de las empuñaduras: giran con el volante, así se ve cuánto dobla cada uno.
   // Mate, como la tela. El dorso es un óvalo apoyado del lado de afuera de la empuñadura; los cuatro dedos la rodean
   // por delante (del índice, arriba, al meñique, más corto) y el pulgar se apoya sobre la cara del volante, junto a
-  // los botones. Después, el puño del guante, con una tira del color del buzo, que sigue en el antebrazo
+  // los botones. Después, el puño del guante, con una tira del color del buzo, que sigue en el antebrazo.
+  // El índice y el mayor siguen hasta apoyarse detrás de la leva y al cambiar la tiran junto con ella; el resto
+  // de la mano acompaña un poco (pull)
   const GY = 0.126; // centro de la empuñadura, a cada lado
   const blob = (cx, cy, cz, rx, ry, rz) => loft([...Array(9).keys()].map((i) => {
     const w = -0.94 + (1.88 * i) / 8, r = Math.sqrt(1 - w * w);
@@ -389,16 +392,19 @@ function steeringParts(suit, glove) {
   });
   for (const k of [-1, 1]) {
     parts.push(...[
-      blob(-0.012, k * 0.14, -0.016, 0.027, 0.023, 0.05), // el dorso y la palma
-      ...[[0.016, 0.0105, -1.25], [-0.006, 0.0105, -1.3], [-0.028, 0.01, -1.25], [-0.049, 0.009, -1.05]]
-        .map(([z, r, end]) => tube(around(k, z, 0.026, 2.1, end), r, glove, 6)), // los dedos
+      [blob(-0.012, k * 0.14, -0.016, 0.027, 0.023, 0.05), 0.4], // el dorso y la palma
+      // índice y mayor: rodean la empuñadura y se apoyan detrás de la leva
+      ...[[0.016, 0.0105], [-0.004, 0.0105]].map(([z, r]) =>
+        [tube([...around(k, z, 0.026, 2.1, 0.5), [0.037, k * 0.118, z], [0.038, k * 0.104, z]], r, glove, 6), 1]),
+      // anular y meñique: rodean la empuñadura por debajo de la leva
+      ...[[-0.028, 0.01, -1.25], [-0.049, 0.009, -1.05]].map(([z, r, end]) => [tube(around(k, z, 0.026, 2.1, end), r, glove, 6), 0.6]),
       // el pulgar: ancho en la base, metida en la palma, se afina hasta la punta redondeada, apoyada sobre la cara
-      tube([[-0.018, k * 0.13, -0.02], [-0.023, k * 0.12, -0.008], [-0.025, k * 0.112, 0.002], [-0.025, k * 0.106, 0.01],
+      [tube([[-0.018, k * 0.13, -0.02], [-0.023, k * 0.12, -0.008], [-0.025, k * 0.112, 0.002], [-0.025, k * 0.106, 0.01],
         [-0.024, k * 0.103, 0.0145], [-0.023, k * 0.102, 0.017]],
-      [0.0125, 0.0105, 0.0088, 0.0078, 0.0058, 0.0028], glove, 10),
-      tube([[-0.03, k * 0.142, -0.042], [-0.07, k * 0.15, -0.07]], 0.029, glove, 8), // el puño del guante
-      tube([[-0.036, k * 0.143, -0.046], [-0.047, k * 0.145, -0.053]], 0.0305, suit, 8), // la tira del puño, del color del buzo
-    ].map((p) => ({ ...p, suit: true })));
+      [0.0125, 0.0105, 0.0088, 0.0078, 0.0058, 0.0028], glove, 10), 0.4],
+      [tube([[-0.03, k * 0.142, -0.042], [-0.07, k * 0.15, -0.07]], 0.029, glove, 8), 0.2], // el puño del guante
+      [tube([[-0.036, k * 0.143, -0.046], [-0.047, k * 0.145, -0.053]], 0.0305, suit, 8), 0.2], // la tira del puño
+    ].map(([p, pull]) => ({ ...p, suit: true, side: (k + 1) / 2, pull })));
   }
   const placed = parts.map(place);
   // los brazos: el antebrazo va de la muñeca (que gira entera con el volante) al codo (que queda quieto, al costado
@@ -435,7 +441,7 @@ function helmetParts(color) {
   }
   // alerón: una plaquita sobre la parte de atrás, apenas inclinada
   const spoiler = plate(-0.17, hz + 0.12, -0.225, hz + 0.105, 0.065, 0.012, color);
-  const pivot = { x: hx, y: 0, z: hz };
+  const pivot = { x: hx, y: 0, z: hz - rz }; // el cuello: ahí gira y se inclina
   return [shell, loft(visor, VISOR), spoiler].map((p) => ({ ...p, tag: 'helmet', head: pivot }));
 }
 

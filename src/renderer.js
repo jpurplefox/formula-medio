@@ -536,9 +536,12 @@ export class Renderer {
     };
     // la cabeza gira alrededor del cuello
     const ch = Math.cos(m.head || 0), sh = Math.sin(m.head || 0);
+    // y se inclina con las fuerzas (headTilt: hacia el costado, como el rolido, y hacia adelante)
+    const [hr, hp] = m.headTilt || [0, 0], chr = Math.cos(hr), shr = Math.sin(hr), chp = Math.cos(hp), shp = Math.sin(hp);
     const look = (hd, lx, ly, lz) => {
-      const bx = lx - hd.x, by = ly - hd.y;
-      return [hd.x + bx * ch - by * sh, hd.y + bx * sh + by * ch, lz];
+      const bx = lx - hd.x, by = ly - hd.y, bz = lz - (hd.z || 0);
+      const x = bx * ch - by * sh, y = bx * sh + by * ch, y1 = y * chr - bz * shr, z1 = y * shr + bz * chr;
+      return [hd.x + x * chp + z1 * shp, hd.y + y1, (hd.z || 0) + z1 * chp - x * shp];
     };
     // el volante gira alrededor de su columna (Rodrigues)
     // (f: qué parte del giro sigue; los antebrazos lo siguen de a poco, de la muñeca al codo)
@@ -550,6 +553,11 @@ export class Renderer {
       return [co.x + vx * ct + (ay * vz - az * vy) * stn + ax * d, co.y + vy * ct + (az * vx - ax * vz) * stn + ay * d,
         co.z + vz * ct + (ax * vy - ay * vx) * stn + az * d];
     };
+    // al cambiar, las levas y las manos se acercan al piloto sobre la columna
+    const pulled = (co, part, [x, y, z]) => {
+      const off = part.pull === undefined ? 0 : (m.paddle?.[part.side] || 0) * part.pull;
+      return [x + co.ax * off, y + co.ay * off, z + co.az * off];
+    };
     for (const part of m.model) {
       if (part.tag && part.tag === m.hide) continue;
       const wh = part.wheel, hd = part.head, co = part.column;
@@ -557,7 +565,7 @@ export class Renderer {
       const wx = new Float64Array(n), wy = new Float64Array(n), wz = new Float64Array(n);
       for (let i = 0; i < n; i++) {
         const v = part.verts[i];
-        const [lx, ly, lz] = wh ? turn(wh, ...v, part.fixed) : lean(...(hd ? look(hd, ...v) : co ? column(co, ...v, part.follow?.[i]) : v));
+        const [lx, ly, lz] = wh ? turn(wh, ...v, part.fixed) : lean(...(hd ? look(hd, ...v) : co ? pulled(co, part, column(co, ...v, part.follow?.[i])) : v));
         wx[i] = m.x + (Fx * lx + Rx * ly + Ux * lz) * k;
         wy[i] = m.y + (Fy * lx + Ry * ly + Uy * lz) * k;
         wz[i] = m.z + (Fz * lx + Rz * ly + Uz * lz) * k;
@@ -568,7 +576,7 @@ export class Renderer {
         let [lx, ly, lz] = face.n;
         if (wh) [lx, ly, lz] = turn({ x: 0, y: 0, z: 0, front: wh.front }, lx, ly, lz, part.fixed);
         else {
-          if (hd) [lx, ly, lz] = look({ x: 0, y: 0 }, lx, ly, lz);
+          if (hd) [lx, ly, lz] = look({ x: 0, y: 0, z: 0 }, lx, ly, lz);
           if (co) [lx, ly, lz] = column({ ...co, x: 0, y: 0, z: 0 }, lx, ly, lz, part.follow ? idx.reduce((a, i) => a + part.follow[i], 0) / idx.length : 1);
           [lx, ly, lz] = lean(lx, ly, lz, 0);
         }

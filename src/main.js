@@ -24,6 +24,13 @@ const CAM_BEHIND = 8; // vista exterior: metros detrás del centro del auto
 const COCKPIT_EYE = 0.74; // vista de cabina: altura de los ojos del piloto (m)
 const COCKPIT_BACK = 0.1; // vista de cabina: los ojos, detrás del centro del auto (m)
 const WHEEL_TURN_RATE = 6; // 1/s: qué tan rápido sigue el volante a la dirección
+const PADDLE_TIME = 0.2; // s: lo que dura el tirón de la leva al cambiar
+const PADDLE_PULL = 0.018; // m: cuánto la acerca el piloto
+const BUZZ = 0.05; // rad: lo que tiembla el volante en el pasto (en los pianos, la mitad)
+// la cabeza se inclina con las mismas fuerzas que la carrocería, bastante más: hacia afuera en las curvas y hacia
+// adelante al frenar (veces el rolido y el cabeceo de la suspensión)
+const HEAD_ROLL = 6;
+const HEAD_DIVE = 5;
 const CAR_PROFILE = 'cars/f1-2023.json'; // generado con tools/car_profile.py
 const SHIFT_LIGHTS = 15;
 const REPLAY_DELAY = 6; // segundos de resultado antes de que empiece la repetición
@@ -423,6 +430,7 @@ function update(dt) {
       const c = e.car;
       e.body = suspension(e.body, c.speed * c.omega, (c.speed - (e.prevSpeed ?? c.speed)) / dt, dt);
       e.prevSpeed = c.speed;
+      e.paddles = paddles(e.paddles, c.gear, dt);
     }
     for (const e of g.entries) if (e.driver) raceLine(g, e);
     for (const e of g.entries) e.dist += Math.abs(e.car.speed) * dt;
@@ -667,13 +675,15 @@ async function drawReplay() {
     const q = next[k], omega = Math.atan2(Math.sin(q.angle - p.angle), Math.cos(q.angle - p.angle)) / 0.1;
     return suspension(r.bodies[k], p.speed * omega, (q.speed - p.speed) / 0.1, 1 / 60);
   });
+  r.paddles ??= [];
+  r.paddles = poses.map((p, k) => paddles(r.paddles[k], p.gear, 1 / 60));
   const models = g.entries.map((e, k) => {
     const p = poses[k];
     return {
       model: e.model, x: p.x, y: p.y, z: heightAt(p.x, p.y), angle: p.angle, meters: M,
       pitch: Math.atan(p.slope), roll: r.bodies[k].roll, dive: r.bodies[k].dive,
       steer: wheelAngle(p.steer, p.speed), spin: (p.dist / WHEEL_R) % (Math.PI * 2), head: r.heads[k], ...tyres(g, p.dist), shadow: true,
-      wheelTurn: p.steer * STEERING.turn,
+      wheelTurn: p.steer * STEERING.turn, headTilt: headTilt(r.bodies[k]), paddle: r.paddles[k].pull,
     };
   });
   const cam = replayCamera(r.mode, pose, track, tvCams.get(track), r.tv, r.t, renderer.w / 2 / 0.7);
@@ -774,6 +784,26 @@ function lookYaw(car, cars, track) {
   return wrapAngle(Math.atan2(p.y - car.y, p.x - car.x) - car.angle);
 }
 
+// las levas: al subir de marcha el piloto tira de la derecha y al bajar, de la izquierda; el tirón va y vuelve
+function paddles(p, gear, dt) {
+  p ??= { gear, up: 0, down: 0 };
+  if (gear > p.gear && p.gear > 0) p.up = PADDLE_TIME;
+  else if (gear < p.gear && gear > 0) p.down = PADDLE_TIME;
+  p.gear = gear;
+  p.up = Math.max(0, p.up - dt);
+  p.down = Math.max(0, p.down - dt);
+  const pull = (t) => Math.sin((Math.PI * t) / PADDLE_TIME) * PADDLE_PULL;
+  p.pull = [pull(p.down), pull(p.up)];
+  return p;
+}
+
+// cuánto tiembla el volante: en el pasto y en los pianos, más cuanto más rápido (cambia en cada cuadro)
+const buzz = (c) => (c.grass * Math.min(1, Math.abs(c.speed) / 25) + (c.onKerb ? Math.min(1, Math.abs(c.speed) / 35) * 0.5 : 0))
+  * BUZZ * (Math.random() * 2 - 1);
+
+// la cabeza del piloto, inclinada por las fuerzas: [hacia el costado, hacia adelante]
+const headTilt = (body) => [(body?.roll ?? 0) * HEAD_ROLL, (body?.dive ?? 0) * HEAD_DIVE];
+
 function turnHead(head = 0, target, dt) {
   target = Math.max(-LOOK_MAX, Math.min(LOOK_MAX, target));
   return head + (target - head) * Math.min(1, dt * LOOK_RATE);
@@ -808,7 +838,7 @@ async function draw(time) {
       model: e.model, x: c.x, y: c.y, z: heightAt(c.x, c.y), angle: c.angle, meters: M,
       pitch: Math.atan(c.slope), roll: e.body?.roll, dive: e.body?.dive,
       steer: wheelAngle(c.steer, c.speed, c.profile), spin: e.spin, head: e.head, ...tyres(g, e.dist, c.wear), shadow: true,
-      wheelTurn: c.steer * STEERING.turn,
+      wheelTurn: c.steer * STEERING.turn + buzz(c), headTilt: headTilt(e.body), paddle: e.paddles?.pull,
     });
   }
 
@@ -855,7 +885,8 @@ async function draw(time) {
     roll: cockpitView ? 0 : g.player.body?.roll, dive: cockpitView ? 0 : g.player.body?.dive,
     steer: wheelAngle(car.steer, car.speed, car.profile), spin: wheelSpin, head: g.player.head, ...tyres(g, g.player.dist, car.wear), shadow: true, hide: cockpitView ? 'helmet' : null,
     // el volante gira con la dirección y muestra la marcha; desde la cabina la pintura de tan cerca brilla menos
-    wheelTurn: g.player.wheelTurn, screen: cockpit.screen(car), gloss: cockpitView ? 0.35 : 1,
+    wheelTurn: g.player.wheelTurn + buzz(car), screen: cockpit.screen(car), gloss: cockpitView ? 0.35 : 1,
+    headTilt: headTilt(g.player.body), paddle: g.player.paddles?.pull,
   });
   playEngines(g.entries.map((e) => ({ rpm: e.car.rpm, throttle: e.car.throttle, gear: e.car.gear, x: e.car.x * M, y: e.car.y * M, angle: e.car.angle, speed: e.car.speed })),
     cam, M, Math.cos(car.angle) * car.speed, Math.sin(car.angle) * car.speed, cockpitView ? g.entries.indexOf(g.player) : -1);
