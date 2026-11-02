@@ -10,13 +10,14 @@ import { Driver, gridSlots, lineFrame, pointAt } from './ai.js';
 import { collideCars } from './collision.js';
 import { Cockpit } from './cockpit.js';
 import { CAMERA_MODES, CAMERA_NAMES, Recorder, replayCamera, tvCameras } from './replay.js';
-import { DIFFICULTIES, LAP_OPTIONS, TEAMS, car as teamCar, gridOrder, rivalCars, rivalPaces, rivalSetups } from './teams.js';
+import { DIFFICULTIES, LAP_OPTIONS, RIVAL_OPTIONS, TEAMS, car as teamCar, gridOrder, rivalCars, rivalPaces, rivalSetups } from './teams.js';
 import { EngineAudio } from './audio.js';
 import { NeuralDriver, Policy } from './policy.js';
 import { RubberMap } from './rubber.js';
 import { DESIGNS } from './teamliveries.js';
 import { airDensity, carLimits, DEFAULT_TUNE, GRAVITY } from './dynamics.js';
 import { DAMAGE_LEVELS, damaged, NO_DAMAGE } from './damage.js';
+import { drawCar, drawShape, trackShape } from './menuview.js';
 
 const VIEW_W = 960;
 const VIEW_H = 540;
@@ -44,22 +45,24 @@ const LIGHT_HOLD = [0.4, 2.6]; // cuánto quedan las 5 prendidas antes de apagar
 const SETTINGS_KEY = 'raycast-racer-settings';
 
 // lo que se elige en el menú (se recuerda en el navegador): modo (carrera o contrarreloj), equipo, dificultad,
-// circuito, vueltas, daños (damage.js) y tu puesta a punto en cada circuito donde la cambiaste (tunes)
-const settings = { mode: 'race', team: 'hierrari', difficulty: 'dificil', track: TRACKS[0].id, laps: 3, damage: 'real', sound: true, volMaster: 0.8, volEngines: 1, volMusic: 0.6, tunes: {} };
+// circuito, vueltas, cantidad de rivales, daños (damage.js), volúmenes y tu puesta a punto en cada circuito donde la cambiaste (tunes).
+// El sonido arranca siempre apagado (se prende con N o desde el menú) y eso no se recuerda.
+const settings = { mode: 'race', team: 'hierrari', difficulty: 'dificil', track: TRACKS[0].id, laps: 3, rivals: 21, damage: 'real', gearbox: 'auto', sound: false, volMaster: 0.8, volEngines: 1, volMusic: 0.6, tunes: {} };
 // ?prueba: las teclas 1 a 9 rompen piezas de tu auto y 0 lo arregla, para probar cómo maneja con daños
 const DAMAGE_TEST = new URLSearchParams(location.search).has('prueba');
 const MODES = [
-  { value: 'race', label: 'Carrera', hint: 'Contra 21 rivales (2 autos por equipo), con repetición al final' },
-  { value: 'trial', label: 'Contrarreloj', hint: 'Solo en pista, contra el fantasma de tu mejor vuelta' },
+  { value: 'race', label: 'Carrera' },
+  { value: 'trial', label: 'Contrarreloj' },
 ];
 try {
-  Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {});
+  Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}, { sound: false });
 } catch {
   // sin almacenamiento: quedan los valores por defecto
 }
 const saveSettings = () => {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings, track: settings.track === 'custom' ? TRACKS[0].id : settings.track }));
+    const { sound: _, ...kept } = settings;
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(kept));
   } catch {
     // no pasa nada si no se puede guardar
   }
@@ -141,13 +144,12 @@ function keyNames(e) {
 }
 
 addEventListener('keydown', (e) => {
-  if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
+  if ((e.code.startsWith('Arrow') || e.code === 'Space') && !menuOpen()) e.preventDefault();
+  // en el menú Enter lo maneja press (si no, además apretaría el botón que tiene el foco)
+  if (e.code === 'Enter' && menuOpen()) e.preventDefault();
   if (settings.sound) audio.start(); // el navegador sólo deja arrancar el audio después de una tecla o un click
   if (e.code === 'KeyN' && !e.repeat) {
-    settings.sound = !settings.sound;
-    saveSettings();
-    applySound();
-    if (menuOpen()) renderMenu();
+    toggleSound();
     flash(settings.sound ? 'Sonido' : 'Silencio');
   }
   const names = keyNames(e);
@@ -160,7 +162,12 @@ addEventListener('keydown', (e) => {
 function press(names, repeat = false) {
   const is = (...codes) => codes.some((c) => names.includes(c));
   if (menuOpen()) {
-    if (is('Enter')) startRace();
+    // Enter: en la principal larga (o abre la tarjeta que tiene el foco); en las otras, vuelve
+    const go = document.activeElement?.closest?.('[data-screen="main"] [data-go]');
+    if (screen === 'main') {
+      if (is('Enter')) go ? go.click() : startRace();
+    } else if (is('Escape', 'Backspace', 'Enter')) showScreen('main');
+    else if (is('ArrowLeft', 'ArrowRight') && document.activeElement?.type !== 'range') stepChoice(is('ArrowLeft') ? -1 : 1);
     return;
   }
   if (is('Escape') && game) {
@@ -173,16 +180,9 @@ function press(names, repeat = false) {
     replayKey(game.replay, is);
     return;
   }
-  // cambios: X/E/O sube, Z/Q/U baja (en automático, pasa a manual como con las levas);
-  // M alterna caja manual y automática
+  // cambios, con la caja manual (se elige en el menú, no en carrera): X/E/O sube, Z/Q/U baja
   const dir = is(...SHIFT_UP) ? 1 : is(...SHIFT_DOWN) ? -1 : 0;
-  if (dir) {
-    if (!game.car.manual) {
-      manualGears = game.car.manual = true;
-      flash('Caja manual');
-    }
-    if (!game.car.shift(dir)) flash('Muy rápido para bajar');
-  }
+  if (dir && game.car.manual && !game.car.shift(dir)) flash('Muy rápido para bajar');
   if (is('KeyC')) {
     cockpitView = !cockpitView;
     flash(cockpitView ? 'Vista cabina' : 'Vista exterior');
@@ -190,10 +190,6 @@ function press(names, repeat = false) {
   if (is('KeyG')) {
     showGuide = !showGuide;
     flash(showGuide ? 'Trazada ideal' : 'Sin trazada');
-  }
-  if (is('KeyM')) {
-    manualGears = game.car.manual = !game.car.manual;
-    flash(manualGears ? 'Caja manual' : 'Caja automática');
   }
   if (DAMAGE_TEST) testDamage(game.car, names);
 }
@@ -342,7 +338,6 @@ const CURRENT_NET = 'models/v5/fase7.json';
 const IA_PARAM = new URLSearchParams(location.search).get('ia') || CURRENT_NET;
 const NEURAL_URL = IA_PARAM === 'clasica' ? null : IA_PARAM;
 let neuralPolicy = null;
-let manualGears = false;
 
 function resetGame(track) {
   const prev = game || lastGame;
@@ -352,12 +347,12 @@ function resetGame(track) {
   const difficulty = DIFFICULTIES.find((d) => d.id === settings.difficulty) || DIFFICULTIES[2];
   const trial = settings.mode === 'trial';
   // en contrarreloj no hay rivales
-  const others = trial ? [] : rivalCars(team);
+  const others = trial ? [] : rivalCars(team, settings.rivals);
   const paces = rivalPaces(difficulty, others.length), setups = rivalSetups(difficulty, others.length);
   // grilla: los rivales adelante (los mejores autos tienden a largar primero) y vos al final
   const slots = gridSlots(track, others.length + 1), grid = gridOrder(others.length);
   const spawn = slots[others.length];
-  const car = Object.assign(new Car(spawn.x, spawn.y, spawn.angle, carProfile), { manual: manualGears, ownTune: settings.tunes[settings.track] ?? null }).placeOn(track);
+  const car = Object.assign(new Car(spawn.x, spawn.y, spawn.angle, carProfile), { manual: settings.gearbox === 'manual', ownTune: settings.tunes[settings.track] ?? null }).placeOn(track);
   const mine = teamCar(team, 0);
   const player = { name: 'Vos', team: team.name, code: 'VOS', number: mine.number, color: team.color, car, driver: null, race: newRace(track, car), model: modelFor(mine, 2), dist: 0, gridBack: spawn.back };
   const rivals = others.map((o, i) => {
@@ -1116,10 +1111,8 @@ requestAnimationFrame(frame);
 
 // ---------- carga de circuitos ----------
 const builtTracks = new Map(); // circuitos ya armados, por id
-let customTrack = null; // el último circuito propio cargado: { name, track }
 
 async function loadTrack(id) {
-  if (id === 'custom' && customTrack) return customTrack.track;
   if (builtTracks.has(id)) return builtTracks.get(id);
   const def = TRACKS.find((t) => t.id === id) || TRACKS[0];
   if (def.layout) {
@@ -1135,8 +1128,12 @@ async function loadTrack(id) {
 }
 
 // ---------- menú ----------
+// Una pantalla principal con el auto y el circuito elegidos (en tarjetas con su dibujo) y el modo, y una pantalla
+// aparte para cada cosa: elegir el auto, elegir el circuito, la puesta a punto y las opciones (dificultad, vueltas,
+// daños y sonido)
 const menu = $('menu');
 const menuOpen = () => menu.classList.contains('open');
+let screen = 'main';
 
 function openMenu() {
   audio.silence();
@@ -1145,9 +1142,20 @@ function openMenu() {
   game = null;
   hud.stage.classList.remove('replay');
   hud.results.classList.remove('show');
-  renderMenu();
   menu.classList.add('open');
+  showScreen('main');
 }
+
+function showScreen(name) {
+  screen = name;
+  for (const el of menu.querySelectorAll('.screen')) el.classList.toggle('on', el.dataset.screen === name);
+  menu.scrollTop = 0;
+  renderMenu();
+  // el foco: en la principal, en Largar; en las otras, en lo elegido
+  const focus = name === 'main' ? $('menu-start') : menu.querySelector(`[data-screen="${name}"] button.on`);
+  (focus ?? menu.querySelector(`[data-screen="${name}"] button`))?.focus({ preventScroll: true });
+}
+for (const b of menu.querySelectorAll('[data-go]')) b.addEventListener('click', () => showScreen(b.dataset.go));
 
 let starting = false;
 async function startRace() {
@@ -1170,6 +1178,7 @@ async function startRace() {
 }
 
 // una fila de botones: elegir uno lo marca, lo guarda en settings[key] y vuelve a dibujar el menú
+// (o.html: el contenido del botón; o.el: le agrega ese elemento al final)
 function choices(el, options, key, onChange) {
   el.replaceChildren(...options.map((o) => {
     const b = document.createElement('button');
@@ -1177,6 +1186,7 @@ function choices(el, options, key, onChange) {
     b.className = settings[key] === o.value ? 'on' : '';
     if (o.html) b.innerHTML = o.html;
     else b.textContent = o.label;
+    if (o.el) b.prepend(o.el);
     b.addEventListener('click', () => {
       settings[key] = o.value;
       saveSettings();
@@ -1187,51 +1197,233 @@ function choices(el, options, key, onChange) {
   }));
 }
 
+const DAMAGE = () => DAMAGE_LEVELS.find((l) => l.id === settings.damage) || DAMAGE_LEVELS[2];
+const DIFFICULTY = () => DIFFICULTIES.find((d) => d.id === settings.difficulty) || DIFFICULTIES[2];
+const km = (m) => `${(m / 1000).toFixed(2).replace('.', ',')} km`;
+
 function renderMenu() {
+  choices($('menu-mode'), MODES, 'mode');
+  menu.classList.toggle('trial', settings.mode === 'trial');
+  const sound = $('sound-toggle');
+  sound.textContent = settings.sound ? '♪ Sonido' : '♪ Sin sonido';
+  sound.classList.toggle('on', settings.sound);
+  menu.classList.toggle('mute', !settings.sound);
+  if (screen === 'main') renderMain();
+  if (screen === 'car') renderCars();
+  if (screen === 'track') renderTracks();
+  if (screen === 'tune') renderTune();
+  if (screen === 'options') renderOptions();
+}
+
+function renderMain() {
+  const team = teamById(settings.team);
+  $('card-team').innerHTML = `<i class="swatch" style="background:${team.color}"></i>${team.name}`;
+  $('card-drivers').textContent = team.drivers[0][0];
+  drawCarPreview($('car-thumb'), team, { yaw: 0.75, pitch: 0.3, zoom: 1.12 });
+  const def = trackDef();
+  $('card-track').textContent = def?.name ?? '';
+  const laps = settings.mode === 'trial' ? 'contrarreloj' : `${settings.laps} ${settings.laps === 1 ? 'vuelta' : 'vueltas'}`;
+  $('card-track-info').textContent = laps;
+  drawTrackPreview($('track-thumb'), settings.track, (shape) => {
+    if (shape?.length) $('card-track-info').textContent = `${km(shape.length)} · ${laps}`;
+  });
+  $('tile-tune').textContent = tuneSummary();
+  const rivals = `${settings.rivals} ${settings.rivals === 1 ? 'rival' : 'rivales'}`;
+  $('tile-options').textContent = (settings.mode === 'trial' ? [] : [rivals, DIFFICULTY().name.toLowerCase()])
+    .concat([`daños ${DAMAGE().name.toLowerCase()}`, `caja ${GEARBOXES.find((b) => b.value === settings.gearbox).label.toLowerCase()}`]).join(' · ');
+}
+
+// ---- el auto ----
+let carView = { yaw: 0.75, pitch: 0.28 }; // desde dónde se mira el auto grande (se gira arrastrándolo)
+const carPreviewModel = (team) => modelFor({ team, slot: 0, number: team.drivers[0][2] });
+function drawCarPreview(canvas, team, view) {
+  drawCar(canvas, carPreviewModel(team), view);
+}
+
+function renderCars() {
+  const team = teamById(settings.team);
   choices($('menu-teams'), TEAMS.map((t) => ({
     value: t.id,
     html: `<span class="car" style="--c:${t.color};--a:${t.accent};--h:${t.helmet}"><i></i></span>${t.name}`,
   })), 'team');
-  choices($('menu-mode'), MODES, 'mode');
-  $('menu-mode-hint').textContent = (MODES.find((m) => m.value === settings.mode) || MODES[0]).hint;
-  menu.classList.toggle('trial', settings.mode === 'trial');
-  choices($('menu-diff'), DIFFICULTIES.map((d) => ({ value: d.id, label: d.name })), 'difficulty');
-  $('menu-diff-hint').textContent = (DIFFICULTIES.find((d) => d.id === settings.difficulty) || DIFFICULTIES[2]).hint;
-  const tracks = TRACKS.map((t) => ({ value: t.id, label: t.name }));
-  if (customTrack) tracks.push({ value: 'custom', label: customTrack.name });
-  choices($('menu-tracks'), tracks, 'track');
-  choices($('menu-laps'), LAP_OPTIONS.map((n) => ({ value: n, label: String(n) })), 'laps');
-  choices($('menu-damage'), DAMAGE_LEVELS.map((l) => ({ value: l.id, label: l.name })), 'damage');
-  $('menu-damage-hint').textContent = (DAMAGE_LEVELS.find((l) => l.id === settings.damage) || DAMAGE_LEVELS[2]).hint;
-  choices($('menu-sound'), [{ value: true, label: 'Sí' }, { value: false, label: 'No' }], 'sound', applySound);
-  for (const [id, key] of VOLUME_SLIDERS) $(id).value = Math.round(settings[key] * 100);
-  menu.classList.toggle('mute', !settings.sound);
-  renderTune();
+  $('car-name').innerHTML = `<i class="swatch" style="background:${team.color}"></i>${team.name}`;
+  $('car-drivers').textContent = team.drivers.map(([name, , n]) => `#${n} ${name}`).join(' · ');
 }
 
-// Puesta a punto: la tuya en este circuito o, si no la cambiaste, la que llevan los equipos ahí (tracks/index.js;
+// El auto grande gira solo, despacio, como en una vitrina; arrastrándolo se lo gira a mano (y un poco para arriba o
+// abajo), y al soltarlo sigue girando solo después de un rato
+const TURNTABLE = 0.35; // rad/s
+const TURNTABLE_WAIT = 2.5; // s quieto después de soltarlo
+let carDrag = null, carIdleSince = 0;
+{
+  const big = $('car-big');
+  big.addEventListener('pointerdown', (e) => {
+    carDrag = { x: e.clientX, y: e.clientY, ...carView };
+    big.setPointerCapture(e.pointerId);
+  });
+  big.addEventListener('pointermove', (e) => {
+    if (!carDrag) return;
+    carView = {
+      yaw: carDrag.yaw + (e.clientX - carDrag.x) * 0.012,
+      pitch: Math.min(1.2, Math.max(0.05, carDrag.pitch + (e.clientY - carDrag.y) * 0.006)),
+    };
+  });
+  const release = () => {
+    carDrag = null;
+    carIdleSince = performance.now();
+  };
+  big.addEventListener('pointerup', release);
+  big.addEventListener('pointercancel', release);
+}
+
+// lo que se mueve en el menú: el auto que gira y el punto que da la vuelta al circuito (una vuelta en LAP_PREVIEW s)
+const LAP_PREVIEW = 9;
+let menuTime = 0;
+let shownShape = null; // el trazado del circuito grande, para el punto que lo recorre
+function animateMenu(now) {
+  const dt = Math.min(0.1, (now - (menuTime || now)) / 1000);
+  menuTime = now;
+  if (menuOpen() && screen === 'car') {
+    if (!carDrag && now - carIdleSince > TURNTABLE_WAIT * 1000) carView = { ...carView, yaw: carView.yaw + TURNTABLE * dt };
+    drawCarPreview($('car-big'), teamById(settings.team), carView);
+  }
+  if (menuOpen() && screen === 'track' && shownShape) {
+    drawShape($('track-big'), shownShape, { dot: ((now / 1000) % LAP_PREVIEW) / LAP_PREVIEW });
+  }
+  requestAnimationFrame(animateMenu);
+}
+requestAnimationFrame(animateMenu);
+
+// ---- el circuito ----
+// el trazado de un circuito (id) en el canvas; then(forma) cuando está, con forma.length (m) si se sabe
+function drawTrackPreview(canvas, id, then, opts) {
+  const def = TRACKS.find((t) => t.id === id);
+  canvas.dataset.track = id;
+  trackShape(def).then((shape) => {
+    if (canvas.dataset.track !== id) return; // ya se eligió otro
+    drawShape(canvas, shape.points, opts);
+    then?.(shape);
+  }).catch((err) => console.warn('No se pudo dibujar el trazado:', err));
+}
+
+function trackList() {
+  return TRACKS.map((t) => ({ value: t.id, label: t.name }));
+}
+
+function renderTracks() {
+  const list = trackList();
+  choices($('menu-tracks'), list.map((t) => {
+    const c = document.createElement('canvas');
+    return { ...t, el: c };
+  }), 'track', () => {});
+  // los dibujitos se hacen después de que los botones están en la página (necesitan su tamaño)
+  for (const [i, b] of [...$('menu-tracks').children].entries()) {
+    drawTrackPreview(b.querySelector('canvas'), list[i].value, null, { color: b.classList.contains('on') ? '#ffd400' : '#c8ced8', line: 1.3 });
+  }
+  const def = trackDef();
+  $('track-name').textContent = def?.name ?? '';
+  const stats = (length) => {
+    const wing = (def.tune.front + def.tune.rear) / 2;
+    return [
+      ['Largo', length ? km(length) : '…'],
+      ['Altura sobre el mar', `${def.altitude} m`],
+      ['Circuito', CIRCUIT_KINDS.find(([max]) => wing <= max)[1]],
+    ];
+  };
+  const showStats = (length) => {
+    $('track-stats').innerHTML = stats(length).map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('');
+  };
+  showStats();
+  shownShape = null;
+  drawTrackPreview($('track-big'), settings.track, (shape) => {
+    shownShape = shape?.points;
+    if (shape?.length) showStats(shape.length);
+  });
+}
+// qué clase de circuito es, según cuánto alerón llevan los equipos ahí (de 1 a 10): poco donde se va mucho tiempo a
+// fondo, mucho donde hay curvas lentas
+const CIRCUIT_KINDS = [[2, 'muy rápido'], [4.5, 'rápido'], [6.5, 'mixto'], [Infinity, 'lento']];
+
+// cambiar de auto o de circuito con las flechas (o los botones ‹ ›)
+function stepChoice(step) {
+  if (screen === 'car') {
+    const i = TEAMS.findIndex((t) => t.id === settings.team);
+    settings.team = TEAMS[(i + step + TEAMS.length) % TEAMS.length].id;
+  } else if (screen === 'track') {
+    const list = trackList(), i = list.findIndex((t) => t.value === settings.track);
+    settings.track = list[(i + step + list.length) % list.length].value;
+  } else return;
+  saveSettings();
+  renderMenu();
+}
+for (const b of menu.querySelectorAll('[data-step]')) b.addEventListener('click', () => stepChoice(+b.dataset.step));
+
+// ---- opciones ----
+const GEARBOXES = [
+  { value: 'auto', label: 'Automática', hint: 'Los cambios se pasan solos' },
+  { value: 'manual', label: 'Manual', hint: 'Subís con O o X y bajás con U o Z (en el joystick, RB sube y LB baja)' },
+];
+function renderOptions() {
+  choices($('menu-diff'), DIFFICULTIES.map((d) => ({ value: d.id, label: d.name })), 'difficulty');
+  choices($('menu-rivals'), RIVAL_OPTIONS.map((n) => ({ value: n, label: String(n) })), 'rivals');
+  choices($('menu-laps'), LAP_OPTIONS.map((n) => ({ value: n, label: String(n) })), 'laps');
+  choices($('menu-damage'), DAMAGE_LEVELS.map((l) => ({ value: l.id, label: l.name })), 'damage');
+  $('menu-damage-hint').textContent = DAMAGE().hint;
+  choices($('menu-gearbox'), GEARBOXES, 'gearbox');
+  $('menu-gearbox-hint').textContent = GEARBOXES.find((b) => b.value === settings.gearbox).hint;
+  choices($('menu-sound'), [{ value: true, label: 'Sí' }, { value: false, label: 'No' }], 'sound', applySound);
+  for (const [id, key] of VOLUME_SLIDERS) $(id).value = Math.round(settings[key] * 100);
+}
+$('sound-toggle').addEventListener('click', () => toggleSound());
+function toggleSound() {
+  settings.sound = !settings.sound;
+  applySound();
+  if (menuOpen()) renderMenu();
+}
+
+// Puesta a punto: la tuya en este circuito o, si no la cambiaste, la recomendada (la que llevan los equipos ahí, tracks/index.js;
 // los rivales usan siempre esa). Abajo, cómo queda el auto: punta, agarre en curva rápida y balance.
 const TUNE_SLIDERS = [['tune-front', 'front'], ['tune-rear', 'rear'], ['tune-balance', 'balance']];
 const trackDef = () => TRACKS.find((t) => t.id === settings.track);
 const trackTune = () => trackDef()?.tune ?? DEFAULT_TUNE;
 const myTune = () => settings.tunes[settings.track] ?? trackTune();
 const BALANCE_WORDS = [[-0.03, 'subvira'], [0.03, 'neutro'], [Infinity, 'sobrevira']];
-function renderTune() {
-  const t = myTune(), own = settings.tunes[settings.track];
-  for (const [id, key] of TUNE_SLIDERS) {
-    $(id).value = t[key];
-    $(id + '-v').textContent = key === 'balance' && t[key] > 0 ? `+${t[key]}` : t[key];
-  }
-  $('tune-reset').disabled = !own;
+const signed = (v) => (v > 0 ? `+${v}` : `${v}`);
+function tuneSummary() {
+  const t = myTune();
+  return `${settings.tunes[settings.track] ? 'Con tus cambios' : 'Recomendada'}: alerón delantero ${t.front}, trasero ${t.rear}`;
+}
+function tuneLimits(t) {
   const lim = carLimits(carProfile, t, airDensity(trackDef()?.altitude ?? 0));
   // con más agarre adelante que atrás la cola se abre (sobrevira); con menos, la trompa no dobla (subvira)
   const balance = (v) => {
     const [f, r] = lim.axles(v);
     return BALANCE_WORDS.find(([max]) => f / r - 1 < max)[1];
   };
-  $('tune-hint').textContent = `Punta ${Math.round(lim.topSpeed * 3.6)} km/h · curva rápida ${(lim.lateral(70) / GRAVITY).toFixed(1)} g`
-    + ` · en curva lenta ${balance(25)}, en rápida ${balance(70)}`
-    + (own ? '' : ' · la que llevan los equipos acá');
+  return { top: lim.topSpeed * 3.6, grip: lim.lateral(70) / GRAVITY, slow: balance(25), fast: balance(70) };
+}
+function renderTune() {
+  const t = myTune(), own = settings.tunes[settings.track];
+  $('tune-title').textContent = `Puesta a punto · ${trackDef()?.name ?? ''}`;
+  for (const [id, key] of TUNE_SLIDERS) {
+    $(id).value = t[key];
+    $(id + '-v').textContent = key === 'balance' ? signed(t[key]) : t[key];
+  }
+  $('tune-reset').hidden = !own; // sólo hay algo para borrar si es la tuya
+  const now = tuneLimits(t), base = tuneLimits(trackTune());
+  // al lado de cada número, cuánto cambió respecto de la recomendada
+  const diff = (a, b, unit, digits) => (own && Math.abs(a - b) >= 10 ** -digits / 2
+    ? ` <em class="${a > b ? 'up' : 'down'}">${a > b ? '+' : '−'}${Math.abs(a - b).toFixed(digits).replace('.', ',')}${unit}</em>` : '');
+  $('tune-stats').innerHTML = [
+    ['Velocidad punta', `${Math.round(now.top)} km/h${diff(now.top, base.top, '', 0)}`],
+    ['Agarre a 250 km/h', `${now.grip.toFixed(1).replace('.', ',')} g${diff(now.grip, base.grip, '', 1)}`],
+    ['Curva lenta', now.slow],
+    ['Curva rápida', now.fast],
+  ].map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('');
+  const where = trackDef()?.name ?? 'este circuito';
+  $('tune-hint').textContent = own
+    ? `Cambiaste la recomendada. Tus cambios quedan guardados y se usan cada vez que corras en ${where}.`
+    : `Esta es la recomendada para ${where}. Si cambiás algo, se guarda para la próxima vez que corras acá.`;
 }
 for (const [id, key] of TUNE_SLIDERS) {
   $(id).addEventListener('input', (e) => {
@@ -1247,6 +1439,9 @@ $('tune-reset').addEventListener('click', () => {
   renderTune();
 });
 
+// los dibujos dependen del tamaño de la ventana
+addEventListener('resize', () => menuOpen() && renderMenu());
+
 // volúmenes: general, motores y música (de 0 a 100 en el menú)
 const VOLUME_SLIDERS = [['vol-master', 'volMaster'], ['vol-engines', 'volEngines'], ['vol-music', 'volMusic']];
 for (const [id, key] of VOLUME_SLIDERS) {
@@ -1259,91 +1454,6 @@ for (const [id, key] of VOLUME_SLIDERS) {
 $('menu-start').addEventListener('click', () => {
   if (settings.sound) audio.start();
   startRace();
-});
-
-// Circuito propio: el usuario sube una imagen y marca largada y sentido
-const setup = $('setup');
-const setupCanvas = $('setup-canvas');
-const setupHint = $('setup-hint');
-let pending = null;
-
-$('file').addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (file) openSetup(file);
-  e.target.value = '';
-});
-addEventListener('dragover', (e) => e.preventDefault());
-addEventListener('drop', (e) => {
-  e.preventDefault();
-  const file = e.dataTransfer.files[0];
-  if (file && file.type.startsWith('image/')) openSetup(file);
-});
-$('setup-cancel').addEventListener('click', () => setup.classList.remove('open'));
-
-async function openSetup(file) {
-  const url = URL.createObjectURL(file);
-  const img = await loadImage(url);
-  pending = { img, name: file.name.replace(/\.[^.]+$/, ''), start: null };
-  const maxW = Math.min(900, innerWidth - 40);
-  const k = Math.min(1, maxW / img.width, (innerHeight - 200) / img.height);
-  setupCanvas.width = Math.round(img.width * k);
-  setupCanvas.height = Math.round(img.height * k);
-  pending.k = k;
-  redrawSetup();
-  setupHint.textContent = '1/2 — Hacé click sobre la línea de largada';
-  setup.classList.add('open');
-}
-
-function redrawSetup(mouse) {
-  const g = setupCanvas.getContext('2d');
-  g.drawImage(pending.img, 0, 0, setupCanvas.width, setupCanvas.height);
-  if (pending.start) {
-    const s = pending.start;
-    g.fillStyle = '#ff3b30';
-    g.beginPath();
-    g.arc(s.x * pending.k, s.y * pending.k, 7, 0, Math.PI * 2);
-    g.fill();
-    if (mouse) {
-      g.strokeStyle = '#ff3b30';
-      g.lineWidth = 3;
-      g.beginPath();
-      g.moveTo(s.x * pending.k, s.y * pending.k);
-      g.lineTo(mouse.x * pending.k, mouse.y * pending.k);
-      g.stroke();
-    }
-  }
-}
-
-function setupPoint(e) {
-  const r = setupCanvas.getBoundingClientRect();
-  return {
-    x: ((e.clientX - r.left) * (setupCanvas.width / r.width)) / pending.k,
-    y: ((e.clientY - r.top) * (setupCanvas.height / r.height)) / pending.k,
-  };
-}
-
-setupCanvas.addEventListener('mousemove', (e) => pending?.start && redrawSetup(setupPoint(e)));
-setupCanvas.addEventListener('click', (e) => {
-  const p = setupPoint(e);
-  if (!pending.start) {
-    pending.start = p;
-    setupHint.textContent = '2/2 — Hacé click hacia dónde se corre';
-    redrawSetup();
-    return;
-  }
-  const scale = Math.max(1, Math.round(Math.max(pending.img.width, pending.img.height) / 670));
-  const def = { name: pending.name, scale, threshold: 90, widen: 1, runoff: 3, start: pending.start, towards: p };
-  setup.classList.remove('open');
-  try {
-    customTrack = { name: def.name, track: buildTrack(pending.img, def) };
-    settings.track = 'custom';
-    menu.classList.remove('open');
-    resetGame(customTrack.track);
-    flash(def.name);
-  } catch (err) {
-    console.error(err);
-    flash('No se pudo armar el circuito');
-  }
 });
 
 // al abrir: el perfil del auto y el circuito elegido la última vez, y el menú

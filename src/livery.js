@@ -224,7 +224,8 @@ export const plainDesign = (color, accent) => ({
 // Atlas de la decoración de un auto
 // color: carrocería (lo que mira hacia adelante o atrás queda de este color); design: la pintura y los sponsors del
 // equipo (teamliveries.js); sharp: el atlas en sharp veces más resolución (para el auto propio, que desde la cabina
-// se ve de muy cerca); las coordenadas de textura se multiplican igual
+// se ve de muy cerca); las coordenadas de textura se multiplican igual. Lleva también el dibujo (art), para las
+// vistas del auto en el menú
 export function liveryTexture(color, design, number, sharp = 1) {
   const c = document.createElement('canvas');
   c.width = c.height = SIZE * sharp;
@@ -235,7 +236,7 @@ export function liveryTexture(color, design, number, sharp = 1) {
   drawSide(g, SIDE_R, color, design, number, false);
   drawSide(g, SIDE_L, color, design, number, true);
   drawTop(g, color, design, number);
-  return canvasTexture(c);
+  return Object.assign(canvasTexture(c), { art: c });
 }
 
 export const SIDEWALL_SIZE = 256;

@@ -36,7 +36,6 @@
     #help { transition: opacity 0.4s; }
     #help.hidden { opacity: 0; pointer-events: none; }
     #help label { color: #ffd400; cursor: pointer; text-decoration: underline; }
-    #file { display: none; }
     #results { top: 50%; left: 50%; transform: translate(-50%, -50%); display: none; min-width: 16em; font-size: clamp(10px, 1.15vw, 14px); padding: 12px 18px; background: rgba(0, 0, 0, 0.78); }
     #results.show { display: block; }
     #tower { font-size: clamp(9px, 0.95vw, 12px); line-height: 1.2; padding: 5px 7px; }
@@ -62,30 +61,82 @@
     #results tr.me td { color: #ffd400; font-weight: bold; }
     #results i { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 50%; margin-right: 0.5em; vertical-align: middle; }
     #results p { margin: 10px 0 0; color: #9aa4b2; font-size: 0.85em; text-align: center; }
-    #menu { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: radial-gradient(ellipse at 50% 30%, rgba(30, 40, 60, 0.92), rgba(5, 7, 12, 0.97)); overflow-y: auto; padding: 16px; }
+    #menu { position: fixed; inset: 0; display: none; justify-content: center; background: radial-gradient(ellipse at 50% 20%, rgba(34, 44, 66, 0.94), rgba(5, 7, 12, 0.98)); overflow-y: auto; padding: 16px; }
     #menu.open { display: flex; }
-    .menu-box { width: min(760px, 100%); display: grid; gap: 18px; }
+    .menu-box { width: min(820px, 100%); margin: auto 0; }
+    .screen { display: none; gap: 16px; animation: screen-in 0.18s ease-out; }
+    .screen.on { display: grid; }
+    @keyframes screen-in { from { opacity: 0; transform: translateY(6px); } }
     #menu h1 { margin: 0; font-size: clamp(26px, 4vw, 40px); letter-spacing: 0.04em; font-style: italic; }
+    #menu h1 span { color: #d40000; }
     #menu h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: #9aa4b2; font-weight: normal; }
-    #menu .row { display: flex; flex-wrap: wrap; gap: 18px 40px; }
+    #menu .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    #menu .top:has(.back) { justify-content: flex-start; gap: 16px; }
+    #menu .top h2 { margin: 0; font-size: 18px; color: #f2f2f2; letter-spacing: 0.06em; }
     #menu .hint { margin: 6px 0 0; color: #9aa4b2; font-size: 13px; }
     #menu .hint label { color: #ffd400; cursor: pointer; text-decoration: underline; }
     #menu .center { text-align: center; }
-    #menu button { font: inherit; color: #f2f2f2; background: #1a1f2a; border: 1px solid #2c3442; border-radius: 6px; padding: 7px 14px; cursor: pointer; }
+    #menu button { font: inherit; color: #f2f2f2; background: #1a1f2a; border: 1px solid #2c3442; border-radius: 6px; padding: 7px 14px; cursor: pointer; transition: border-color 0.12s, background 0.12s, transform 0.12s; }
     #menu button:hover { border-color: #56627a; }
+    #menu button:focus-visible { outline: 2px solid #ffd400; outline-offset: 2px; }
     #menu button.on { border-color: #ffd400; background: #2a2a1a; color: #ffd400; }
+    #menu button:disabled { opacity: 0.4; cursor: default; }
     #menu .seg { display: flex; flex-wrap: wrap; gap: 6px; }
-    #menu .sound { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
-    #menu .sound label { display: flex; align-items: center; gap: 8px; color: #c8ced8; font-size: 14px; }
-    #menu .sound input { width: 110px; accent-color: #ffd400; }
-    #menu.mute .sound label { opacity: 0.4; }
-    #menu .tune { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
-    #menu .tune label { display: flex; align-items: center; gap: 8px; color: #c8ced8; font-size: 14px; }
-    #menu .tune input { width: 110px; accent-color: #ffd400; }
-    #menu .tune b { min-width: 2.2em; color: #ffd400; font-variant-numeric: tabular-nums; }
-    #menu .tune button { padding: 4px 10px; font-size: 13px; }
-    #menu .teams { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+    #menu .back { padding: 6px 12px; color: #c8ced8; white-space: nowrap; }
+    /* pantalla principal: el auto y el circuito en dos tarjetas grandes */
+    #menu .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    #menu .card { display: grid; grid-template-rows: auto 1fr auto; text-align: left; padding: 12px 14px 14px; gap: 4px; background: linear-gradient(160deg, #1d2431, #12161e); border-radius: 10px; min-width: 0; }
+    #menu .card:hover { border-color: #ffd400; transform: translateY(-2px); }
+    #menu .card canvas { width: 100%; height: 160px; display: block; }
+    #menu .card small { color: #9aa4b2; font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; }
+    #menu .card b { font-size: 18px; }
+    #menu .card span { color: #9aa4b2; font-size: 13px; }
+    #menu .card .go { color: #ffd400; }
+    #menu .card .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: 1px; }
+    #menu .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    #menu .tile { text-align: left; padding: 10px 14px; display: grid; gap: 2px; }
+    #menu .tile b { font-weight: normal; }
+    #menu .tile span { color: #9aa4b2; font-size: 13px; }
+    #menu .tile b::after { content: ' ›'; color: #ffd400; }
+    #sound-toggle { font-size: 13px !important; color: #c8ced8 !important; white-space: nowrap; }
+    #sound-toggle.on { color: #ffd400 !important; }
+    /* elegir auto y circuito: una vista grande y la lista */
+    #menu .stage { position: relative; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; background: radial-gradient(ellipse at 50% 70%, #232c3c, #0d1017 70%); border: 1px solid #222a36; border-radius: 12px; }
+    #menu .stage canvas { grid-column: 1 / -1; grid-row: 1; width: 100%; height: clamp(180px, 34vh, 300px); display: block; }
+    #menu #car-big { cursor: grab; touch-action: none; }
+    #menu #car-big:active { cursor: grabbing; }
+    #menu .stage .arrow { grid-row: 1; z-index: 1; margin: 0 10px; font-size: 22px; padding: 4px 12px; background: rgba(10, 13, 19, 0.7); }
+    #menu .stage .arrow.next { grid-column: 3; justify-self: end; }
+    #menu .stage .arrow.prev { grid-column: 1; justify-self: start; }
+    #menu .about { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; }
+    #menu .about b { font-size: 22px; }
+    #menu .about span { color: #9aa4b2; font-size: 14px; }
+    #menu .teams { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
     #menu .teams button { display: flex; align-items: center; gap: 8px; text-align: left; padding: 8px; font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+    #menu .tracks { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+    #menu .tracks button { display: grid; gap: 4px; justify-items: center; padding: 6px 6px 8px; font-size: 13px; }
+    #menu .tracks canvas { width: 100%; height: 64px; display: block; }
+    /* opciones y puesta a punto */
+    #menu .panel-box { display: grid; gap: 18px; background: rgba(13, 16, 23, 0.6); border: 1px solid #222a36; border-radius: 12px; padding: 16px 18px; }
+    #menu .row { display: flex; flex-wrap: wrap; gap: 18px 40px; }
+    #menu .sound { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); align-items: center; gap: 10px 22px; }
+    #menu .sound .seg { grid-column: 1 / -1; }
+    #menu .sound label { display: grid; grid-template-columns: 5.5em 1fr; align-items: center; gap: 8px; color: #c8ced8; font-size: 14px; }
+    #menu .sound input { width: 100%; accent-color: #ffd400; }
+    #menu.mute .sound label { opacity: 0.4; }
+    #menu .tune { display: grid; gap: 20px; }
+    #menu .tune label { display: grid; grid-template-columns: 11em 1fr 2.6em; align-items: center; gap: 12px; color: #c8ced8; font-size: 14px; }
+    #menu .tune input { width: 100%; accent-color: #ffd400; }
+    #menu .tune b { color: #ffd400; font-variant-numeric: tabular-nums; text-align: right; }
+    #menu .tune .ends { display: flex; justify-content: space-between; grid-column: 2; color: #6c7686; font-size: 11px; }
+    #menu .tune label { row-gap: 2px; }
+    #menu .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+    #menu .stats div { background: #12161e; border: 1px solid #222a36; border-radius: 8px; padding: 8px 12px; }
+    #menu .stats small { display: block; color: #9aa4b2; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; }
+    #menu .stats b { font-size: 18px; color: #f2f2f2; font-weight: normal; }
+    #menu .stats em { font-style: normal; font-size: 13px; margin-left: 4px; }
+    #menu .stats em.up { color: #41c46a; }
+    #menu .stats em.down { color: #ff6b5b; }
     body:has(#menu.open) #stage > :not(#view) { visibility: hidden; }
     #menu.trial .race-only { display: none; }
     /* contrarreloj: sin tabla de posiciones ni puesto */
@@ -94,12 +145,18 @@
     #menu .car { position: relative; flex: none; width: 34px; height: 14px; border-radius: 7px 3px 3px 7px; background: linear-gradient(var(--c), var(--c)) center / 100% 60% no-repeat, linear-gradient(90deg, #111 0 18%, transparent 18% 72%, #111 72% 100%); }
     #menu .car::after { content: ''; position: absolute; left: 4px; right: 4px; top: 6px; height: 2px; background: var(--a); }
     #menu .car i { position: absolute; left: 14px; top: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--h); z-index: 1; }
-    #menu-start { justify-self: center; font-size: 20px !important; font-weight: bold; padding: 10px 48px !important; background: #d40000 !important; border-color: #ff4b4b !important; }
-    #setup { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.85); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
-    #setup.open { display: flex; }
-    #setup-canvas { background: #fff; cursor: crosshair; max-width: calc(100vw - 32px); border-radius: 4px; }
-    #setup-hint { font-size: 18px; }
-    #setup button { font: inherit; padding: 6px 14px; border-radius: 4px; border: 1px solid #555; background: #222; color: #eee; cursor: pointer; }
+    #menu-start { position: sticky; bottom: 12px; z-index: 2; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); justify-self: center; font-size: 20px !important; font-weight: bold; padding: 10px 56px !important; background: #d40000 !important; border-color: #ff4b4b !important; }
+    #menu-start:hover { background: #ee1111 !important; transform: scale(1.03); }
+    #menu .done { justify-self: center; padding: 9px 40px; font-weight: bold; border-color: #ffd400; color: #ffd400; }
+    @media (max-width: 560px) {
+      #menu .cards, #menu .tiles { grid-template-columns: 1fr; }
+      #menu .card canvas { height: 110px; }
+      #menu .card { padding: 10px 12px; }
+      #menu h1 { font-size: 24px; }
+      #menu .tune label { grid-template-columns: 1fr 2.6em; }
+      #menu .tune label input { grid-column: 1 / -1; grid-row: 2; }
+      #menu .tune .ends { grid-column: 1 / -1; }
+    }
   </style>
 </head>
 <body>
@@ -126,78 +183,128 @@
     <div id="help" class="panel">
       R reiniciar · Esc menú · N sonido<br />
       I/↑/W acelerar · K/↓/S frenar · J L/←→/A D doblar<br />
-      O/X subir cambio · U/Z bajar cambio · M auto/manual · C cámara · G trazada<br />
-      <label for="file">Cargar tu circuito</label> (o arrastrá una imagen)
+      O/X subir cambio · U/Z bajar cambio (caja manual) · C cámara · G trazada
     </div>
     <div id="msg"></div>
     <div id="results" class="panel"></div>
     <div id="replay" class="panel"></div>
   </div>
-  <input id="file" type="file" accept="image/*" />
 
   <div id="menu">
     <div class="menu-box">
-      <h1>Raycast Racer</h1>
-      <section>
-        <h2>Modo</h2>
+      <div class="screen" data-screen="main">
+        <div class="top">
+          <h1>Raycast <span>Racer</span></h1>
+          <button id="sound-toggle" type="button" title="N prende o apaga el sonido"></button>
+        </div>
         <div id="menu-mode" class="seg"></div>
-        <p id="menu-mode-hint" class="hint"></p>
-      </section>
-      <section>
-        <h2>Equipo</h2>
-        <div id="menu-teams" class="teams"></div>
-      </section>
-      <section class="race-only">
-        <h2>Dificultad</h2>
-        <div id="menu-diff" class="seg"></div>
-        <p id="menu-diff-hint" class="hint"></p>
-      </section>
-      <div class="row">
-        <section>
-          <h2>Circuito</h2>
-          <div id="menu-tracks" class="seg"></div>
-          <p class="hint"><label for="file">Cargar tu circuito</label> (o arrastrá una imagen)</p>
-        </section>
-        <section class="race-only">
-          <h2>Vueltas</h2>
-          <div id="menu-laps" class="seg"></div>
-        </section>
+        <div class="cards">
+          <button class="card" type="button" data-go="car">
+            <small>Auto</small>
+            <canvas id="car-thumb"></canvas>
+            <div><b id="card-team"></b><br /><span id="card-drivers"></span> <span class="go">Cambiar ›</span></div>
+          </button>
+          <button class="card" type="button" data-go="track">
+            <small>Circuito</small>
+            <canvas id="track-thumb"></canvas>
+            <div><b id="card-track"></b><br /><span id="card-track-info"></span> <span class="go">Cambiar ›</span></div>
+          </button>
+        </div>
+        <div class="tiles">
+          <button class="tile" type="button" data-go="tune"><b>Puesta a punto</b><span id="tile-tune"></span></button>
+          <button class="tile" type="button" data-go="options"><b>Opciones</b><span id="tile-options"></span></button>
+        </div>
+        <button id="menu-start" type="button">Largar</button>
+        <p class="hint center">Enter para largar · Esc durante la carrera vuelve a este menú</p>
+        <p class="hint center" id="pad-status">Joystick: ninguno (conectalo y apretá cualquier botón)</p>
       </div>
-      <section>
-        <h2>Daños</h2>
-        <div id="menu-damage" class="seg"></div>
-        <p id="menu-damage-hint" class="hint"></p>
-      </section>
-      <section>
-        <h2>Puesta a punto</h2>
-        <div class="tune">
-          <label>Alerón delantero <input id="tune-front" type="range" min="1" max="10" step="1" /><b id="tune-front-v"></b></label>
-          <label>Alerón trasero <input id="tune-rear" type="range" min="1" max="10" step="1" /><b id="tune-rear-v"></b></label>
-          <label>Balance <input id="tune-balance" type="range" min="-5" max="5" step="1" /><b id="tune-balance-v"></b></label>
-          <button id="tune-reset" type="button">La del circuito</button>
-        </div>
-        <p id="tune-hint" class="hint"></p>
-      </section>
-      <section>
-        <h2>Sonido</h2>
-        <div class="sound">
-          <div id="menu-sound" class="seg"></div>
-          <label>General <input id="vol-master" type="range" min="0" max="100" /></label>
-          <label>Motores <input id="vol-engines" type="range" min="0" max="100" /></label>
-          <label>Música <input id="vol-music" type="range" min="0" max="100" /></label>
-        </div>
-        <p class="hint">N prende o apaga el sonido en cualquier momento</p>
-      </section>
-      <button id="menu-start" type="button">Largar</button>
-      <p class="hint center">Enter para largar · Esc durante la carrera vuelve a este menú</p>
-      <p class="hint center" id="pad-status">Joystick: ninguno (conectalo y apretá cualquier botón)</p>
-    </div>
-  </div>
 
-  <div id="setup">
-    <div id="setup-hint"></div>
-    <canvas id="setup-canvas"></canvas>
-    <button id="setup-cancel">Cancelar</button>
+      <div class="screen" data-screen="car">
+        <div class="top"><button class="back" type="button" data-go="main">‹ Volver</button><h2>Elegí tu auto</h2></div>
+        <div class="stage">
+          <canvas id="car-big" title="Arrastrá para girarlo"></canvas>
+          <button class="arrow prev" type="button" data-step="-1" aria-label="Anterior">‹</button>
+          <button class="arrow next" type="button" data-step="1" aria-label="Siguiente">›</button>
+        </div>
+        <div class="about"><b id="car-name"></b><span id="car-drivers"></span></div>
+        <div id="menu-teams" class="teams"></div>
+        <button class="done" type="button" data-go="main">Listo</button>
+        <p class="hint center">← → para cambiar · arrastrá el auto para girarlo · Enter o Esc vuelve</p>
+      </div>
+
+      <div class="screen" data-screen="track">
+        <div class="top"><button class="back" type="button" data-go="main">‹ Volver</button><h2>Elegí el circuito</h2></div>
+        <div class="stage">
+          <canvas id="track-big"></canvas>
+          <button class="arrow prev" type="button" data-step="-1" aria-label="Anterior">‹</button>
+          <button class="arrow next" type="button" data-step="1" aria-label="Siguiente">›</button>
+        </div>
+        <div class="about"><b id="track-name"></b></div>
+        <div id="track-stats" class="stats"></div>
+        <div id="menu-tracks" class="tracks"></div>
+        <button class="done" type="button" data-go="main">Listo</button>
+        <p class="hint center">← → para cambiar · Enter o Esc vuelve</p>
+      </div>
+
+      <div class="screen" data-screen="tune">
+        <div class="top"><button class="back" type="button" data-go="main">‹ Volver</button><h2 id="tune-title">Puesta a punto</h2></div>
+        <div class="panel-box">
+          <div class="tune">
+            <label>Alerón delantero <input id="tune-front" type="range" min="1" max="10" step="1" /><b id="tune-front-v"></b>
+              <span class="ends"><span>menos · más punta</span><span>más · dobla mejor</span></span></label>
+            <label>Alerón trasero <input id="tune-rear" type="range" min="1" max="10" step="1" /><b id="tune-rear-v"></b>
+              <span class="ends"><span>menos · más punta</span><span>más · cola más firme</span></span></label>
+            <label>Balance <input id="tune-balance" type="range" min="-5" max="5" step="1" /><b id="tune-balance-v"></b>
+              <span class="ends"><span>más estable</span><span>dobla más</span></span></label>
+          </div>
+          <div id="tune-stats" class="stats"></div>
+          <p id="tune-hint" class="hint"></p>
+          <div><button id="tune-reset" type="button">Volver a la recomendada</button></div>
+        </div>
+        <button class="done" type="button" data-go="main">Listo</button>
+      </div>
+
+      <div class="screen" data-screen="options">
+        <div class="top"><button class="back" type="button" data-go="main">‹ Volver</button><h2>Opciones</h2></div>
+        <div class="panel-box">
+          <section class="race-only">
+            <h2>Dificultad</h2>
+            <div id="menu-diff" class="seg"></div>
+          </section>
+          <div class="row race-only">
+            <section>
+              <h2>Rivales</h2>
+              <div id="menu-rivals" class="seg"></div>
+            </section>
+            <section>
+              <h2>Vueltas</h2>
+              <div id="menu-laps" class="seg"></div>
+            </section>
+          </div>
+          <section>
+            <h2>Daños</h2>
+            <div id="menu-damage" class="seg"></div>
+            <p id="menu-damage-hint" class="hint"></p>
+          </section>
+          <section>
+            <h2>Caja de cambios</h2>
+            <div id="menu-gearbox" class="seg"></div>
+            <p id="menu-gearbox-hint" class="hint"></p>
+          </section>
+          <section>
+            <h2>Sonido</h2>
+            <div class="sound">
+              <div id="menu-sound" class="seg"></div>
+              <label>General <input id="vol-master" type="range" min="0" max="100" /></label>
+              <label>Motores <input id="vol-engines" type="range" min="0" max="100" /></label>
+              <label>Música <input id="vol-music" type="range" min="0" max="100" /></label>
+            </div>
+            <p class="hint">N prende o apaga el sonido en cualquier momento</p>
+          </section>
+        </div>
+        <button class="done" type="button" data-go="main">Listo</button>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="src/main.js"></script>

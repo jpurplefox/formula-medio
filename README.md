@@ -1,8 +1,7 @@
 # Raycast Racer
 
 Juego de carreras para el navegador con un motor de render "a la antigua" (un rayo por columna de pantalla).
-Los circuitos de F1 se arman con el **trazado real**, sacado de la telemetría (forma, largo de vuelta y alturas);
-también se puede cargar uno propio desde una **imagen del trazado** (línea oscura sobre fondo claro).
+Los circuitos de F1 se arman con el **trazado real**, sacado de la telemetría (forma, largo de vuelta y alturas).
 
 ## Jugar
 
@@ -13,7 +12,11 @@ python3 serve.py
 Abrir http://localhost:8123. Hace falta un servidor local porque el juego lee los píxeles de la imagen.
 `serve.py` le pide al navegador que no cachee, así cada recarga usa la última versión.
 
-Antes de largar hay un **menú** (que se acuerda de lo último que elegiste):
+Antes de largar hay un **menú** (que se acuerda de lo último que elegiste). La pantalla principal muestra el
+modo, el **auto** elegido (el modelo 3D con su decoración) y el **circuito** (su trazado); tocando cada uno se abre su
+pantalla para cambiarlo (con ← → o las flechas, y el auto se puede girar arrastrándolo). La **puesta a punto** y las
+**opciones** (dificultad, vueltas, daños y sonido) van en pantallas aparte; Enter o Esc vuelven a la principal
+(`src/menuview.js` dibuja el auto y los trazados):
 - **Modo:** **Carrera** (22 autos, 2 por equipo, con tabla de posiciones y repetición al final) o **Contrarreloj**
   (solo en pista, vueltas sin límite y un **fantasma** semitransparente que repite tu mejor vuelta, para ver
   dónde ganás o perdés tiempo). En carrera no hay fantasma.
@@ -29,8 +32,13 @@ Antes de largar hay un **menú** (que se acuerda de lo último que elegiste):
   potencia de los rivales: en Fácil, de 0,9 veces los tuyos (el mejor equipo) a 0,85 (el peor); en Experto, de 1,1
   a 1,06. Con la IA de siempre, su ritmo (en Interlagos, de vueltas de ~75–80 s en Fácil a ~69–70 s en Experto).
 - **Circuito:** Interlagos, Monza, Albert Park, Barcelona, Montreal, Spa, Silverstone o Red Bull Ring, todos con
-  alturas reales, o cargar uno propio; y **vueltas** (1, 3, 5 o 10; dificultad y vueltas son sólo para carrera).
-- **Sonido:** prendido o apagado y volumen general, de los motores y de la música del menú.
+  alturas reales; y **vueltas** (1, 3, 5 o 10).
+- **Rivales:** 1, 3, 7, 11 o 21 (la grilla completa). Con menos se toman repartidos a lo largo del campeonato, así
+  sigue habiendo autos rápidos y lentos; con uno solo, es un mano a mano con el del mejor equipo. Dificultad,
+  vueltas y rivales son sólo para carrera.
+- **Caja de cambios:** automática o manual. Se elige acá y queda fija durante la carrera.
+- **Sonido:** prendido o apagado y volumen general, de los motores y de la música del menú. Arranca siempre
+  apagado (se prende con N o desde el menú); los volúmenes sí se recuerdan.
 
 **Enter** larga y **Esc** vuelve al menú durante la carrera.
 
@@ -51,7 +59,7 @@ Controles (flechas, WASD o IJKL): I/↑/W acelerar · K/↓/S frenar y marcha at
 
 **Joystick** (Xbox, PlayStation o cualquiera con el mapeo estándar): gatillo derecho acelera, izquierdo frena y la
 palanca izquierda dobla, los tres **progresivos** (se puede ir a medio acelerador, frenar un poco o doblar apenas).
-RB/R1 sube de marcha, LB/L1 baja, Y/△ cambia la cámara, X/□ la trazada, Start larga o abre el menú, Back/Share
+RB/R1 sube de marcha, LB/L1 baja (con la caja manual), Y/△ cambia la cámara, X/□ la trazada, Start larga o abre el menú, Back/Share
 reinicia y la cruceta elige el auto en la repetición. La palanca tiene zona muerta y dobla menos cerca del centro,
 para corregir fino a alta velocidad. Con teclado los pedales son todo o nada, pero el acelerador tarda 1/3 s en
 abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
@@ -60,7 +68,7 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
 
 1. **Trazado → mapa** (`src/track.js`): los circuitos de F1 traen la línea central en metros
    (`tracks/<id>.layout.json`, ver "Trazados reales desde la telemetría de F1") y se dibujan en una grilla de
-   celdas de 2 m. Un circuito propio sale de una imagen, que se reduce a una grilla (1 celda = `scale` píxeles):
+   celdas de 2 m. Un circuito sin telemetría sale de una imagen, que se reduce a una grilla (1 celda = `scale` píxeles):
    los píxeles oscuros son pista, se queda con el trazado más grande (descarta números y textos), tapa huecos
    chicos y le saca la línea central. En los dos casos la pista es una cinta del ancho del circuito alrededor de
    la línea central (puede variar por tramo); alrededor pone pasto (`runoff` celdas) y después un guardrail.
@@ -179,7 +187,7 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
    `JUEGO=1 DANOS=real GOLPES=1 node rl/race_eval.js models/v5/fase7.json` (cuántos autos rompen algo por carrera
    y qué tan fuertes son los golpes en cada pieza).
 
-Cambios: **O** o **X** sube, **U** o **Z** baja (si estabas en automático, pasa a manual); **M** alterna automática / manual. **C** alterna la vista de cabina (por defecto) y la exterior. **G** muestra u oculta la trazada ideal.
+Cambios, con la caja manual: **O** o **X** sube, **U** o **Z** baja (la caja, automática o manual, se elige en el menú y no se cambia en carrera). **C** alterna la vista de cabina (por defecto) y la exterior. **G** muestra u oculta la trazada ideal.
 Las teclas se reconocen por la letra y por su posición, así funcionan con cualquier distribución de teclado.
 
 ## Sonido
@@ -328,8 +336,8 @@ se pinta sobre el piso), y cambia de color según tu velocidad: **verde** se pue
   turbo compensa casi todo el aire que falta en la altura.
 
 **Puesta a punto** (menú, por circuito): alerón delantero y trasero de 1 a 10 y balance mecánico de -5 a 5 (las
-barras estabilizadoras: pesa en las curvas lentas, donde casi no hay carga aerodinámica). Cada circuito trae la
-que llevan los equipos (`tune` en `tracks/index.js`: Monza 1/1, Barcelona 8/8…) y los rivales usan esa; la tuya
+barras estabilizadoras: pesa en las curvas lentas, donde casi no hay carga aerodinámica). Cada circuito trae una
+recomendada, la que llevan los equipos (`tune` en `tracks/index.js`: Monza 1/1, Barcelona 8/8…) y los rivales usan esa; la tuya
 se recuerda por circuito. Abajo de los controles el menú dice cómo queda el auto: punta, agarre en curva rápida y
 si subvira o sobrevira en curvas lentas y rápidas.
 
@@ -400,10 +408,7 @@ pendientes sean las reales; `elevationScale` en `tracks/index.js` permite exager
 Uno de F1: generar el trazado con `tools/layout.py` y agregar en `tracks/index.js` una entrada con `layout`,
 `widthMeters` y, si hace falta, `rotate`.
 
-Desde el juego: "Cargar tu circuito" o arrastrar una imagen, y marcar con dos clicks la línea de largada
-y el sentido de giro (sin alturas).
-
-O fijo, en `tracks/index.js`: copiar la imagen a `tracks/` y agregar una entrada con el punto de largada
+Desde una imagen del trazado (línea oscura sobre fondo claro), en `tracks/index.js`: copiar la imagen a `tracks/` y agregar una entrada con el punto de largada
 (`start`) y un punto hacia donde se corre (`towards`), ambos en píxeles de la imagen, y opcionalmente el
 perfil de alturas (`elevation`).
 

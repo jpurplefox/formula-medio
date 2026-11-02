@@ -36,11 +36,13 @@ export const TEAMS = [
 // Medido con JUEGO=1 DIFICULTAD=… node rl/race_eval.js: el ganador tarda 260 s (Fácil), 251 s (Normal), 243 s
 // (Difícil) y 237 s (Experto), y un jugador al ritmo más rápido de la IA de siempre en esa dificultad termina
 // 5.º, 4.º, 6.º y 9.º.
+// Con la IA de siempre, en Interlagos: vueltas de ~75 a 80 s (Fácil), ~71,5 a 74 s (Normal), ~69,5 a 72 s (Difícil)
+// y ~69 a 70 s (Experto).
 export const DIFFICULTIES = [
-  { id: 'facil', name: 'Fácil', hint: 'Vueltas de ~75 a 80 s', paces: [0.93, 0.87], setups: [0.83, 0.78] },
-  { id: 'normal', name: 'Normal', hint: 'Vueltas de ~71,5 a 74 s', paces: [0.985, 0.945], setups: [0.89, 0.84] },
-  { id: 'dificil', name: 'Difícil', hint: 'Vueltas de ~69,5 a 72 s', paces: [1.06, 0.98], setups: [0.95, 0.9] },
-  { id: 'experto', name: 'Experto', hint: 'Vueltas de ~69 a 70 s, todos juntos', paces: [1.1, 1.06], setups: [1.02, 0.98] },
+  { id: 'facil', name: 'Fácil', paces: [0.93, 0.87], setups: [0.83, 0.78] },
+  { id: 'normal', name: 'Normal', paces: [0.985, 0.945], setups: [0.89, 0.84] },
+  { id: 'dificil', name: 'Difícil', paces: [1.06, 0.98], setups: [0.95, 0.9] },
+  { id: 'experto', name: 'Experto', paces: [1.1, 1.06], setups: [1.02, 0.98] },
 ];
 
 const spread = ([fast, slow], count) =>
@@ -60,13 +62,19 @@ export const LAP_OPTIONS = [1, 3, 5, 10];
 export const STANDINGS = ['merchoedes', 'hierrari', 'mclarron', 'redtoro', 'allpain', 'haash', 'alfatorito', 'audios',
   'willyams', 'austin', 'cadillaque'];
 
+// Cuántos rivales se pueden elegir en el menú (con todos, la grilla completa)
+export const RIVAL_OPTIONS = [1, 3, 7, 11, 21];
+
 // Los autos de la carrera: 2 por equipo. Vos manejás el primero de tu equipo; los rivales son los otros 21 (tu
-// compañero incluido), ordenados por el campeonato.
+// compañero incluido), ordenados por el campeonato. Con menos (count), se toman repartidos de punta a punta de esa
+// lista, así sigue habiendo autos rápidos y lentos (con uno solo, el del mejor equipo).
 // Cada auto: { team, slot (0 o 1), number }
-export function rivalCars(team) {
+export function rivalCars(team, count = Infinity) {
   const rank = (t) => STANDINGS.indexOf(t.id);
-  return [...TEAMS].sort((a, b) => rank(a) - rank(b))
+  const all = [...TEAMS].sort((a, b) => rank(a) - rank(b))
     .flatMap((t) => (t === team ? [car(t, 1)] : [car(t, 0), car(t, 1)]));
+  if (count >= all.length) return all;
+  return Array.from({ length: count }, (_, i) => all[count > 1 ? Math.round((i * (all.length - 1)) / (count - 1)) : 0]);
 }
 
 export const car = (team, slot) => {

@@ -464,20 +464,27 @@ out vec4 outColor;
 void main() { outColor = vec4(0.0, 0.0, 0.0, uAlpha); }`;
 
 export class GLRenderer {
-  // devuelve null si el navegador no tiene WebGL 2 (o algo falla): ahí se usa el renderer de siempre
-  static create(canvas, w, h) {
+  // devuelve null si el navegador no tiene WebGL 2 (o algo falla): ahí se usa el renderer de siempre.
+  // modelsOnly: sólo para mostrar autos sueltos (showcase), sin circuito y con el fondo transparente
+  static create(canvas, w, h, { modelsOnly = false } = {}) {
     try {
-      const gl = canvas.getContext('webgl2', { antialias: true, alpha: false, depth: true });
-      return gl ? new GLRenderer(canvas, gl, w, h) : null;
+      const gl = canvas.getContext('webgl2', { antialias: true, alpha: modelsOnly, depth: true });
+      return gl ? new GLRenderer(canvas, gl, w, h, modelsOnly) : null;
     } catch (err) {
       console.warn('WebGL no disponible:', err);
       return null;
     }
   }
 
-  constructor(canvas, gl, w, h) {
+  constructor(canvas, gl, w, h, modelsOnly = false) {
     this.gl = gl;
     this.canvas = canvas;
+    this.texCache = new WeakMap();
+    this.modelCache = new WeakMap();
+    if (modelsOnly) {
+      this.models = this.program(MODEL_VS, MODEL_FS);
+      return;
+    }
     // píxeles virtuales (los del resto del juego) y la resolución real de la imagen
     this.w = w;
     this.h = h;
@@ -519,8 +526,6 @@ export class GLRenderer {
     this.macro = this.texture(Uint8Array.from(macro.data, (v) => Math.round(((v - 0.88) / 0.24) * 255)), macro.size, macro.size, { format: 'R8' });
 
     this.trackData = new WeakMap();
-    this.texCache = new WeakMap();
-    this.modelCache = new WeakMap();
   }
 
   setZoom(zoom) {
@@ -878,47 +883,13 @@ export class GLRenderer {
     this.camera(mp, cam, dirX, dirY, horizon);
     const sorted = [...models.filter((m) => (m.alpha ?? 1) >= 1), ...models.filter((m) => (m.alpha ?? 1) < 1)];
     for (const m of sorted) {
-      const g = this.modelGeometry(m.model);
       const alpha = m.alpha ?? 1;
       if (alpha < 1) {
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         gl.depthMask(false);
       }
-      const ca = Math.cos(m.angle), sa = Math.sin(m.angle);
-      const cp = Math.cos(m.pitch || 0), sp = Math.sin(m.pitch || 0);
-      gl.uniform3f(mp.u.uPos, m.x, m.y, m.z);
-      gl.uniform3f(mp.u.uF, ca * cp, sa * cp, sp);
-      gl.uniform3f(mp.u.uR, -sa, ca, 0);
-      gl.uniform3f(mp.u.uU, -ca * sp, -sa * sp, cp);
-      gl.uniform4f(mp.u.uBody, Math.cos(m.roll || 0), Math.sin(m.roll || 0), Math.cos(m.dive || 0), Math.sin(m.dive || 0));
-      gl.uniform1f(mp.u.uK, 1 / m.meters);
-      gl.uniform2f(mp.u.uSpin, Math.cos(m.spin || 0), Math.sin(m.spin || 0));
-      const st = m.steer || 0; // ángulo de las ruedas delanteras (rad)
-      gl.uniform2f(mp.u.uSteer, Math.cos(st), Math.sin(st));
-      gl.uniform2f(mp.u.uHead, Math.cos(m.head || 0), Math.sin(m.head || 0));
-      gl.uniform3f(mp.u.uNeck, g.neck.x, g.neck.y, g.neck.z);
-      const [hr, hp] = m.headTilt || [0, 0];
-      gl.uniform4f(mp.u.uHeadTilt, Math.cos(hr), Math.sin(hr), Math.cos(hp), Math.sin(hp));
-      gl.uniform2f(mp.u.uPaddle, m.paddle?.[0] || 0, m.paddle?.[1] || 0);
-      gl.uniform3f(mp.u.uColumn, g.column.x, g.column.y, g.column.z);
-      gl.uniform3f(mp.u.uColumnAxis, g.column.ax, g.column.ay, g.column.az);
-      gl.uniform2f(mp.u.uTurn, Math.cos(m.wheelTurn || 0), Math.sin(m.wheelTurn || 0));
-      const wv = new Float32Array(16);
-      g.wheels.forEach((w, i) => wv.set([w.x, w.y, w.z, w.front ? w.pivot : 0], i * 4));
-      gl.uniform4fv(mp.u.uWheels, wv);
-      gl.uniform1f(mp.u.uAlpha, alpha);
-      gl.uniform1f(mp.u.uWear, m.wear ?? 1);
-      gl.uniform1f(mp.u.uShine, m.shine ?? 0);
-      gl.uniform1f(mp.u.uGlossK, m.gloss ?? 1);
-      // primero se crean todas (crear una la deja atada a la unidad activa) y después se atan
-      const texs = [1, 2, 3, 4, 5].map((k) => g.texs[k] && this.glTexture(g.texs[k]));
-      if (g.texs[6]) texs.push(this.screenTexture(m.screen));
-      ['uLivery', 'uCarbon', 'uSidewall', 'uTread', 'uRim', 'uScreen'].forEach((name, i) => {
-        if (texs[i]) this.bind(i, texs[i], mp, name);
-      });
-      gl.bindVertexArray(g.vao);
-      gl.drawArrays(gl.TRIANGLES, 0, m.hide === 'helmet' ? g.helmetStart : g.count);
+      this.drawModel(m, alpha);
       if (alpha < 1) {
         gl.disable(gl.BLEND);
         gl.depthMask(true);
@@ -965,6 +936,85 @@ export class GLRenderer {
       gl.depthMask(true);
       gl.disable(gl.BLEND);
     }
+  }
+
+  // un auto (m: { model, x, y, z, angle, pitch, roll, ... } como en render), con el programa de los autos ya en uso.
+  // basis: [F, R, U] para orientarlo de cualquier forma (si no, sale de angle y pitch)
+  drawModel(m, alpha = 1, basis = null) {
+    const gl = this.gl, mp = this.models;
+    const g = this.modelGeometry(m.model);
+    const ca = Math.cos(m.angle || 0), sa = Math.sin(m.angle || 0);
+    const cp = Math.cos(m.pitch || 0), sp = Math.sin(m.pitch || 0);
+    const [F, R, U] = basis ?? [[ca * cp, sa * cp, sp], [-sa, ca, 0], [-ca * sp, -sa * sp, cp]];
+    gl.uniform3f(mp.u.uPos, m.x, m.y, m.z);
+    gl.uniform3f(mp.u.uF, ...F);
+    gl.uniform3f(mp.u.uR, ...R);
+    gl.uniform3f(mp.u.uU, ...U);
+    gl.uniform4f(mp.u.uBody, Math.cos(m.roll || 0), Math.sin(m.roll || 0), Math.cos(m.dive || 0), Math.sin(m.dive || 0));
+    gl.uniform1f(mp.u.uK, 1 / m.meters);
+    gl.uniform2f(mp.u.uSpin, Math.cos(m.spin || 0), Math.sin(m.spin || 0));
+    const st = m.steer || 0; // ángulo de las ruedas delanteras (rad)
+    gl.uniform2f(mp.u.uSteer, Math.cos(st), Math.sin(st));
+    gl.uniform2f(mp.u.uHead, Math.cos(m.head || 0), Math.sin(m.head || 0));
+    gl.uniform3f(mp.u.uNeck, g.neck.x, g.neck.y, g.neck.z);
+    const [hr, hp] = m.headTilt || [0, 0];
+    gl.uniform4f(mp.u.uHeadTilt, Math.cos(hr), Math.sin(hr), Math.cos(hp), Math.sin(hp));
+    gl.uniform2f(mp.u.uPaddle, m.paddle?.[0] || 0, m.paddle?.[1] || 0);
+    gl.uniform3f(mp.u.uColumn, g.column.x, g.column.y, g.column.z);
+    gl.uniform3f(mp.u.uColumnAxis, g.column.ax, g.column.ay, g.column.az);
+    gl.uniform2f(mp.u.uTurn, Math.cos(m.wheelTurn || 0), Math.sin(m.wheelTurn || 0));
+    const wv = new Float32Array(16);
+    g.wheels.forEach((w, i) => wv.set([w.x, w.y, w.z, w.front ? w.pivot : 0], i * 4));
+    gl.uniform4fv(mp.u.uWheels, wv);
+    gl.uniform1f(mp.u.uAlpha, alpha);
+    gl.uniform1f(mp.u.uWear, m.wear ?? 1);
+    gl.uniform1f(mp.u.uShine, m.shine ?? 0);
+    gl.uniform1f(mp.u.uGlossK, m.gloss ?? 1);
+    // primero se crean todas (crear una la deja atada a la unidad activa) y después se atan
+    const texs = [1, 2, 3, 4, 5].map((k) => g.texs[k] && this.glTexture(g.texs[k]));
+    if (g.texs[6]) texs.push(this.screenTexture(m.screen));
+    ['uLivery', 'uCarbon', 'uSidewall', 'uTread', 'uRim', 'uScreen'].forEach((name, i) => {
+      if (texs[i]) this.bind(i, texs[i], mp, name);
+    });
+    gl.bindVertexArray(g.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, m.hide === 'helmet' ? g.helmetStart : g.count);
+  }
+
+  // Un auto solo, como en una vitrina (el menú): ocupa todo el canvas (de w × h píxeles), sobre fondo transparente.
+  // La cámara queda quieta, mirando hacia +x a la altura del auto; el auto gira (yaw) y se inclina hacia la cámara
+  // (pitch), así se lo ve desde arriba sin cambiar la proyección del juego (que no cabecea). dist: de la cámara al
+  // auto (m); P: distancia focal (píxeles). Devuelve cómo se proyecta un punto del auto, para dibujar su sombra.
+  showcase(model, { yaw = 0, pitch = 0, dist = 14, P, z0 = 0.45 }, w, h) {
+    const gl = this.gl, mp = this.models;
+    if (this.canvas.width !== w || this.canvas.height !== h) Object.assign(this.canvas, { width: w, height: h });
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    gl.useProgram(mp.p);
+    gl.uniform3f(mp.u.uCam, 0, 0, 0);
+    gl.uniform2f(mp.u.uDir, 1, 0);
+    gl.uniform1f(mp.u.uP, P);
+    gl.uniform1f(mp.u.uHorizon, h / 2);
+    gl.uniform2f(mp.u.uView, w, h);
+    // girar alrededor del eje vertical y después inclinar la parte de arriba hacia la cámara (alrededor de y)
+    const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const tilt = ([x, y, z]) => [x * cp - z * sp, y, x * sp + z * cp];
+    const basis = [[cy, sy, 0], [-sy, cy, 0], [0, 0, 1]].map(tilt);
+    // el punto z0 del auto (sobre su centro) queda en el centro de la imagen
+    const c = tilt([0, 0, z0]);
+    const pos = [dist - c[0], -c[1], -c[2]];
+    this.drawModel({ model, x: pos[0], y: pos[1], z: pos[2], meters: 1 }, 1, basis);
+    gl.bindVertexArray(null);
+    return ([x, y, z]) => {
+      const [F, R, U] = basis;
+      const wx = pos[0] + F[0] * x + R[0] * y + U[0] * z, wy = pos[1] + F[1] * x + R[1] * y + U[1] * z;
+      const wz = pos[2] + F[2] * x + R[2] * y + U[2] * z;
+      return [w / 2 + (wy * P) / wx, h / 2 - (wz * P) / wx];
+    };
   }
 
   // cinta de la ayuda de trazada: dos vértices por celda de la línea central, uno a cada lado de la trazada
