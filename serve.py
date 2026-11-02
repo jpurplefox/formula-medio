@@ -25,6 +25,10 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
 
+# el menú pide los trazados de todos los circuitos a la vez: con la cola de conexiones de siempre (5), macOS corta
+# las que no entran
+http.server.ThreadingHTTPServer.request_queue_size = 64
+
 port = int(sys.argv[1]) if len(sys.argv) > 1 else 8123
 print(f"Raycast Racer en http://localhost:{port}")
 http.server.ThreadingHTTPServer(("", port), NoCacheHandler).serve_forever()
