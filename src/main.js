@@ -14,6 +14,7 @@ import { DIFFICULTIES, LAP_OPTIONS, TEAMS, car as teamCar, gridOrder, rivalCars,
 import { EngineAudio } from './audio.js';
 import { NeuralDriver, Policy } from './policy.js';
 import { RubberMap } from './rubber.js';
+import { DESIGNS } from './teamliveries.js';
 
 const VIEW_W = 960;
 const VIEW_H = 540;
@@ -106,7 +107,7 @@ const teamModels = new Map();
 // sharp: la decoración con el doble de resolución, para el auto propio (desde la cabina se ve de muy cerca)
 const modelFor = ({ team: t, slot, number }, sharp = 1) => {
   const key = `${t.id}/${slot}/${sharp}`;
-  if (!teamModels.has(key)) teamModels.set(key, carModel(t.color, t.helmet, number, t.accent, TCAM[slot], { sharp }));
+  if (!teamModels.has(key)) teamModels.set(key, carModel(t.color, t.helmet, number, t.accent, TCAM[slot], { sharp, design: DESIGNS[t.id] }));
   return teamModels.get(key);
 };
 let wheelSpin = 0; // cuánto giraron las ruedas (rad), para animarlas
