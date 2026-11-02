@@ -2,7 +2,7 @@ import { TRACKS } from '../tracks/index.js';
 import { loadImage, buildTrack, buildTrackFromLayout, sampleField, stationAt, T } from './track.js';
 import { Renderer, rgb } from './renderer.js';
 import { GLRenderer } from './glrenderer.js';
-import { Car, DEFAULT_PROFILE, LAUNCH_WINDOW, isSolid, lookup, slipstream, wheelAngle } from './car.js';
+import { Car, DEFAULT_PROFILE, LAUNCH_WINDOW, isSolid, limitsOn, slipstream, wheelAngle } from './car.js';
 import { racingLine } from './racingline.js';
 import { boardTexture, treeTexture } from './sprites.js';
 import { carModel, STEERING, TCAM, WHEEL_R } from './carmodel.js';
@@ -15,6 +15,8 @@ import { EngineAudio } from './audio.js';
 import { NeuralDriver, Policy } from './policy.js';
 import { RubberMap } from './rubber.js';
 import { DESIGNS } from './teamliveries.js';
+import { airDensity, carLimits, DEFAULT_TUNE, GRAVITY } from './dynamics.js';
+import { DAMAGE_LEVELS, damaged, NO_DAMAGE } from './damage.js';
 
 const VIEW_W = 960;
 const VIEW_H = 540;
@@ -32,7 +34,7 @@ const BUZZ = 0.05; // rad: lo que tiembla el volante en el pasto (en los pianos,
 // adelante al frenar (veces el rolido y el cabeceo de la suspensión)
 const HEAD_ROLL = 6;
 const HEAD_DIVE = 5;
-const CAR_PROFILE = 'cars/f1-2023.json'; // generado con tools/car_profile.py
+const CAR_PROFILE = 'cars/f1-2025.json'; // ajustado con tools/calibrate.js
 const SHIFT_LIGHTS = 15;
 const REPLAY_DELAY = 6; // segundos de resultado antes de que empiece la repetición
 // semáforo, como en la F1: se prenden 5 luces rojas, una por segundo, y después de una espera al azar se apagan todas
@@ -42,8 +44,10 @@ const LIGHT_HOLD = [0.4, 2.6]; // cuánto quedan las 5 prendidas antes de apagar
 const SETTINGS_KEY = 'raycast-racer-settings';
 
 // lo que se elige en el menú (se recuerda en el navegador): modo (carrera o contrarreloj), equipo, dificultad,
-// circuito y vueltas
-const settings = { mode: 'race', team: 'hierrari', difficulty: 'dificil', track: TRACKS[0].id, laps: 3, sound: true, volMaster: 0.8, volEngines: 1, volMusic: 0.6 };
+// circuito, vueltas, daños (damage.js) y tu puesta a punto en cada circuito donde la cambiaste (tunes)
+const settings = { mode: 'race', team: 'hierrari', difficulty: 'dificil', track: TRACKS[0].id, laps: 3, damage: 'real', sound: true, volMaster: 0.8, volEngines: 1, volMusic: 0.6, tunes: {} };
+// ?prueba: las teclas 1 a 9 rompen piezas de tu auto y 0 lo arregla, para probar cómo maneja con daños
+const DAMAGE_TEST = new URLSearchParams(location.search).has('prueba');
 const MODES = [
   { value: 'race', label: 'Carrera', hint: 'Contra 21 rivales (2 autos por equipo), con repetición al final' },
   { value: 'trial', label: 'Contrarreloj', hint: 'Solo en pista, contra el fantasma de tu mejor vuelta' },
@@ -94,7 +98,7 @@ const ctx = overlay.getContext('2d');
 const $ = (id) => document.getElementById(id);
 const hud = {
   speed: $('speed'), gear: $('gear'), rpm: $('rpm'), mode: $('mode'), lights: $('lights'),
-  help: $('help'), lap: $('lap'), pos: $('pos'), results: $('results'), replay: $('replay'), tower: $('tower'), stage: $('stage'), time: $('time'), last: $('last'), best: $('best'), msg: $('msg'),
+  help: $('help'), damage: $('damage'), lap: $('lap'), pos: $('pos'), results: $('results'), replay: $('replay'), tower: $('tower'), stage: $('stage'), time: $('time'), last: $('last'), best: $('best'), msg: $('msg'),
 };
 for (let i = 0; i < SHIFT_LIGHTS; i++) hud.lights.appendChild(document.createElement('i'));
 const minimap = $('minimap');
@@ -191,6 +195,67 @@ function press(names, repeat = false) {
     manualGears = game.car.manual = !game.car.manual;
     flash(manualGears ? 'Caja manual' : 'Caja automática');
   }
+  if (DAMAGE_TEST) testDamage(game.car, names);
+}
+
+// Teclas de prueba (?prueba): cada una rompe un poco más una pieza; 0 arregla todo
+const TEST_KEYS = {
+  Digit1: ['frontWing', 0, 'Alerón delantero izquierdo'], Digit2: ['frontWing', 1, 'Alerón delantero derecho'],
+  Digit3: ['rearWing', 0, 'Alerón trasero izquierdo'], Digit4: ['rearWing', 1, 'Alerón trasero derecho'],
+  Digit5: ['sidepod', 0, 'Pontón izquierdo'], Digit6: ['sidepod', 1, 'Pontón derecho'],
+  Digit7: ['tyre', 2, 'Pinchazo trasera izquierda'], Digit8: ['suspension', 1, 'Suspensión delantera derecha'],
+  Digit9: ['suspension', 0, 'Dirección rota'],
+};
+function testDamage(car, names) {
+  if (names.includes('Digit0')) {
+    car.damage = NO_DAMAGE;
+    flash('Auto arreglado');
+    return;
+  }
+  const key = names.find((n) => TEST_KEYS[n]);
+  if (!key) return;
+  const [part, i, label] = TEST_KEYS[key], d = car.damage;
+  const step = part === 'tyre' ? 1e-3 : key === 'Digit9' ? 1 : 0.35;
+  const value = Math.min(1, d[part][i] + step);
+  car.damage = { ...d, [part]: d[part].map((x, k) => (k === i ? value : x)), retired: key === 'Digit9' ? label : d.retired };
+  flash(part === 'tyre' ? label : `${label} ${Math.round(value * 100)} %`);
+}
+
+// Daños de tu auto: aparece sólo si hay algo roto. El auto visto desde arriba (la trompa para arriba), cada pieza
+// de su color según cuánto está rota, y abajo la lista.
+const DAMAGE_PARTS = [
+  // pieza, índice, rectángulo en m (x adelante de 2,8 a -2,8; y a la derecha de -1 a 1), nombre
+  ['frontWing', 0, [2.25, 2.8, -0.95, 0], 'Alerón del. izq.'], ['frontWing', 1, [2.25, 2.8, 0, 0.95], 'Alerón del. der.'],
+  ['suspension', 0, [1.3, 2.0, -1.0, -0.6], 'Susp. del. izq.'], ['suspension', 1, [1.3, 2.0, 0.6, 1.0], 'Susp. del. der.'],
+  ['sidepod', 0, [-1.3, 1.0, -0.8, -0.3], 'Pontón izq.'], ['sidepod', 1, [-1.3, 1.0, 0.3, 0.8], 'Pontón der.'],
+  ['suspension', 2, [-2.05, -1.35, -1.0, -0.6], 'Susp. tras. izq.'], ['suspension', 3, [-2.05, -1.35, 0.6, 1.0], 'Susp. tras. der.'],
+  ['rearWing', 0, [-2.8, -2.3, -0.5, 0], 'Alerón tras. izq.'], ['rearWing', 1, [-2.8, -2.3, 0, 0.5], 'Alerón tras. der.'],
+];
+const WHEEL_NAMES = ['del. izq.', 'del. der.', 'tras. izq.', 'tras. der.'];
+const damageColor = (x) => (x <= 0 ? '#3a4150' : x < 0.34 ? '#ffd400' : x < 0.67 ? '#ff8a00' : '#ff3b30');
+let damageClock = 0;
+function drawDamage(g, time) {
+  if (time - damageClock < 200) return;
+  damageClock = time;
+  const d = g.car.damage, show = damaged(d);
+  hud.damage.classList.toggle('show', show);
+  if (!show) return;
+  const X = (y) => 30 + y * 20, Y = (x) => 60 - x * 20;
+  const rect = ([x0, x1, y0, y1], fill, extra = '') => `<rect x="${X(y0)}" y="${Y(x1)}" width="${(y1 - y0) * 20}" height="${(x1 - x0) * 20}" rx="1.5" fill="${fill}"${extra}/>`;
+  let svg = rect([1.0, 2.25, -0.25, 0.25], '#3a4150') + rect([-2.3, 1.0, -0.3, 0.3], '#3a4150'); // trompa y chasis
+  const lines = [];
+  for (const [part, i, box, name] of DAMAGE_PARTS) {
+    const x = d[part][i];
+    const flat = part === 'suspension' && d.tyre[i] > 0;
+    // rota del todo: sólo el contorno, como si faltara; con la goma pinchada, un borde rojo cortado
+    const outline = ' fill-opacity="0" stroke="#ff3b30" stroke-width="1.2" stroke-dasharray="2 1.5"';
+    svg += rect(box, damageColor(x), x >= 1 ? outline : flat ? ' stroke="#ff3b30" stroke-width="1.5" stroke-dasharray="2 1.5"' : '');
+    if (x > 0) lines.push(`<span style="color:${damageColor(x)}">${name} ${x >= 1 ? '<b>roto</b>' : `${Math.round(x * 100)} %`}</span>`);
+  }
+  d.tyre.forEach((t, i) => t > 0 && lines.push(`<span style="color:#ff2a2a">Pinchazo ${WHEEL_NAMES[i]}</span>`));
+  if (d.retired) lines.push(`<b>Abandono: ${d.retired.toLowerCase()}</b>`);
+  const html = `<svg viewBox="0 0 60 120" aria-label="Daños del auto">${svg}</svg><div>${lines.join('<br>')}</div>`;
+  if (hud.damage.innerHTML !== html) hud.damage.innerHTML = html;
 }
 addEventListener('keyup', (e) => {
   for (const n of held.get(e.code) ?? keyNames(e)) keys.delete(n);
@@ -292,11 +357,11 @@ function resetGame(track) {
   // grilla: los rivales adelante (los mejores autos tienden a largar primero) y vos al final
   const slots = gridSlots(track, others.length + 1), grid = gridOrder(others.length);
   const spawn = slots[others.length];
-  const car = Object.assign(new Car(spawn.x, spawn.y, spawn.angle, carProfile), { manual: manualGears });
+  const car = Object.assign(new Car(spawn.x, spawn.y, spawn.angle, carProfile), { manual: manualGears, ownTune: settings.tunes[settings.track] ?? null }).placeOn(track);
   const mine = teamCar(team, 0);
   const player = { name: 'Vos', team: team.name, code: 'VOS', number: mine.number, color: team.color, car, driver: null, race: newRace(track, car), model: modelFor(mine, 2), dist: 0, gridBack: spawn.back };
   const rivals = others.map((o, i) => {
-    const t = o.team, s = slots[grid[i]], c = new Car(s.x, s.y, s.angle, carProfile);
+    const t = o.team, s = slots[grid[i]], c = new Car(s.x, s.y, s.angle, carProfile).placeOn(track);
     // con la red, la dificultad es el auto: más o menos agarre y potencia
     if (neuralPolicy) c.setup = setups[i];
     return {
@@ -308,7 +373,7 @@ function resetGame(track) {
     };
   }).sort((a, b) => a.gridBack - b.gridBack); // en orden de grilla: así los muestra la tabla antes de largar
   const wearRate = 1 / (wearLaps({ trial, laps: settings.laps }) * track.length * track.meters);
-  for (const e of [...rivals, player]) e.car.wearRate = wearRate;
+  for (const e of [...rivals, player]) Object.assign(e.car, { wearRate, damageLevel: settings.damage });
   game = {
     track,
     car,
@@ -345,10 +410,10 @@ function resetGame(track) {
   }
   towerClock = 0;
   game.lightsTotal = game.countdown = LIGHT_FIRST + 4 * LIGHT_GAP + LIGHT_HOLD[0] + Math.random() * (LIGHT_HOLD[1] - LIGHT_HOLD[0]);
-  if (!guides.has(track)) guides.set(track, racingLine(track, carProfile));
+  if (!guides.has(track)) guides.set(track, racingLine(track, limitsOn(carProfile, track)));
   // la goma arranca con la franja tenue de otra categoría sobre la trazada y la carrera la va marcando
   game.rubber = new RubberMap(track, guides.get(track).offset);
-  if (!aiLines.has(track)) aiLines.set(track, racingLine(track, carProfile, { brakeUse: AI_BRAKE_USE }));
+  if (!aiLines.has(track)) aiLines.set(track, racingLine(track, limitsOn(carProfile, track), { brakeUse: AI_BRAKE_USE }));
   if (!tvCams.has(track)) tvCams.set(track, tvCameras(track));
   hud.stage.classList.remove('replay');
   hud.stage.classList.toggle('trial', trial);
@@ -374,7 +439,7 @@ function paintGuide(guide, track, car) {
     const [a, b] = t < 1 ? [GUIDE_GREEN, GUIDE_YELLOW] : [GUIDE_YELLOW, GUIDE_RED];
     const f = t < 1 ? t : t - 1;
     color[u] = rgb((a[0] + (b[0] - a[0]) * f) | 0, (a[1] + (b[1] - a[1]) * f) | 0, (a[2] + (b[2] - a[2]) * f) | 0);
-    v = v > target ? target : Math.min(target, Math.sqrt(v * v + 2 * lookup(car.profile.accel, v) * ds));
+    v = v > target ? target : Math.min(target, Math.sqrt(v * v + 2 * Math.max(0, car.limits.accel(v)) * ds));
   }
 }
 
@@ -407,13 +472,14 @@ function update(dt) {
         g.awaitLaunch = false;
       } else g.car.rev(dt, false);
     }
-    const cars = g.entries.map((e) => e.car);
+    // los rivales que abandonaron y ya sacaron de la pista no cuentan más (vos quedás donde paraste)
+    const cars = g.entries.filter((e) => e === g.player || !e.car.gone).map((e) => e.car);
     for (const c of cars) c.draft = slipstream(c, cars, g.track.meters);
     if (!g.awaitLaunch) g.car.update(dt, input, g.track);
     const line = aiLines.get(g.track);
     const states = g.entries.map((e) => carState(g.track, e));
     g.entries.forEach((e, i) => {
-      if (!e.driver) return;
+      if (!e.driver || e.car.gone) return;
       // cada rival tarda un poquito en reaccionar al semáforo
       if (e.react > 0) {
         e.react -= dt;
@@ -421,11 +487,12 @@ function update(dt) {
         if (e.react <= 0) e.car.launch();
         return;
       }
-      const others = states.filter((_, j) => j !== i);
+      const others = states.filter((_, j) => j !== i && !g.entries[j].car.gone);
       e.car.update(dt, e.driver.drive(dt, g.track, line, states[i], others), g.track);
       e.spin = (e.spin + (e.car.speed * dt) / WHEEL_R) % (Math.PI * 2);
     });
     collideCars(cars, g.track, isSolid);
+    for (const e of g.entries) if (e.car.damage.retired && e.out === undefined) retire(g, e);
     for (const e of g.entries) {
       e.head = turnHead(e.head, lookYaw(e.car, cars, g.track), dt);
       const c = e.car;
@@ -511,6 +578,15 @@ function raceLine(g, e) {
   r.prevAlong = along;
 }
 
+// abandono: queda último (entre los que abandonaron, el que más anduvo) y, si sos vos, la carrera terminó
+function retire(g, e) {
+  e.out = g.raceTime;
+  if (e === g.player) {
+    flash(`Abandono: ${e.car.damage.retired.toLowerCase()}`);
+    g.replayIn = REPLAY_DELAY;
+  } else flash(`Abandona ${e.code}`);
+}
+
 function finish(g, e) {
   if (g.finished.some((f) => f.entry === e)) return;
   g.finished.push({ entry: e, time: g.raceTime });
@@ -532,7 +608,7 @@ function raceDistance(g, e) {
 function raceOrder(g) {
   const progress = (e) => {
     const done = g.finished.findIndex((f) => f.entry === e);
-    return done >= 0 ? 1e9 - done : raceDistance(g, e);
+    return done >= 0 ? 1e9 - done : raceDistance(g, e) - (e.out !== undefined ? 1e8 : 0);
   };
   return [...g.entries].sort((a, b) => progress(b) - progress(a));
 }
@@ -569,7 +645,7 @@ function drawTower(g, time) {
   towerClock = time;
   const order = raceOrder(g);
   const rows = order.map((e, i) => {
-    const gap = i === 0 ? (g.finished.some((f) => f.entry === e) ? 'Final' : 'Líder') : interval(g, order[i - 1], e);
+    const gap = e.out !== undefined ? 'AB' : i === 0 ? (g.finished.some((f) => f.entry === e) ? 'Final' : 'Líder') : interval(g, order[i - 1], e);
     const me = e === g.player ? ' class="me"' : '';
     return `<tr${me}><td>${i + 1}</td><td><i style="background:${e.color}"></i>${e.code}<small>${e.number}</small></td><td>${gap}</td></tr>`;
   });
@@ -579,13 +655,13 @@ function drawTower(g, time) {
 
 // tabla de resultados: aparece cuando terminás
 function drawResults(g) {
-  const show = g.finished.some((f) => f.entry === g.player);
+  const show = g.finished.some((f) => f.entry === g.player) || g.player.out !== undefined;
   hud.results.classList.toggle('show', show);
   if (!show) return;
-  const first = g.finished[0].time;
+  const first = g.finished[0]?.time;
   const rows = raceOrder(g).map((e, i) => {
     const f = g.finished.find((x) => x.entry === e);
-    const gap = !f ? 'en pista' : i === 0 ? fmt(f.time) : `+${(f.time - first).toFixed(3)}`;
+    const gap = e.out !== undefined ? 'Abandono' : !f ? 'en pista' : i === 0 ? fmt(f.time) : `+${(f.time - first).toFixed(3)}`;
     const me = e === g.player ? ' class="me"' : '';
     return `<tr${me}><td>${i + 1}</td><td><i style="background:${e.color}"></i>${e.name}<small>${e.team}</small></td><td>${gap}</td></tr>`;
   });
@@ -683,7 +759,7 @@ async function drawReplay() {
     return {
       model: e.model, x: p.x, y: p.y, z: heightAt(p.x, p.y), angle: p.angle, meters: M,
       pitch: Math.atan(p.slope), roll: r.bodies[k].roll, dive: r.bodies[k].dive,
-      steer: wheelAngle(p.steer, p.speed), spin: (p.dist / WHEEL_R) % (Math.PI * 2), head: r.heads[k], ...tyres(g, p.dist), shadow: true,
+      steer: wheelAngle(p.steer, p.speed, g.car.limits), spin: (p.dist / WHEEL_R) % (Math.PI * 2), head: r.heads[k], ...tyres(g, p.dist), shadow: true,
       wheelTurn: p.steer * STEERING.turn, headTilt: headTilt(r.bodies[k]), paddle: r.paddles[k].pull,
     };
   });
@@ -833,12 +909,12 @@ async function draw(time) {
 
   // rivales
   for (const e of g.entries) {
-    if (!e.driver) continue;
+    if (!e.driver || e.car.gone) continue;
     const c = e.car;
     models.push({
       model: e.model, x: c.x, y: c.y, z: heightAt(c.x, c.y), angle: c.angle, meters: M,
       pitch: Math.atan(c.slope), roll: e.body?.roll, dive: e.body?.dive,
-      steer: wheelAngle(c.steer, c.speed, c.profile), spin: e.spin, head: e.head, ...tyres(g, e.dist, c.wear), shadow: true,
+      steer: wheelAngle(c.steer, c.speed, c.limits), spin: e.spin, head: e.head, ...tyres(g, e.dist, c.wear), shadow: true,
       wheelTurn: c.steer * STEERING.turn + buzz(c), headTilt: headTilt(e.body), paddle: e.paddles?.pull,
     });
   }
@@ -884,7 +960,7 @@ async function draw(time) {
     // la carrocería rola y cabecea sobre la suspensión; desde la cabina no, porque la cámara va pegada a ella
     // (ahí el cabeceo mueve la vista: ver cam.pitch)
     roll: cockpitView ? 0 : g.player.body?.roll, dive: cockpitView ? 0 : g.player.body?.dive,
-    steer: wheelAngle(car.steer, car.speed, car.profile), spin: wheelSpin, head: g.player.head, ...tyres(g, g.player.dist, car.wear), shadow: true, hide: cockpitView ? 'helmet' : null,
+    steer: wheelAngle(car.steer, car.speed, car.limits), spin: wheelSpin, head: g.player.head, ...tyres(g, g.player.dist, car.wear), shadow: true, hide: cockpitView ? 'helmet' : null,
     // el volante gira con la dirección y muestra la marcha; desde la cabina la pintura de tan cerca brilla menos
     wheelTurn: g.player.wheelTurn + buzz(car), screen: cockpit.screen(car), gloss: cockpitView ? 0.35 : 1,
     headTilt: headTilt(g.player.body), paddle: g.player.paddles?.pull,
@@ -911,6 +987,7 @@ async function draw(time) {
   hud.lap.textContent = g.trial ? g.lap + 1 : `${Math.min(g.laps, g.lap + 1)}/${g.laps}`;
   hud.pos.textContent = `${raceOrder(g).indexOf(g.player) + 1}/${g.entries.length}`;
   drawTower(g, time);
+  drawDamage(g, time);
   drawResults(g);
   hud.time.textContent = g.running ? fmt(g.lapTime) : fmt(null);
   hud.last.textContent = fmt(g.last);
@@ -983,7 +1060,7 @@ function drawMinimap(g) {
     const i = Math.min(Math.floor(g.lapTime / GHOST_STEP), g.ghost.length / 2 - 1) * 2;
     dot(g.ghost[i] * k, g.ghost[i + 1] * k, '#3aa0ff');
   }
-  for (const e of g.entries) if (e.driver) dot(e.car.x * k, e.car.y * k, e.color, 3);
+  for (const e of g.entries) if (e.driver && !e.car.gone) dot(e.car.x * k, e.car.y * k, e.color, 3);
   dot(g.car.x * k, g.car.y * k, g.player.color);
 }
 
@@ -1124,10 +1201,51 @@ function renderMenu() {
   if (customTrack) tracks.push({ value: 'custom', label: customTrack.name });
   choices($('menu-tracks'), tracks, 'track');
   choices($('menu-laps'), LAP_OPTIONS.map((n) => ({ value: n, label: String(n) })), 'laps');
+  choices($('menu-damage'), DAMAGE_LEVELS.map((l) => ({ value: l.id, label: l.name })), 'damage');
+  $('menu-damage-hint').textContent = (DAMAGE_LEVELS.find((l) => l.id === settings.damage) || DAMAGE_LEVELS[2]).hint;
   choices($('menu-sound'), [{ value: true, label: 'Sí' }, { value: false, label: 'No' }], 'sound', applySound);
   for (const [id, key] of VOLUME_SLIDERS) $(id).value = Math.round(settings[key] * 100);
   menu.classList.toggle('mute', !settings.sound);
+  renderTune();
 }
+
+// Puesta a punto: la tuya en este circuito o, si no la cambiaste, la que llevan los equipos ahí (tracks/index.js;
+// los rivales usan siempre esa). Abajo, cómo queda el auto: punta, agarre en curva rápida y balance.
+const TUNE_SLIDERS = [['tune-front', 'front'], ['tune-rear', 'rear'], ['tune-balance', 'balance']];
+const trackDef = () => TRACKS.find((t) => t.id === settings.track);
+const trackTune = () => trackDef()?.tune ?? DEFAULT_TUNE;
+const myTune = () => settings.tunes[settings.track] ?? trackTune();
+const BALANCE_WORDS = [[-0.03, 'subvira'], [0.03, 'neutro'], [Infinity, 'sobrevira']];
+function renderTune() {
+  const t = myTune(), own = settings.tunes[settings.track];
+  for (const [id, key] of TUNE_SLIDERS) {
+    $(id).value = t[key];
+    $(id + '-v').textContent = key === 'balance' && t[key] > 0 ? `+${t[key]}` : t[key];
+  }
+  $('tune-reset').disabled = !own;
+  const lim = carLimits(carProfile, t, airDensity(trackDef()?.altitude ?? 0));
+  // con más agarre adelante que atrás la cola se abre (sobrevira); con menos, la trompa no dobla (subvira)
+  const balance = (v) => {
+    const [f, r] = lim.axles(v);
+    return BALANCE_WORDS.find(([max]) => f / r - 1 < max)[1];
+  };
+  $('tune-hint').textContent = `Punta ${Math.round(lim.topSpeed * 3.6)} km/h · curva rápida ${(lim.lateral(70) / GRAVITY).toFixed(1)} g`
+    + ` · en curva lenta ${balance(25)}, en rápida ${balance(70)}`
+    + (own ? '' : ' · la que llevan los equipos acá');
+}
+for (const [id, key] of TUNE_SLIDERS) {
+  $(id).addEventListener('input', (e) => {
+    settings.tunes = { ...settings.tunes, [settings.track]: { ...myTune(), [key]: +e.target.value } };
+    saveSettings();
+    renderTune();
+  });
+}
+$('tune-reset').addEventListener('click', () => {
+  const { [settings.track]: _, ...rest } = settings.tunes;
+  settings.tunes = rest;
+  saveSettings();
+  renderTune();
+});
 
 // volúmenes: general, motores y música (de 0 a 100 en el menú)
 const VOLUME_SLIDERS = [['vol-master', 'volMaster'], ['vol-engines', 'volEngines'], ['vol-music', 'volMusic']];

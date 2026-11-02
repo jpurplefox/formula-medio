@@ -5,7 +5,7 @@
 
 import { readFileSync } from 'node:fs';
 import { Driver, gridSlots } from '../src/ai.js';
-import { Car, DEFAULT_PROFILE } from '../src/car.js';
+import { Car, DEFAULT_PROFILE, limitsOn } from '../src/car.js';
 import { Policy, NeuralDriver } from '../src/policy.js';
 import { racingLine } from '../src/racingline.js';
 import { sampleField, stationAt } from '../src/track.js';
@@ -13,7 +13,7 @@ import { loadTrack, TRACK_IDS } from './tracks.js';
 
 const [file, ids] = process.argv.slice(2);
 const policy = new Policy(JSON.parse(readFileSync(file, 'utf8')));
-const profile = JSON.parse(readFileSync(new URL('../cars/f1-2023.json', import.meta.url), 'utf8')) ?? DEFAULT_PROFILE;
+const profile = JSON.parse(readFileSync(new URL('../cars/f1-2025.json', import.meta.url), 'utf8')) ?? DEFAULT_PROFILE;
 const DT = 1 / 60, LAPS = 3, MAX_TIME = 400;
 
 function run(track, drive) {
@@ -45,9 +45,9 @@ const fmt = ({ laps, grass, hits }) =>
 const scores = [];
 for (const id of ids ? ids.split(',') : TRACK_IDS) {
   const track = loadTrack(id);
+  const line = racingLine(track, limitsOn(profile, track), { brakeUse: 0.93 });
   const neural = new NeuralDriver(policy);
-  const nn = run(track, (car) => neural.drive(DT, track, null, { car }));
-  const line = racingLine(track, profile, { brakeUse: 0.93 });
+  const nn = run(track, (car) => neural.drive(DT, track, line, { car }));
   const old = new Driver(1.06, 1);
   let st = 0;
   const ref = run(track, (car) => {

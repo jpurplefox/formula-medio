@@ -66,7 +66,7 @@ class RaceStats(BaseCallback):
                 self.logger.record(f"fin/{kind}", self.ends.count(kind) / len(self.ends))
             self.logger.record("episodio/metros", float(np.mean(self.dist)))
         for name, eps in self.scenarios.items():
-            for key in ("passes", "passed", "hits", "faults", "slow", "danger", "weaves", "rescues", "r"):
+            for key in ("passes", "passed", "hits", "faults", "slow", "danger", "weaves", "rescues", "retired", "r"):
                 self.logger.record(f"{name}/{key}", float(np.mean([e.get(key, 0) for e in eps])))
             self.logger.record(f"{name}/metros", float(np.mean([e["dist"] for e in eps])))
         self.logger.record("tiempo/pasos_por_segundo", self.num_timesteps / (time.time() - self.start))
@@ -195,6 +195,10 @@ def main():
                    help="toques provocados permitidos, como fracción de los de la fase 7 (0.5: la mitad); ver ContactBudget")
     p.add_argument("--rivals-boost", type=float, default=0,
                    help="rivales más rápidos: esta fracción más de agarre y potencia (p. ej. 0.08), y la IA de siempre a más ritmo")
+    p.add_argument("--damage", default="off", choices=["off", "reduced", "real", "mix"],
+                   help="daños en las carreras (src/damage.js); mix: cada escenario con uno de los tres al azar")
+    p.add_argument("--damaged-starts", type=float, default=0,
+                   help="parte de los agentes que arranca con algo roto (con daños prendidos), p. ej. 0.15")
     p.add_argument("--seed", type=int, default=0)
     args = p.parse_args()
 
@@ -208,7 +212,7 @@ def main():
         mix = {k: float(w) for k, w in (part.split(":") for part in args.mix.split(","))}
         opponents = [f for f in args.opponents.split(",") if f]
         config |= dict(agents=args.agents, mix=mix, opponents=opponents, raceSpread=args.race_spread or args.spread,
-                       boost=args.rivals_boost)
+                       boost=args.rivals_boost, damage=args.damage, damagedStarts=args.damaged_starts)
     env = RacingVecEnv(args.workers, args.envs, args.tracks.split(","), args.seed,
                        mode="race" if args.race else "solo", config=config)
     # recompensas escaladas para que el crítico (la red que estima el valor) no se desajuste; las observaciones

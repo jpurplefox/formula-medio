@@ -10,11 +10,18 @@
 //               Los lugares sin rival quedan en cero (en la primera etapa, solo en pista, siempre)
 //   ruedas      el agarre de cada rueda según lo que pisa (1 en el asfalto, menos en el pasto), así sabe de qué
 //               lado se fue. Va al final: las redes de antes, que no lo tienen, leen sólo lo de adelante
+//   límites     lo que la puesta a punto y el aire del circuito le cambian al auto (dynamics.js): agarre en curva
+//               lenta y rápida, balance entre ejes en cada una (subvirante o sobrevirante) y velocidad punta,
+//               respecto del auto con los alerones al medio a nivel del mar. También al final, por lo mismo
+//   daños       cuánto tiene roto de cada pieza (damage.js: alerones, pontones, suspensiones, gomas) y el nivel de
+//               daños de la carrera (0 no, 0,5 reducidos, 1 reales). Al final, por lo mismo
 //
 // Todo va más o menos entre -1 y 1. Las distancias de la pista se miden en metros, así sirve en cualquier
 // circuito sin importar el tamaño de sus celdas.
 
 import { SETUP_KEYS } from './car.js';
+import { carLimits, DEFAULT_TUNE, SEA_AIR } from './dynamics.js';
+import { NO_DAMAGE } from './damage.js';
 import { halfWidthAt, sampleField, stationAt } from './track.js';
 
 export const RAY_ANGLES = [-90, -60, -40, -28, -18, -11, -6, -3, -1, 0, 1, 3, 6, 11, 18, 28, 40, 60, 90]
@@ -31,8 +38,12 @@ export const SETUP_SPREAD = { power: 0.2, topSpeed: 0.2, grip: 0.2, brakes: 0.2,
 const POSITION_VALUES = 5;
 const OPPONENT_VALUES = 7;
 export const WHEEL_VALUES = 4;
+export const LIMIT_VALUES = 5;
+export const DAMAGE_VALUES = 15;
 export const OBS_SIZE = CAR_VALUES + SETUP_VALUES + POSITION_VALUES + LOOK_AHEAD.length + RAY_ANGLES.length
-  + OPPONENTS * OPPONENT_VALUES + WHEEL_VALUES;
+  + OPPONENTS * OPPONENT_VALUES + WHEEL_VALUES + LIMIT_VALUES + DAMAGE_VALUES;
+const DAMAGE_LEVEL = { off: 0, reduced: 0.5, real: 1 };
+const SLOW = 25, FAST = 70; // m/s: una curva lenta (90 km/h) y una rápida (250 km/h)
 
 const RAY_MAX = 200; // m
 const OPPONENT_RANGE = 120; // m
@@ -156,6 +167,33 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
 
   // agarre de cada rueda: delantera izquierda, derecha, trasera izquierda, derecha
   for (const g of car.wheelGrip ?? [1, 1, 1, 1]) put(g);
+
+  // límites del auto con su puesta a punto y el aire
+  for (const x of limitValues(car)) put(x);
+
+  // daños: alerón delantero, trasero y pontones (izquierda, derecha), suspensiones y gomas (DI, DD, TI, TD) y nivel
+  const d = car.damage ?? NO_DAMAGE;
+  for (const part of [d.frontWing, d.rearWing, d.sidepod, d.suspension, d.tyre]) for (const x of part) put(x);
+  put(DAMAGE_LEVEL[car.damageLevel] ?? 0);
+  return out;
+}
+
+// Los límites del auto respecto del de referencia, más o menos entre -1 y 1 (se calculan una vez por límites)
+const refs = new WeakMap(), summaries = new WeakMap();
+function limitValues(car) {
+  const lim = car.limits;
+  if (summaries.has(lim)) return summaries.get(lim);
+  if (!refs.has(car.profile)) refs.set(car.profile, carLimits(car.profile, DEFAULT_TUNE, SEA_AIR));
+  const ref = refs.get(car.profile);
+  const balance = (l, v) => { const [f, r] = l.axles(v); return f / r - 1; };
+  const out = [
+    (lim.lateral(SLOW) / ref.lateral(SLOW) - 1) / 0.2,
+    (lim.lateral(FAST) / ref.lateral(FAST) - 1) / 0.2,
+    (balance(lim, SLOW) - balance(ref, SLOW)) / 0.1,
+    (balance(lim, FAST) - balance(ref, FAST)) / 0.1,
+    (lim.topSpeed / ref.topSpeed - 1) / 0.1,
+  ];
+  summaries.set(lim, out);
   return out;
 }
 

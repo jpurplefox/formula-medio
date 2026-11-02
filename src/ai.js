@@ -149,8 +149,7 @@ export class Driver {
     const fwd = dx * ca + dy * sa, right = -dx * sa + dy * ca;
     const dist = Math.hypot(dx, dy) * M || 1;
     const curv = (2 * Math.sin(Math.atan2(right, fwd))) / dist; // curvatura para llegar al punto (1/m)
-    const p = car.profile;
-    const grip = p.lateralGrip.base + p.lateralGrip.perV2 * v * v;
+    const grip = car.limits.lateral(v);
     const yawMax = Math.min(MAX_YAW, grip / Math.max(v, 1)) * Math.min(1, v / 4) || 0.01;
     const steer = Math.max(-1, Math.min(1, (v * curv) / yawMax));
 

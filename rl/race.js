@@ -29,19 +29,26 @@
 // Cada auto es un poco distinto (motor, punta, agarre, frenos, desgaste: ± spread) y las gomas pueden estar
 // gastadas; la red lo recibe como entradas. Con autos distintos, pasar y defender aparecen solos.
 //
-// Si un agente se queda en el pasto, quieto o va para atrás, termina su episodio y vuelve a la pista ahí mismo;
-// la carrera sigue. Al terminar el tiempo del escenario termina la carrera para todos.
+// Si un agente se queda en el pasto, quieto o va para atrás, vuelve a la pista ahí mismo con un castigo; la carrera
+// sigue. Al terminar el tiempo del escenario termina la carrera para todos.
+//
+// Daños (damage): 'off', 'reduced', 'real' o 'mix' (cada escenario con uno de los tres al azar), para todos los autos
+// de la carrera. Con damagedStarts, esa parte de los agentes arranca con algo roto (damage.js: randomDamage), así
+// aprende a manejar un auto roto. Si un agente abandona, termina su episodio con un castigo (y no suma más: el
+// resto de la carrera lo perdió) y vuelve a la pista con el auto arreglado; los rivales que abandonan, cuando
+// quedan parados, salen de la pista.
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Driver } from '../src/ai.js';
-import { Car, DEFAULT_PROFILE, isSolid, SAME_SETUP, slipstream } from '../src/car.js';
+import { Car, DEFAULT_PROFILE, isSolid, limitsOn, SAME_SETUP, slipstream } from '../src/car.js';
 import { collideCars } from '../src/collision.js';
 import { NeuralDriver, Policy } from '../src/policy.js';
 import { racingLine } from '../src/racingline.js';
 import { OBS_SIZE, observe, stationAt, trackHeading } from '../src/sensors.js';
 import { halfWidthAt, sampleField } from '../src/track.js';
-import { pointOnCenter, randomSetup, randomTyres, rng } from './env.js';
+import { pointOnCenter, randomSetup, randomTune, randomTyres, rng } from './env.js';
+import { NO_DAMAGE, randomDamage } from '../src/damage.js';
 import { loadTrack } from './tracks.js';
 
 const DT = 1 / 60;
@@ -72,6 +79,8 @@ const WEAVE_MOVE = 1.5; // m de costado: desde acá cuenta como movimiento
 // amontonamiento: la red se ahorra los toques y el peligro que venían, y aprende a frenar en vez de salir de ahí
 const GRASS_LIMIT = 6, STUCK_LIMIT = 6, BACKWARDS_LIMIT = 30, RESCUE_PENALTY = 4;
 const STALL_PENALTY = 1; // por segundo casi quieto
+const RETIRE_PENALTY = 10; // por abandonar
+const DAMAGE_LEVELS = ['off', 'reduced', 'real'];
 // Piso de ritmo: con la pista libre adelante, ir por debajo de PACE_FLOOR de la velocidad de la trazada se castiga
 // (hasta PACE_PENALTY por segundo, proporcional a lo que le falta). Así frenar nunca es "seguro" sin motivo; con
 // alguien adelante no aplica, porque seguir a uno más lento está bien
@@ -90,7 +99,7 @@ export const SCENARIOS = { solo: 2400, pack: 300, start: 500, chase: 600, race: 
 
 let profile = DEFAULT_PROFILE;
 try {
-  profile = JSON.parse(readFileSync(fileURLToPath(new URL('../cars/f1-2023.json', import.meta.url)), 'utf8'));
+  profile = JSON.parse(readFileSync(fileURLToPath(new URL('../cars/f1-2025.json', import.meta.url)), 'utf8'));
 } catch {
   // sin el perfil medido, el de por defecto
 }
@@ -100,7 +109,7 @@ const tracks = new Map();
 function getTrack(id) {
   if (!tracks.has(id)) {
     const track = loadTrack(id);
-    const line = racingLine(track, profile, { brakeUse: 0.93 });
+    const line = racingLine(track, limitsOn(profile, track), { brakeUse: 0.93 });
     tracks.set(id, { track, line, corners: corners(track, line) });
   }
   return tracks.get(id);
@@ -137,7 +146,9 @@ export class RaceSim {
   // agents: cuántos autos aprenden; opponents: redes que manejan algunos rivales; mix: peso de cada escenario
   // (en pasos de entrenamiento, no en carreras); spread: variación de los autos (raceSpread en carrera completa)
   constructor({ trackIds, agents = 4, seed = 1, opponents = [], mix = { race: 1 }, spread = 0.02, raceSpread = spread,
-    rewards = {}, contactScale = 1, progress = 0, boost = 0 }) {
+    rewards = {}, contactScale = 1, progress = 0, boost = 0, damage = 'off', damagedStarts = 0 }) {
+    this.damage = damage;
+    this.damagedStarts = damagedStarts;
     // boost: los rivales con esa fracción más de agarre y potencia, y la IA de siempre a más ritmo (de 1 a 1,1):
     // para seguir mejorando el ritmo detrás de autos más rápidos que uno mismo
     this.boost = boost;
@@ -193,7 +204,8 @@ export class RaceSim {
     const id = this.trackIds[Math.floor(r() * this.trackIds.length)];
     const { track, line, corners } = getTrack(id);
     const scenario = this.pickScenario();
-    Object.assign(this, { id, track, line, corners, scenario, steps: 0, time: 0, length: SCENARIOS[scenario] });
+    const damage = this.damage === 'mix' ? DAMAGE_LEVELS[Math.floor(r() * 3)] : this.damage;
+    Object.assign(this, { id, track, line, corners, scenario, damage, steps: 0, time: 0, length: SCENARIOS[scenario] });
     const L = track.length, M = track.meters, half = track.halfWidth * M;
     const corner = () => corners.length ? corners[Math.floor(r() * corners.length)] : r() * L;
     const spread = scenario === 'race' ? this.raceSpread : this.spread;
@@ -296,7 +308,12 @@ export class RaceSim {
       if (s.kind === 'bot' && !s.setup && this.boost) {
         car.setup = { ...car.setup, grip: car.setup.grip * (1 + this.boost), power: car.setup.power * (1 + this.boost) };
       }
+      // la puesta a punto y el aire varían sólo para los que aprenden: los demás manejan para la del circuito
+      if (s.kind === 'agent') randomTune(car, r, track);
+      else car.placeOn(track);
       randomTyres(car, r, track);
+      car.damageLevel = damage;
+      if (s.kind === 'agent' && damage !== 'off' && r() < this.damagedStarts) car.damage = randomDamage(r, damage);
       const e = { kind: s.kind, car, u: stationAt(track, car.x, car.y), start: wrap(s.u - front, L) * M, dist: 0, lastHit: -1e9, lastGrass: -1e9 };
       if (s.kind === 'bot') {
         e.driver = s.driver;
@@ -418,31 +435,46 @@ export class RaceSim {
         e.stuck += dt;
       } else e.stuck = 0;
       e.steps++;
-      const rescue = e.grass > GRASS_LIMIT || e.stuck > STUCK_LIMIT || e.back > BACKWARDS_LIMIT;
+      const retired = !!car.damage.retired;
+      if (retired) rewards[k] -= RETIRE_PENALTY;
+      const rescue = !retired && (e.grass > GRASS_LIMIT || e.stuck > STUCK_LIMIT || e.back > BACKWARDS_LIMIT);
       if (rescue) {
         rewards[k] -= RESCUE_PENALTY;
         e.rescues++;
       }
       e.ret += rewards[k];
       const info = { lap: laps[k], track: this.id };
-      if (truncated) {
-        info.episode = { r: e.ret, l: e.steps, dist: e.epDist, track: this.id, scenario: this.scenario,
+      if (truncated || retired) {
+        info.episode = { r: e.ret, l: e.steps, dist: e.epDist, track: this.id, scenario: this.scenario, damage: this.damage, retired,
           passes: e.passes, passed: e.passed, hits: e.hits, faults: e.faults, slow: e.slow, danger: e.danger, weaves: e.weaves, rescues: e.rescues };
       }
-      return { obs: null, reward: rewards[k], done: false, truncated, info, e, rescue };
+      return { obs: null, reward: rewards[k], done: retired, truncated: truncated && !retired, info, e, rescue, retired };
     });
-    // los rescatados vuelven a la pista donde estaban, a un costado y despacio, sin cortar el episodio
+    // los rescatados vuelven a la pista donde estaban, a un costado y despacio, sin cortar el episodio (con su auto
+    // como estaba); los que abandonaron, igual pero arreglados y con un episodio nuevo
     for (const r of results) {
       const e = r.e;
-      if (r.rescue) {
+      if (r.retired) r.obs = this.observe(e);
+      if (r.rescue || r.retired) {
         const old = e.car;
         const side = (this.rand() < 0.5 ? -1 : 1) * halfWidthAt(track, e.u) * M * 0.6;
         e.car = this.place(e.u, side, 10);
-        Object.assign(e.car, { setup: old.setup, wear: old.wear, wearRate: old.wearRate });
+        Object.assign(e.car, { setup: old.setup, wear: old.wear, wearRate: old.wearRate, ownTune: old.ownTune, ownAir: old.ownAir,
+          damageLevel: old.damageLevel, damage: r.retired ? NO_DAMAGE : old.damage });
+        e.car.placeOn(track);
         Object.assign(e, { grass: 0, stuck: 0, back: 0 });
+        if (r.retired) this.newEpisode(e);
       }
+      if (r.retired) r.next = this.observe(e);
+      else r.obs = this.observe(e);
       delete r.rescue;
-      r.obs = this.observe(e);
+      delete r.retired;
+    }
+    // los rivales que abandonaron y ya quedaron parados salen de la carrera (y de las pasadas por confirmar)
+    if (this.cars.some((e) => e.car.gone)) {
+      this.cars = this.cars.filter((e) => !e.car.gone);
+      this.ahead = new Map();
+      this.pending = this.pending.filter((p) => !p.passer.car.gone && !p.passed.car.gone);
     }
     return results;
   }

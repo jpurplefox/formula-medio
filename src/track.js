@@ -1,6 +1,8 @@
 // Convierte la imagen de un trazado en un mapa de celdas, al estilo Wolfenstein 3D:
 // cada celda es pasto, pista o muro, y además tiene altura y (si corresponde) piano.
 
+import { airDensity, DEFAULT_TUNE } from './dynamics.js';
+
 export const T = { GRASS: 0, ROAD: 1, WALL: 3 };
 export const KERB_W = 0.9; // ancho del piano (en celdas)
 
@@ -94,6 +96,8 @@ function buildTrackFromPath(path, W, H, def, elevation, start) {
     W, H, meters, runoff, halfWidth, halfWidths, tiles, road, sdf, station, lat, length, kerbLeft, kerbRight, height,
     path: { n: path.n, x: path.x, y: path.y, st }, // línea central: puntos y su posición acumulada
     progress, maxProgress, line, spawn, trees, boards, scale: def.scale ?? 3, name: def.name,
+    // el aire (más arriba, menos denso) y la puesta a punto por defecto de los autos ahí (dynamics.js)
+    air: airDensity(def.altitude ?? 0), tune: def.tune ?? DEFAULT_TUNE,
   };
 }
 
