@@ -74,11 +74,15 @@ export function randomSetup(rand, spread) {
 // Puesta a punto al azar para la red que aprende: alerones hasta TUNE_SPREAD puntos más o menos que los del circuito
 // y balance de -TUNE_SPREAD a TUNE_SPREAD; y, una de cada AIR_CHANCE veces, el aire de otra altura (hasta la de
 // México). Así aprende a manejar autos con más o menos apoyo, más o menos punta y subvirantes o sobrevirantes.
-const TUNE_SPREAD = 3, AIR_CHANCE = 1 / 3, MAX_ALTITUDE = 2300;
-export function randomTune(car, rand, track) {
-  const t = track.tune, wing = (x) => Math.max(WING_MIN, Math.min(WING_MAX, x + Math.round((2 * rand() - 1) * TUNE_SPREAD)));
-  car.ownTune = { front: wing(t.front), rear: wing(t.rear), balance: Math.round((2 * rand() - 1) * TUNE_SPREAD) };
-  car.ownAir = rand() < AIR_CHANCE ? airDensity(rand() * MAX_ALTITUDE) : null;
+// Con spread 0, la del circuito y su aire.
+export const TUNE_SPREAD = 3;
+const AIR_CHANCE = 1 / 3, MAX_ALTITUDE = 2300;
+export function randomTune(car, rand, track, spread = TUNE_SPREAD) {
+  if (spread) {
+    const t = track.tune, wing = (x) => Math.max(WING_MIN, Math.min(WING_MAX, x + Math.round((2 * rand() - 1) * spread)));
+    car.ownTune = { front: wing(t.front), rear: wing(t.rear), balance: Math.round((2 * rand() - 1) * spread) };
+    car.ownAir = rand() < AIR_CHANCE ? airDensity(rand() * MAX_ALTITUDE) : null;
+  }
   car.placeOn(track);
 }
 
@@ -90,7 +94,8 @@ export function randomTyres(car, rand, track) {
 
 export class RaceEnv {
   // rewards: escala del castigo por pasto y por muro (la fase 1 del tercer intento los hace más caros)
-  constructor({ trackIds, seed = 1, spread = 0.02, rewards = {} }) {
+  constructor({ trackIds, seed = 1, spread = 0.02, rewards = {}, tuneSpread = TUNE_SPREAD }) {
+    this.tuneSpread = tuneSpread;
     this.rewards = { grass: 1, wall: 1, ...rewards };
     this.trackIds = trackIds;
     this.spread = spread;
@@ -118,7 +123,7 @@ export class RaceEnv {
     car.rpm = Math.max(4000, car.rpmAt(car.speed, car.gear));
     car.throttle = 0.5;
     car.setup = randomSetup(this.rand, this.spread);
-    randomTune(car, this.rand, track);
+    randomTune(car, this.rand, track, this.tuneSpread);
     randomTyres(car, this.rand, track);
     this.car = car;
     this.u = stationAt(track, car.x, car.y);

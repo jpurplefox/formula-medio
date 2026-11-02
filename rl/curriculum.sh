@@ -42,9 +42,12 @@ run() { # fase, opciones de train.py
 }
 
 if [ "$FROM" -le 1 ]; then
-  # manejar dentro de la pista: pasto y muro más caros, sin sobre-optimizar la vuelta
+  # manejar dentro de la pista: pasto y muro más caros, sin sobre-optimizar la vuelta. Se corta a los 15 M de 40 M
+  # (con la tasa de aprendizaje todavía alta): una vuelta razonable con margen para cambiar. Terminada del todo
+  # quedaba más rápida pero tan cerrada en su forma de manejar que con rivales no aprendía a no chocar (v6: la
+  # fase 2 corta desde los 15 M tocó 31 veces por auto; desde los 40 M, 38–40); la velocidad llega después
   echo "$(date +%H:%M) $N fase1"
-  $PY rl/train.py --steps 40000000 --name "${N}fase1" --rewards grass:3,wall:2 > "rl/runs/${N}fase1.log" 2>&1
+  $PY rl/train.py --steps 40000000 --stop-at 15000000 --name "${N}fase1" --rewards grass:3,wall:2 > "rl/runs/${N}fase1.log" 2>&1
   $PY rl/export.py "rl/runs/${N}fase1/model.zip" "$OUT/fase1.json"
 fi
 if [ "$FROM" -le 2 ]; then

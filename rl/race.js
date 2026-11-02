@@ -47,7 +47,7 @@ import { NeuralDriver, Policy } from '../src/policy.js';
 import { racingLine } from '../src/racingline.js';
 import { OBS_SIZE, observe, stationAt, trackHeading } from '../src/sensors.js';
 import { halfWidthAt, sampleField } from '../src/track.js';
-import { pointOnCenter, randomSetup, randomTune, randomTyres, rng } from './env.js';
+import { pointOnCenter, randomSetup, randomTune, randomTyres, rng, TUNE_SPREAD } from './env.js';
 import { NO_DAMAGE, randomDamage } from '../src/damage.js';
 import { loadTrack } from './tracks.js';
 
@@ -146,7 +146,8 @@ export class RaceSim {
   // agents: cuántos autos aprenden; opponents: redes que manejan algunos rivales; mix: peso de cada escenario
   // (en pasos de entrenamiento, no en carreras); spread: variación de los autos (raceSpread en carrera completa)
   constructor({ trackIds, agents = 4, seed = 1, opponents = [], mix = { race: 1 }, spread = 0.02, raceSpread = spread,
-    rewards = {}, contactScale = 1, progress = 0, boost = 0, damage = 'off', damagedStarts = 0 }) {
+    rewards = {}, contactScale = 1, progress = 0, boost = 0, damage = 'off', damagedStarts = 0, tuneSpread = TUNE_SPREAD }) {
+    this.tuneSpread = tuneSpread;
     this.damage = damage;
     this.damagedStarts = damagedStarts;
     // boost: los rivales con esa fracción más de agarre y potencia, y la IA de siempre a más ritmo (de 1 a 1,1):
@@ -309,7 +310,7 @@ export class RaceSim {
         car.setup = { ...car.setup, grip: car.setup.grip * (1 + this.boost), power: car.setup.power * (1 + this.boost) };
       }
       // la puesta a punto y el aire varían sólo para los que aprenden: los demás manejan para la del circuito
-      if (s.kind === 'agent') randomTune(car, r, track);
+      if (s.kind === 'agent') randomTune(car, r, track, this.tuneSpread);
       else car.placeOn(track);
       randomTyres(car, r, track);
       car.damageLevel = damage;

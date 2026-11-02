@@ -83,6 +83,19 @@ class RaceStats(BaseCallback):
         self.logger.record("tiempo/pasos_por_segundo", self.num_timesteps / (time.time() - self.start))
 
 
+class StopAt(BaseCallback):
+    """Corta el entrenamiento a los `steps` pasos, con la tasa de aprendizaje bajando como si fuera a durar todo
+    --steps: la red queda a mitad de camino, todavía aprendiendo fuerte (la fase 1, que no se cierre en una sola
+    forma de manejar antes de ver rivales)."""
+
+    def __init__(self, steps: int):
+        super().__init__()
+        self.steps = steps
+
+    def _on_step(self) -> bool:
+        return self.num_timesteps < self.steps
+
+
 class CriticWarmup(BaseCallback):
     """Al cambiar la recompensa (de la etapa 1 a la 2), el crítico estima mal cuánto vale cada situación y esos
     errores desarman la parte que maneja. Durante los primeros `steps` pasos sólo aprende el crítico."""
@@ -210,13 +223,17 @@ def main():
                    help="daños en las carreras (src/damage.js); mix: cada escenario con uno de los tres al azar")
     p.add_argument("--damaged-starts", type=float, default=0,
                    help="parte de los agentes que arranca con algo roto (con daños prendidos), p. ej. 0.15")
+    p.add_argument("--tune-spread", type=int, default=3,
+                   help="puntos de alerón y balance al azar alrededor de la puesta del circuito (0: la del circuito y su aire)")
+    p.add_argument("--stop-at", type=int,
+                   help="corta a estos pasos, con la tasa de aprendizaje bajando como si durara --steps (ver StopAt)")
     p.add_argument("--seed", type=int, default=0)
     args = p.parse_args()
 
     torch.set_num_threads(4)  # el resto de los núcleos quedan para los procesos de Node
     out = RUNS / args.name
     out.mkdir(parents=True, exist_ok=True)
-    config = dict(spread=args.spread)
+    config = dict(spread=args.spread, tuneSpread=args.tune_spread)
     if args.rewards:
         config["rewards"] = {k: float(w) for k, w in (part.split(":") for part in args.rewards.split(","))}
     if args.race:
@@ -276,6 +293,8 @@ def main():
         callbacks.append(CriticWarmup(args.critic_warmup))
     if args.race:
         callbacks.append(PhaseProgress(args.steps))
+    if args.stop_at:
+        callbacks.append(StopAt(args.stop_at))
     if args.contact_budget:
         # arranca desde la escala con que terminó la fase anterior, si la hay
         prev = Path(args.resume).parent / "contacto.txt" if args.resume else None
