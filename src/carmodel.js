@@ -124,8 +124,8 @@ function loft(rings, color, capColor = color, side = null) {
   return { verts, faces };
 }
 
-// tubo que pasa por los puntos de path: de sección cuadrada (medio lado t) o, con sides > 4, redondo (radio t).
-// flat < 1 lo aplasta en la dirección "hacia arriba" (sección ovalada, como un perfil)
+// tubo que pasa por los puntos de path: de sección cuadrada (medio lado t) o, con sides > 4, redondo (radio t; con
+// un radio por punto, se afina o se ensancha a lo largo). flat < 1 lo aplasta en la dirección "hacia arriba" (sección ovalada, como un perfil)
 function tube(path, t, color, sides = 4, flat = 1) {
   const rings = path.map((p, i) => {
     const a = path[Math.max(0, i - 1)], b = path[Math.min(path.length - 1, i + 1)];
@@ -140,7 +140,8 @@ function tube(path, t, color, sides = 4, flat = 1) {
     const corners = sides > 4
       ? [...Array(sides).keys()].map((i) => [Math.cos((i / sides) * Math.PI * 2), Math.sin((i / sides) * Math.PI * 2)])
       : [[1, 1], [-1, 1], [-1, -1], [1, -1]];
-    return corners.map(([s, q]) => [p[0] + (ux * s + vx * q * flat) * t, p[1] + (uy * s + vy * q * flat) * t, p[2] + (uz * s + vz * q * flat) * t]);
+    const r = Array.isArray(t) ? t[i] : t;
+    return corners.map(([s, q]) => [p[0] + (ux * s + vx * q * flat) * r, p[1] + (uy * s + vy * q * flat) * r, p[2] + (uz * s + vz * q * flat) * r]);
   });
   return loft(rings, color);
 }
@@ -332,7 +333,8 @@ function helmetAt(phi, w, out = 1) {
 export const STEERING = { x: 0.3, z: 0.6, tilt: 0.35, turn: 1 }; // turn: rad que gira con el volante a fondo
 export const SCREEN_TEX = { size: 1, screen: true }; // la textura la pone el juego (m.screen)
 const GRIP = rgb(20, 20, 22), BUTTONS = ['#e23b3b', '#2c9be0', '#f2c230', '#41c46a'];
-function steeringParts() {
+// suit: color del buzo (los antebrazos); glove: el de los guantes
+function steeringParts(suit, glove) {
   const { x: px, z: pz, tilt } = STEERING, c = Math.cos(tilt), s = Math.sin(tilt);
   // el eje apunta del volante hacia el piloto: así, doblando a la derecha (giro +), la parte de arriba va a la derecha
   const column = { x: px, y: 0, z: pz, ax: -c, ay: 0, az: s };
@@ -353,8 +355,9 @@ function steeringParts() {
         const t = (i / 10) * Math.PI * 2;
         return [r * Math.cos(t), k * y + r * Math.sin(t), z];
       })), GRIP)),
-    // levas de cambio, detrás de las empuñaduras
-    ...[-1, 1].map((k) => box(0.024, 0.03, k * 0.1, 0.035, -0.02, 0.035, CARBON, 0.005)),
+    // levas de cambio, detrás de las empuñaduras (side: 0 la izquierda, que baja; 1 la derecha, que sube): las tira
+    // el piloto al cambiar (pull: cuánto se mueve la pieza con ese tirón)
+    ...[-1, 1].map((k) => ({ ...box(0.024, 0.03, k * 0.1, 0.035, -0.02, 0.035, CARBON, 0.005), side: (k + 1) / 2, pull: 1 })),
     // botones de colores a los costados de la pantalla
     ...BUTTONS.map((b, i) => box(-0.019, -0.015, (i % 2 ? 1 : -1) * 0.075, 0.009, i < 2 ? 0.0 : -0.03, (i < 2 ? 0.0 : -0.03) + 0.018, hex(b), 0.004)),
   ];
@@ -368,7 +371,54 @@ function steeringParts() {
     return [(y + 0.05) / 0.1, (0.034 - z) / 0.056];
   });
   parts.push(screen);
-  return parts.map(place);
+  // las manos del piloto, agarradas de las empuñaduras: giran con el volante, así se ve cuánto dobla cada uno.
+  // Mate, como la tela. El dorso es un óvalo apoyado del lado de afuera de la empuñadura; los cuatro dedos la rodean
+  // por delante (del índice, arriba, al meñique, más corto) y el pulgar se apoya sobre la cara del volante, junto a
+  // los botones. Después, el puño del guante, con una tira del color del buzo, que sigue en el antebrazo.
+  // El índice y el mayor siguen hasta apoyarse detrás de la leva y al cambiar la tiran junto con ella; el resto
+  // de la mano acompaña un poco (pull)
+  const GY = 0.126; // centro de la empuñadura, a cada lado
+  const blob = (cx, cy, cz, rx, ry, rz) => loft([...Array(9).keys()].map((i) => {
+    const w = -0.94 + (1.88 * i) / 8, r = Math.sqrt(1 - w * w);
+    return [...Array(14).keys()].map((j) => {
+      const a = (j / 14) * Math.PI * 2;
+      return [cx + rx * r * Math.cos(a), cy + ry * r * Math.sin(a), cz + rz * w];
+    });
+  }), glove);
+  // arco alrededor de la empuñadura a la altura z, de un ángulo a otro (0: adelante; +: hacia afuera)
+  const around = (k, z, r, a0, a1) => [...Array(5).keys()].map((i) => {
+    const a = a0 + ((a1 - a0) * i) / 4;
+    return [r * Math.cos(a), k * (GY + r * Math.sin(a)), z];
+  });
+  for (const k of [-1, 1]) {
+    parts.push(...[
+      [blob(-0.012, k * 0.14, -0.016, 0.027, 0.023, 0.05), 0.4], // el dorso y la palma
+      // índice y mayor: rodean la empuñadura y se apoyan detrás de la leva
+      ...[[0.016, 0.0105], [-0.004, 0.0105]].map(([z, r]) =>
+        [tube([...around(k, z, 0.026, 2.1, 0.5), [0.037, k * 0.118, z], [0.038, k * 0.104, z]], r, glove, 6), 1]),
+      // anular y meñique: rodean la empuñadura por debajo de la leva
+      ...[[-0.028, 0.01, -1.25], [-0.049, 0.009, -1.05]].map(([z, r, end]) => [tube(around(k, z, 0.026, 2.1, end), r, glove, 6), 0.6]),
+      // el pulgar: ancho en la base, metida en la palma, se afina hasta la punta redondeada, apoyada sobre la cara
+      [tube([[-0.018, k * 0.13, -0.02], [-0.023, k * 0.12, -0.008], [-0.025, k * 0.112, 0.002], [-0.025, k * 0.106, 0.01],
+        [-0.024, k * 0.103, 0.0145], [-0.023, k * 0.102, 0.017]],
+      [0.0125, 0.0105, 0.0088, 0.0078, 0.0058, 0.0028], glove, 10), 0.4],
+      [tube([[-0.03, k * 0.142, -0.042], [-0.07, k * 0.15, -0.07]], 0.029, glove, 8), 0.2], // el puño del guante
+      [tube([[-0.036, k * 0.143, -0.046], [-0.047, k * 0.145, -0.053]], 0.0305, suit, 8), 0.2], // la tira del puño
+    ].map(([p, pull]) => ({ ...p, suit: true, side: (k + 1) / 2, pull })));
+  }
+  const placed = parts.map(place);
+  // los brazos: el antebrazo va de la muñeca (que gira entera con el volante) al codo (que queda quieto, al costado
+  // del cuerpo); en el medio gira de a poco (follow: cuánto sigue al volante cada vértice), así se dobla en vez de
+  // salirse de la cabina. El brazo, del hombro al codo, no se mueve (y no se ve desde la cabina, como los hombros)
+  for (const k of [-1, 1]) {
+    const [wx, wy, wz] = [-0.065, k * 0.15, -0.068], wrist = [px + wx * c + wz * s, wy, pz - wx * s + wz * c];
+    const elbow = [0.0, k * 0.235, 0.47], n = 6;
+    const path = [...Array(n).keys()].map((i) => wrist.map((a, j) => a + (elbow[j] - a) * (i / (n - 1))));
+    const arm = tube(path, 0.033, suit, 8);
+    placed.push({ ...arm, column, suit: true, follow: arm.verts.map((_, i) => 1 - Math.floor(i / 8) / (n - 1)) });
+    placed.push({ ...tube([[-0.15, k * 0.19, 0.52], elbow], 0.042, suit, 8), suit: true, tag: 'helmet' });
+  }
+  return placed;
 }
 
 const HELMET_LEVELS = [0.99, 0.94, 0.85, 0.72, 0.56, 0.38, 0.18, 0, -0.15, -0.3, -0.45, -0.58, -0.68, -0.75];
@@ -391,7 +441,7 @@ function helmetParts(color) {
   }
   // alerón: una plaquita sobre la parte de atrás, apenas inclinada
   const spoiler = plate(-0.17, hz + 0.12, -0.225, hz + 0.105, 0.065, 0.012, color);
-  const pivot = { x: hx, y: 0, z: hz };
+  const pivot = { x: hx, y: 0, z: hz - rz }; // el cuello: ahí gira y se inclina
   return [shell, loft(visor, VISOR), spoiler].map((p) => ({ ...p, tag: 'helmet', head: pivot }));
 }
 
@@ -664,7 +714,7 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
   add({ ...box(-0.34, -0.02, 0, 0.2, 0.46, 0.55, hex(color, 0.7), 0.07), tag: 'helmet', suit: true });
   add({ ...loft([sec(-0.3, 0, 0.15, 0.49, 0.59, 0.05), sec(-0.17, 0, 0.13, 0.51, 0.6, 0.05)], CARBON), tag: 'helmet' });
   add(...helmetParts(head));
-  add(...steeringParts());
+  add(...steeringParts(hex(color, 0.7), hex(accent, 0.62)));
   // apoyacabeza acolchado alrededor del casco y un borde de carbono que rodea la abertura de la cabina
   add(loft([sec(-0.45, 0, 0.25, 0.6, 0.72, 0.05), sec(-0.3, 0, 0.25, 0.6, 0.72, 0.05)], PADDING));
   both((s) => add(loft([sec(-0.42, s * 0.205, 0.045, 0.6, 0.715, 0.03), sec(-0.2, s * 0.205, 0.04, 0.6, 0.7, 0.03)], PADDING)));
@@ -707,17 +757,37 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
   }
   add(loft(fillet, CARBON));
 
-  // alerón delantero: tres elementos con perfil de ala, escalonados; los dos flaps suben y se paran hacia las
-  // puntas (k: 0 en el centro, 1 en la punta), y las placas laterales bajan hacia adelante con el borde redondeado
-  // Visto desde arriba tienen flecha: el centro va más adelante y las puntas se redondean hacia atrás
-  // (sweep: cuánto retrocede el borde de ataque a lo ancho; round: cuánto más en la punta misma)
-  const k = (y, hw) => (y / hw) ** 2;
-  const sweep = (y) => 0.1 * k(y, 0.98) + 0.12 * k(y, 0.98) ** 6;
-  add(wing(0.98, (y) => ({ le: [2.9 - sweep(y), 0.065], te: [2.45 - 0.03 * k(y, 0.98), 0.08], t: 0.032 }), CARBON, 11));
-  add(wing(0.96, (y) => ({ le: [2.52 - 0.6 * sweep(y), 0.125 + 0.02 * k(y, 0.96)], te: [2.28 - 0.04 * k(y, 0.96), 0.165 + 0.05 * k(y, 0.96)], t: 0.026 }), body, 9));
-  add(wing(0.92, (y) => ({ le: [2.38 - 0.4 * sweep(y), 0.205 + 0.025 * k(y, 0.92)], te: [2.16 - 0.04 * k(y, 0.92), 0.255 + 0.06 * k(y, 0.92)], t: 0.022 }), body, 9));
-  both((s) => add(endplate(s * 0.99, [[2.12, 0.04], [2.7, 0.04], [2.7, 0.11], [2.42, 0.33], [2.14, 0.35]],
+  // alerón delantero: tres elementos con perfil de ala, bien juntos (cada flap arranca apenas arriba y detrás del
+  // borde de fuga del anterior), que llegan hasta el lado de adentro de las ruedas. Visto de frente, en el medio
+  // son cóncavos: suben hacia la trompa, cada vez más empinados; hacia afuera son convexos: se levantan
+  // redondeados, como un hombro, hasta la placa. curve(y, hump, rise): cuánto suben a lo ancho. Visto desde arriba tienen flecha: el centro va más
+  // adelante y las puntas se redondean hacia atrás (sweep: cuánto retrocede el borde de ataque a lo ancho). Las
+  // placas laterales bajan hacia adelante con el borde redondeado
+  const FW = 0.63; // medio ancho de los planos: el lado de adentro de las ruedas delanteras
+  const curve = (y, hump, rise) => {
+    const u = Math.abs(y / FW);
+    const t = Math.min(1, u / 0.45), o = Math.max(0, (u - 0.35) / 0.65);
+    return hump * (1 - t) ** 2 + rise * (1 - (1 - o) ** 2);
+  };
+  const k = (y) => Math.abs(y / FW) ** 3;
+  const sweep = (y) => 0.1 * (y / FW) ** 2 + 0.12 * (y / FW) ** 12;
+  add(wing(FW, (y) => ({ le: [2.9 - sweep(y), 0.065 + curve(y, 0.04, 0.025)], te: [2.45 - 0.03 * k(y), 0.08 + curve(y, 0.045, 0.03)], t: 0.03 }), CARBON, 15));
+  add(wing(FW, (y) => ({ le: [2.5 - 0.6 * sweep(y), 0.105 + curve(y, 0.045, 0.035)], te: [2.27 - 0.04 * k(y), 0.15 + curve(y, 0.05, 0.045)], t: 0.024 }), body, 15));
+  add(wing(FW, (y) => ({ le: [2.33 - 0.4 * sweep(y), 0.16 + curve(y, 0.05, 0.045)], te: [2.15 - 0.04 * k(y), 0.21 + curve(y, 0.055, 0.055)], t: 0.02 }), body, 15));
+  both((s) => add(endplate(s * (FW + 0.01), [[2.12, 0.04], [2.7, 0.04], [2.7, 0.1], [2.44, 0.3], [2.14, 0.32]],
     [0.015, 0.03, 0.05, 0.12, 0.03], 0.02, CARBON)));
+  // y de cada placa salen dos aletas hacia el costado, hasta la parte de afuera de la goma: abajo, sobre el piso,
+  // una casi plana que apenas sube y se va hacia atrás en la punta; arriba, una chica casi horizontal
+  const blade = (s, n, at, color) => loft([...Array(n).keys()].map((i) => {
+    const u = i / (n - 1), { y, le, te, t } = at(u);
+    return airfoil(s * y, le, te, t, 0.02);
+  }), color);
+  both((s) => add(blade(s, 7, (u) => ({
+    y: FW + 0.01 + 0.34 * u, le: [2.62 - 0.1 * u * u, 0.075 + 0.025 * u * u], te: [2.2 - 0.03 * u, 0.085 + 0.035 * u * u], t: 0.02,
+  }), CARBON)));
+  both((s) => add(blade(s, 5, (u) => ({
+    y: FW + 0.01 + 0.32 * u, le: [2.42 - 0.05 * u, 0.25 - 0.015 * u], te: [2.2 - 0.02 * u, 0.28 - 0.01 * u], t: 0.016,
+  }), body)));
 
   // alerón trasero: plano principal y flap con perfil de ala (un poco más bajos en el centro, como una cuchara),
   // placas laterales con el borde de arriba redondeado, ala baja y pilar; abajo, la luz de lluvia. Va casi encima

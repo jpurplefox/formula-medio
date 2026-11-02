@@ -245,6 +245,8 @@ in float aTex, aWheel, aGloss;
 uniform vec4 uWheels[4];
 uniform vec2 uSpin, uSteer, uHead; // coseno y seno
 uniform vec3 uNeck; // pivote de la cabeza
+uniform vec4 uHeadTilt; // la cabeza se inclina: coseno y seno hacia el costado (como uBody) y hacia adelante
+uniform vec2 uPaddle; // cuánto tira el piloto de cada leva, izquierda y derecha (m, hacia él)
 uniform vec3 uColumn, uColumnAxis; // el volante gira alrededor de su columna
 uniform vec2 uTurn; // coseno y seno de cuánto gira el volante
 uniform vec3 uPos, uF, uR, uU;
@@ -259,8 +261,13 @@ out vec3 vNormal, vView;
 vec3 spin(vec3 n) { return vec3(n.x * uSpin.x + n.z * uSpin.y, n.y, -n.x * uSpin.y + n.z * uSpin.x); }
 vec3 steer(vec3 n) { return vec3(n.x * uSteer.x - n.y * uSteer.y, n.x * uSteer.y + n.y * uSteer.x, n.z); }
 vec3 look(vec3 n) { return vec3(n.x * uHead.x - n.y * uHead.y, n.x * uHead.y + n.y * uHead.x, n.z); }
+vec3 tilt(vec3 n) {
+  n = vec3(n.x, n.y * uHeadTilt.x - n.z * uHeadTilt.y, n.y * uHeadTilt.y + n.z * uHeadTilt.x);
+  return vec3(n.x * uHeadTilt.z + n.z * uHeadTilt.w, n.y, n.z * uHeadTilt.z - n.x * uHeadTilt.w);
+}
 // giro alrededor del eje de la columna (Rodrigues)
-vec3 turn(vec3 n) { return n * uTurn.x + cross(uColumnAxis, n) * uTurn.y + uColumnAxis * dot(uColumnAxis, n) * (1.0 - uTurn.x); }
+vec3 turnBy(vec3 n, vec2 t) { return n * t.x + cross(uColumnAxis, n) * t.y + uColumnAxis * dot(uColumnAxis, n) * (1.0 - t.x); }
+vec3 turn(vec3 n) { return turnBy(n, uTurn); }
 // la carrocería rola sobre el eje largo y cabecea sobre el eje de costado, a la altura del centro de rolido
 vec3 lean(vec3 n) {
   n = vec3(n.x, n.y * uBody.x - n.z * uBody.y, n.y * uBody.y + n.z * uBody.x);
@@ -272,7 +279,21 @@ void main() {
   // el vidrio de los espejos es convexo: la normal se abre hacia los bordes (aUV va de -1 a 1 sobre el vidrio),
   // así el reflejo cambia de un lado al otro y abarca más
   if (aGloss > 1.5 && aGloss < 2.5) sm = normalize(sm + vec3(0.0, aUV.x, aUV.y) * 0.45);
-  if (aWheel > 6.5) {
+  if (aWheel > 12.5) {
+    // las levas y las manos: giran con el volante y, al cambiar, se acercan al piloto sobre la columna (que no cambia
+    // al girar); izquierda de 13 a 14, derecha de 15 a 16, según cuánto acompaña cada pieza el tirón
+    float c = aWheel - 13.0, side = c > 1.5 ? 1.0 : 0.0;
+    p = uColumn + turn(p - uColumn) + uColumnAxis * mix(uPaddle.x, uPaddle.y, side) * (c - 2.0 * side);
+    n = turn(n);
+    sm = turn(sm);
+  } else if (aWheel > 10.5) {
+    // los antebrazos del piloto: siguen al volante de a poco, de la muñeca (aWheel 12: entera) al codo (11: nada)
+    float a = atan(uTurn.y, uTurn.x) * (aWheel - 11.0);
+    vec2 t = vec2(cos(a), sin(a));
+    p = uColumn + turnBy(p - uColumn, t);
+    n = turnBy(n, t);
+    sm = turnBy(sm, t);
+  } else if (aWheel > 6.5) {
     // montado en la mangueta (el tambor del freno): no gira con la rueda, pero dobla con la dirección
     vec4 wh = uWheels[int(aWheel + 0.5) - 7];
     if (wh.w != 0.0) {
@@ -287,10 +308,10 @@ void main() {
     n = turn(n);
     sm = turn(sm);
   } else if (aWheel > 4.5) {
-    // la cabeza del piloto gira alrededor del cuello
-    p = uNeck + look(p - uNeck);
-    n = look(n);
-    sm = look(sm);
+    // la cabeza del piloto gira alrededor del cuello y se inclina con las fuerzas de las curvas y las frenadas
+    p = uNeck + tilt(look(p - uNeck));
+    n = tilt(look(n));
+    sm = tilt(look(sm));
   } else if (aWheel > 0.5) {
     // la rueda gira sobre su eje y, si es delantera, dobla con la dirección
     vec4 wh = uWheels[int(aWheel + 0.5) - 1];
@@ -305,7 +326,7 @@ void main() {
     }
   }
   // todo menos las ruedas (que quedan apoyadas en el piso) se mueve con la suspensión
-  if (aWheel < 0.5 || (aWheel > 4.5 && aWheel < 6.5)) {
+  if (aWheel < 0.5 || (aWheel > 4.5 && aWheel < 6.5) || aWheel > 10.5) {
     p = BODY_PIVOT + lean(p - BODY_PIVOT);
     n = lean(n);
     sm = lean(sm);
@@ -689,7 +710,8 @@ export class GLRenderer {
     for (const part of parts) {
       if (part.tag === 'helmet' && helmetStart < 0) helmetStart = data.length / STRIDE;
       // a qué rueda pertenece (1 a 4), 5 si es la cabeza del piloto y 6 si es el volante; lo que va montado en la
-      // mangueta (fixed: dobla con la rueda pero no gira), 7 a 10
+      // mangueta (fixed: dobla con la rueda pero no gira), 7 a 10; lo que sigue al volante de a poco (follow: los
+      // antebrazos), de 11 a 12 en cada vértice; las levas y las manos (que se mueven al cambiar), de 13 a 16
       let w = 0;
       if (part.wheel) {
         let k = wheels.indexOf(part.wheel);
@@ -699,7 +721,7 @@ export class GLRenderer {
         w = 5;
         neck = part.head;
       } else if (part.column) {
-        w = 6;
+        w = part.pull !== undefined ? 13 + part.side * 2 + part.pull : 6;
         column = part.column;
       }
       // caras de la pieza que tocan cada vértice
@@ -731,7 +753,8 @@ export class GLRenderer {
         const vert = (a) => {
           const [x, y, z] = part.verts[face.idx[a]];
           const uv = face.uv ? face.uv[a] : [0, 0];
-          data.push(x, y, z, face.n[0], face.n[1], face.n[2], r, gg, b, uv[0] / size, uv[1] / size, tid, w, ...smooth[a], gloss);
+          const wv = part.follow ? 11 + part.follow[face.idx[a]] : w;
+          data.push(x, y, z, face.n[0], face.n[1], face.n[2], r, gg, b, uv[0] / size, uv[1] / size, tid, wv, ...smooth[a], gloss);
         };
         for (let a = 1; a < face.idx.length - 1; a++) {
           vert(0);
@@ -875,6 +898,9 @@ export class GLRenderer {
       gl.uniform2f(mp.u.uSteer, Math.cos(st), Math.sin(st));
       gl.uniform2f(mp.u.uHead, Math.cos(m.head || 0), Math.sin(m.head || 0));
       gl.uniform3f(mp.u.uNeck, g.neck.x, g.neck.y, g.neck.z);
+      const [hr, hp] = m.headTilt || [0, 0];
+      gl.uniform4f(mp.u.uHeadTilt, Math.cos(hr), Math.sin(hr), Math.cos(hp), Math.sin(hp));
+      gl.uniform2f(mp.u.uPaddle, m.paddle?.[0] || 0, m.paddle?.[1] || 0);
       gl.uniform3f(mp.u.uColumn, g.column.x, g.column.y, g.column.z);
       gl.uniform3f(mp.u.uColumnAxis, g.column.ax, g.column.ay, g.column.az);
       gl.uniform2f(mp.u.uTurn, Math.cos(m.wheelTurn || 0), Math.sin(m.wheelTurn || 0));
