@@ -16,7 +16,8 @@
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Car, DEFAULT_PROFILE, SETUP_KEYS } from '../src/car.js';
+import { Car, DEFAULT_PROFILE, limitsOn, SETUP_KEYS } from '../src/car.js';
+import { airDensity, WING_MAX, WING_MIN } from '../src/dynamics.js';
 import { racingLine } from '../src/racingline.js';
 import { halfWidthAt } from '../src/track.js';
 import { OBS_SIZE, observe, stationAt, trackHeading } from '../src/sensors.js';
@@ -37,7 +38,7 @@ const END_PENALTY = 2;
 
 let profile = DEFAULT_PROFILE;
 try {
-  profile = JSON.parse(readFileSync(fileURLToPath(new URL('../cars/f1-2023.json', import.meta.url)), 'utf8'));
+  profile = JSON.parse(readFileSync(fileURLToPath(new URL('../cars/f1-2025.json', import.meta.url)), 'utf8'));
 } catch {
   // sin el perfil medido, el de por defecto
 }
@@ -46,7 +47,7 @@ const tracks = new Map(); // id → { track, line } (se arma una vez por proceso
 function getTrack(id) {
   if (!tracks.has(id)) {
     const track = loadTrack(id);
-    tracks.set(id, { track, line: racingLine(track, profile) });
+    tracks.set(id, { track, line: racingLine(track, limitsOn(profile, track)) });
   }
   return tracks.get(id);
 }
@@ -68,6 +69,17 @@ export function rng(seed) {
 export function randomSetup(rand, spread) {
   const [down, up] = Array.isArray(spread) ? spread : [spread, spread];
   return Object.fromEntries(SETUP_KEYS.map((k) => [k, k === 'wear' ? 1 + (2 * rand() - 1) * 0.3 : 1 - down + (down + up) * rand()]));
+}
+
+// Puesta a punto al azar para la red que aprende: alerones hasta TUNE_SPREAD puntos más o menos que los del circuito
+// y balance de -TUNE_SPREAD a TUNE_SPREAD; y, una de cada AIR_CHANCE veces, el aire de otra altura (hasta la de
+// México). Así aprende a manejar autos con más o menos apoyo, más o menos punta y subvirantes o sobrevirantes.
+const TUNE_SPREAD = 3, AIR_CHANCE = 1 / 3, MAX_ALTITUDE = 2300;
+export function randomTune(car, rand, track) {
+  const t = track.tune, wing = (x) => Math.max(WING_MIN, Math.min(WING_MAX, x + Math.round((2 * rand() - 1) * TUNE_SPREAD)));
+  car.ownTune = { front: wing(t.front), rear: wing(t.rear), balance: Math.round((2 * rand() - 1) * TUNE_SPREAD) };
+  car.ownAir = rand() < AIR_CHANCE ? airDensity(rand() * MAX_ALTITUDE) : null;
+  car.placeOn(track);
 }
 
 // Gomas al azar: carreras de 3 a 20 vueltas (desgaste por metro) y en cualquier momento de la carrera
@@ -106,6 +118,7 @@ export class RaceEnv {
     car.rpm = Math.max(4000, car.rpmAt(car.speed, car.gear));
     car.throttle = 0.5;
     car.setup = randomSetup(this.rand, this.spread);
+    randomTune(car, this.rand, track);
     randomTyres(car, this.rand, track);
     this.car = car;
     this.u = stationAt(track, car.x, car.y);

@@ -12,36 +12,50 @@
 // cuánto tiempo terminó el primero las vueltas (el ritmo). Con DIFICULTAD (facil, normal, dificil, experto) las redes
 // llevan el agarre y la potencia de esa dificultad en el juego (src/teams.js) y el jugador, su ritmo más alto.
 //
+// Con DANOS (reduced o real) los golpes rompen (damage.js): informa además abandonos y piezas rotas por carrera.
+// Con GOLPES=1 informa qué tan fuertes son los golpes en cada pieza (para ajustar STRENGTH de damage.js).
+//
 // Con SPREAD (por ejemplo 0.05) cada auto de la grilla es un poco distinto, siempre igual para una misma semilla,
 // y cada carrera se corre dos veces intercambiando qué autos maneja la red: así ningún resultado depende de la
 // suerte con los autos. Las gomas se gastan como en el juego (del todo al terminar la carrera).
 
 import { readFileSync } from 'node:fs';
 import { Driver, gridSlots } from '../src/ai.js';
-import { Car, isSolid, slipstream } from '../src/car.js';
+import { Car, isSolid, limitsOn, slipstream } from '../src/car.js';
 import { randomSetup, rng } from './env.js';
-import { collideCars } from '../src/collision.js';
+import { collideCars, logHits } from '../src/collision.js';
 import { NeuralDriver, Policy } from '../src/policy.js';
 import { racingLine } from '../src/racingline.js';
 import { trackHeading } from '../src/sensors.js';
 import { sampleField, stationAt } from '../src/track.js';
 import { loadTrack, TRACK_IDS } from './tracks.js';
 import { DIFFICULTIES, rivalSetups } from '../src/teams.js';
+import { damaged, zoneAt } from '../src/damage.js';
 
 const [file, ids, lapsArg] = process.argv.slice(2);
 const policy = new Policy(JSON.parse(readFileSync(file, 'utf8')));
-const profile = JSON.parse(readFileSync(new URL('../cars/f1-2023.json', import.meta.url), 'utf8'));
+const profile = JSON.parse(readFileSync(new URL('../cars/f1-2025.json', import.meta.url), 'utf8'));
 const DT = 1 / 60, CARS = Number(process.env.CARS ?? 22), LAPS = Number(lapsArg ?? 3);
 const SPREAD = Number(process.env.SPREAD ?? 0);
 const GAME = process.env.JUEGO === '1', PLAYER = Math.floor(CARS / 2);
 const LEVEL = GAME && DIFFICULTIES.find((d) => d.id === process.env.DIFICULTAD);
 const PACES = LEVEL ? [LEVEL.paces[0], LEVEL.paces[0]] : [1.06, 0.98]; // Difícil
 const LEVEL_SETUPS = LEVEL && rivalSetups(LEVEL, CARS - 1);
+const DAMAGE = process.env.DANOS ?? 'off';
+// golpes por pieza y por contra qué (auto o muro), para GOLPES=1
+const HITS = process.env.GOLPES === '1' ? new Map() : null;
+if (HITS) {
+  logHits((car, lx, ly, hit, other) => {
+    const key = `${zoneAt(lx, ly).part.padEnd(10)} contra ${other ? other.part : 'muro'}`;
+    if (!HITS.has(key)) HITS.set(key, []);
+    HITS.get(key).push(hit);
+  });
+}
 
 function race(track, seed, swap) {
   const rand = rng(seed);
   const setups = Array.from({ length: CARS }, () => randomSetup(rand, SPREAD));
-  const line = racingLine(track, profile, { brakeUse: 0.93 });
+  const line = racingLine(track, limitsOn(profile, track), { brakeUse: 0.93 });
   const slots = gridSlots(track, CARS);
   const L = track.length;
   let ai = 0;
@@ -51,6 +65,7 @@ function race(track, seed, swap) {
     if (SPREAD) car.setup = setups[k];
     if (LEVEL && net) car.setup = LEVEL_SETUPS[k < PLAYER ? k : k - 1];
     car.wearRate = 1 / (LAPS * track.length * track.meters);
+    car.damageLevel = DAMAGE;
     const pace = PACES[0] + ((PACES[1] - PACES[0]) * ai) / (CARS / 2 - 1);
     if (!net) ai++;
     car.throttle = 1;
@@ -61,10 +76,11 @@ function race(track, seed, swap) {
   let t = 0;
   for (; t < 600; t += DT) {
     const states = entries.map((e) => ({ car: e.car, st: e.u, lat: sampleField(track.lat, track.W, e.car.x, e.car.y) }));
-    for (const c of cars) c.draft = slipstream(c, cars, track.meters);
-    entries.forEach((e, i) => e.car.update(DT, e.driver.drive(DT, track, line, states[i], states.filter((_, j) => j !== i)), track));
+    const racing = cars.filter((c) => !c.gone); // los que abandonaron y ya sacaron no están más en la pista
+    for (const c of racing) c.draft = slipstream(c, racing, track.meters);
+    entries.forEach((e, i) => e.car.gone || e.car.update(DT, e.driver.drive(DT, track, line, states[i], states.filter((_, j) => j !== i && !entries[j].car.gone)), track));
     const before = cars.map((c) => c.bump);
-    collideCars(cars, track, isSolid);
+    collideCars(racing, track, isSolid);
     let leader = 0;
     entries.forEach((e, i) => {
       if (e.car.bump > before[i] + 0.05) {
@@ -94,6 +110,11 @@ function race(track, seed, swap) {
     hits: group(true).reduce((a, e) => a + e.hits, 0), fault: group(true).reduce((a, e) => a + e.fault, 0), aiHits: group(false).reduce((a, e) => a + e.hits, 0),
     grass: group(true).reduce((a, e) => a + e.grass, 0), wheel: group(true).reduce((a, e) => a + e.wheel, 0),
     podium: order.slice(0, 3).map((e) => (e.net ? 'red' : 'IA')).join(' '),
+    // daños: abandonos, alerones rotos del todo y gomas pinchadas
+    out: entries.filter((e) => e.car.damage.retired).length,
+    wings: entries.filter((e) => [...e.car.damage.frontWing, ...e.car.damage.rearWing].some((x) => x >= 1)).length,
+    flats: entries.reduce((a, e) => a + e.car.damage.tyre.filter((x) => x > 0).length, 0),
+    hurt: entries.filter((e) => damaged(e.car.damage)).length,
     time: t, nets: group(true).length, player: group(false)[0]?.pos,
   };
 }
@@ -132,6 +153,18 @@ for (const [n, id] of (ids ? ids.split(',') : TRACK_IDS).entries()) {
   }
 }
 const mean = (f) => (all.reduce((a, r) => a + f(r), 0) / all.length).toFixed(2);
+if (DAMAGE !== 'off') {
+  console.log(`daños por carrera: ${mean((r) => r.hurt)} autos con algo roto · ${mean((r) => r.wings)} con un alerón destrozado`
+    + ` · ${mean((r) => r.flats)} pinchazos · ${mean((r) => r.out)} abandonos`);
+}
+if (HITS) {
+  const pct = (xs, p) => xs[Math.min(xs.length - 1, Math.floor(p * xs.length))].toFixed(1);
+  console.log('golpes (m/s): cantidad por carrera · mediana · 90 % · 99 % · máximo');
+  for (const [key, xs] of [...HITS].sort((a, b) => b[1].length - a[1].length)) {
+    xs.sort((a, b) => a - b);
+    console.log(`  ${key.padEnd(30)} ${(xs.length / all.length).toFixed(1).padStart(6)} · ${pct(xs, 0.5)} · ${pct(xs, 0.9)} · ${pct(xs, 0.99)} · ${xs.at(-1).toFixed(1)}`);
+  }
+}
 if (GAME) {
   console.log(`total: toques por auto ${mean((r) => r.hits / r.nets)} (provocados ${mean((r) => r.fault / r.nets)}) · pasto por auto ${mean((r) => r.grass / r.nets)} s (una rueda ${mean((r) => r.wheel / r.nets)} s) · tiempo del ganador ${mean((r) => r.time)} s · jugador ${mean((r) => r.player)}.º`);
   process.exit(0);

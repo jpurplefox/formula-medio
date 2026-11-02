@@ -5,3 +5,4 @@ rl/.venv/
 rl/runs/
 rl/tracks/
 tools/.cache/
+tools/.out/

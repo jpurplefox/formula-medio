@@ -118,9 +118,11 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
    al frenar (hasta 1,1°), con un resorte amortiguado; desde la cabina, el cabeceo mueve la vista, y el auto
    proyecta su sombra sobre el piso.
 3. **Escala y física** (`src/car.js`): cada circuito tiene una escala real en metros por celda, calculada con el
-   largo real de la vuelta (de la telemetría, o `lengthMeters`). El auto se comporta según un **perfil medido con
-   telemetría real** (ver abajo): aceleración y desaceleración por velocidad, frenada y agarre lateral que crecen
-   con la velocidad (carga aerodinámica), y una caja de 8 marchas con RPM, corte y luces de cambio.
+   largo real de la vuelta (de la telemetría, o `lengthMeters`). Lo que puede hacer el auto sale de un **modelo
+   físico calibrado con vueltas reales** (`src/dynamics.js`, ver abajo): carga y resistencia aerodinámicas que
+   crecen con v² y con la densidad del aire (la altura del circuito), dos alerones y un balance mecánico que elige
+   cada uno (**puesta a punto**), agarre por eje según la carga, potencia y tracción; y una caja de 8 marchas con
+   RPM, corte y luces de cambio.
    **Superficie por rueda**: cada rueda mira qué pisa (asfalto, piano o pasto; `SURFACES` en `src/car.js` y
    `surfaceAt` en `src/track.js`). Cada eje agarra según sus dos ruedas (una trasera en el pasto suelta la cola,
    una delantera quita dirección), cada rueda en el pasto frena y, si frena más de un lado, el auto tira para ese
@@ -136,18 +138,46 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
    y además reparte su agarre entre frenar o empujar y doblar (**círculo de fricción**: √(frenada² + giro²) ≤ agarre;
    el motor empuja sólo con las de atrás). El eje delantero limita cuánto dobla el auto (si no alcanza, se va de
    trompa: subviraje); si al trasero no le alcanza para sostener la curva, la cola se abre y el auto queda cruzado
-   (sobreviraje) hasta que levantás el pie o contravolanteás. En una curva sin pedales da lo mismo que el agarre
+   (sobreviraje) hasta que levantás el pie o contravolanteás. La curva la tienen que sostener los dos ejes: con la
+   cola corta (sin alerón trasero, o con una puesta muy sobrevirante) el auto no dobla más que lo que aguanta la
+   cola (con un 5 % de margen, cruzándose) y la cola arrastrándose de costado frena. Lo que la cola gasta frenando
+   o empujando no achica la curva: la abre. Y el deslizamiento de costado lo frena sólo lo que le sobra a las gomas
+   después de doblar: doblando al límite, el auto se sigue abriendo. En una curva sin pedales da lo mismo que el agarre
    medido; lo que cambia es frenar fuerte doblando (la cola se pone liviana), soltar el freno de a poco al entrar
    (la trompa muerde y el auto rota) y pisar a fondo en una curva lenta (la cola se abre). El traslado de peso de
    costado también resta agarre, pero eso ya está dentro del agarre lateral medido.
 4. **Choques** (`src/collision.js`): con impulsos, como un motor de física 2D. Además de la velocidad de marcha,
    cada auto tiene una velocidad de costado y un giro que le dejan los golpes, y que las gomas van frenando (más
-   rápido cuanto más agarre). Entre autos, cada uno es un rectángulo de 5,6 × 2 m: se detecta el choque con el test
-   de ejes separadores, el punto de contacto es el promedio de las esquinas que quedaron dentro del otro, y el
-   impulso depende de con qué velocidad se acercan ahí (con un poco de rebote y rozamiento). Si le pegás de atrás
+   rápido cuanto más agarre). Entre autos, cada uno es un juego de piezas de 5,6 × 2 m en total (alerón
+   delantero, trompa, las cuatro ruedas asomadas, pontones, caja y alerón trasero; `ZONES` en `src/damage.js`): se
+   detecta el choque pieza contra pieza con el test de ejes separadores, el punto de contacto es el promedio de las
+   esquinas que quedaron dentro de la otra pieza, y el impulso depende de con qué velocidad se acercan ahí (con un
+   poco de rebote y rozamiento). **Rueda contra rueda** es distinto: la goma agarra mucho más y la parte que se
+   toca gira más rápido que el auto, así que el más rápido arrastra al más lento y los dos se tuercen; y si una
+   delantera le pega de atrás a una trasera, se trepa: pierde velocidad, queda girando y se rompe la suspensión. Si le pegás de atrás
    a alguien, sale empujado; si el golpe es desplazado del centro, los autos giran, y uno fuerte te hace trompear.
    Contra los muros, el auto son tres círculos a lo largo: un roce en ángulo casi no frena y lo endereza contra el
    muro; de frente, frena y rebota. Apoyados sin acercarse, se deslizan sin frenarse.
+5. **Daños** (`src/damage.js`, en el menú: no, reducidos o reales): cada golpe rompe la pieza donde pega según qué
+   tan fuerte es (desde unos m/s de cambio de velocidad en el punto de contacto; los golpes se suman), con su lado
+   (izquierda o derecha) para cuando haya que dibujarlos:
+   - **alerón delantero:** los flaps primero, después entero. Se pierde su apoyo: en curva lenta casi no se nota y
+     en las rápidas la trompa no dobla;
+   - **alerón trasero:** menos apoyo atrás (la cola se abre en las rápidas) y menos resistencia (más punta);
+   - **pontón y piso:** menos apoyo y el motor recalienta (rinde menos);
+   - **suspensión** de cada rueda: torcida, esa rueda agarra menos y el auto tira para un lado; rota, abandono;
+   - **pinchazo** (un alerón ajeno que corta la goma, o rueda contra rueda fuerte): la goma se desinfla en 4 s,
+     agarra la mitad y frena.
+
+   Con daño de un solo lado el auto agarra distinto según para dónde dobla (en curva el peso va a las ruedas de
+   afuera). Un auto que abandona frena hasta pararse y a los 2 s lo sacan de la pista; en la tabla queda "AB". Con
+   daños reducidos todo se rompe a la mitad y nada del todo, sin pinchazos ni abandonos. Cuando tu auto tiene algo
+   roto aparece a la derecha un esquema visto desde arriba, cada pieza de su color (amarillo, naranja, rojo; rota,
+   sólo el contorno). Con `?prueba` en la dirección, las teclas **1** a **9** rompen piezas (1–2 alerón delantero
+   izquierdo/derecho, 3–4 trasero, 5–6 pontones, 7 pinchazo trasero izquierdo, 8 suspensión delantera derecha, 9
+   dirección rota) y **0** arregla todo. Los umbrales se ajustaron con
+   `JUEGO=1 DANOS=real GOLPES=1 node rl/race_eval.js models/v5/fase7.json` (cuántos autos rompen algo por carrera
+   y qué tan fuertes son los golpes en cada pieza).
 
 Cambios: **O** o **X** sube, **U** o **Z** baja (si estabas en automático, pasa a manual); **M** alterna automática / manual. **C** alterna la vista de cabina (por defecto) y la exterior. **G** muestra u oculta la trazada ideal.
 Las teclas se reconocen por la letra y por su posición, así funcionan con cualquier distribución de teclado.
@@ -279,28 +309,57 @@ mal en el camino: `rl/CURRICULO.md`.
 `src/racingline.js` calcula, al cargar el circuito, la trazada curva por curva como la hacen los pilotos: se llega
 por el lado de afuera, se toca el vértice (el punto más cerrado) del lado de adentro y se sale abriendo de nuevo
 (en las eses, de vértice a vértice), con un suavizado final que saca los zigzags. Después calcula la velocidad
-máxima en cada punto con el perfil del auto: lo que aguanta el agarre en la curva, cuánto hay que frenar antes y cuánto acelera el motor después.
+máxima en cada punto con los límites del auto (`src/lapsim.js`): lo que aguanta el agarre en la curva, cuánto hay que frenar antes y cuánto acelera el motor después.
 En el juego es una cinta semitransparente que flota un poco sobre el asfalto, con los bordes difusos (sin WebGL,
 se pinta sobre el piso), y cambia de color según tu velocidad: **verde** se puede acelerar,
 **amarillo** mantener o levantar, **rojo** hay que frenar. **G** la muestra u oculta.
 
-## Perfil del auto desde la telemetría de F1
+## Física calibrada con vueltas reales
 
-`tools/car_profile.py` toma las 15 vueltas más rápidas de una carrera en OpenF1 (velocidad, RPM, marcha,
-acelerador, freno y posición) y genera `cars/f1-2023.json`:
+`src/dynamics.js` es un modelo chico, el de un simulador de vuelta:
+
+- **Aerodinámica:** carga y resistencia = ½·ρ·C·v². Con los alerones al mínimo el auto tiene la carga del piso y
+  la carrocería (`clMin`) y con los dos al máximo, ~45 % más (`clMax`). Cada alerón cobra en resistencia su carga
+  sobre su eficiencia: el delantero casi nada, el trasero mucho. La densidad del aire ρ sale de la altura del
+  circuito (`altitude` en `tracks/index.js`): en Interlagos hay ~9 % menos de aire que a nivel del mar.
+- **Gomas:** cada eje agarra `mu · carga^0,85` (cada kilo de más agarra un poco menos), con la carga aerodinámica
+  repartida entre los ejes. Con más agarre adelante que atrás el auto sobrevira; con menos, subvira.
+- **Motor:** una potencia (empuja menos cuanto más rápido va), hasta lo que da la tracción de las de atrás; el
+  turbo compensa casi todo el aire que falta en la altura.
+
+**Puesta a punto** (menú, por circuito): alerón delantero y trasero de 1 a 10 y balance mecánico de -5 a 5 (las
+barras estabilizadoras: pesa en las curvas lentas, donde casi no hay carga aerodinámica). Cada circuito trae la
+que llevan los equipos (`tune` en `tracks/index.js`: Monza 1/1, Barcelona 8/8…) y los rivales usan esa; la tuya
+se recuerda por circuito. Abajo de los controles el menú dice cómo queda el auto: punta, agarre en curva rápida y
+si subvira o sobrevira en curvas lentas y rápidas.
+
+Los números del auto (`cars/f1-2025.json`) se ajustaron con `tools/calibrate.js` contra las poles de 2025 en los
+8 circuitos (lo que ya bajó `tools/layout.py` a `tools/.cache/`):
 
 ```bash
-python3 tools/car_profile.py Interlagos 2023 cars/f1-2023.json
+node tools/calibrate.js          # cómo da el auto como está (y tools/.out/calibracion.html con los gráficos)
+node tools/calibrate.js --fit    # busca los números que mejor ajustan y los escribe
 ```
 
-- **Marchas y RPM:** km/h por rpm de cada marcha (las que no se usan a fondo se estiman), RPM de corte y de cambio.
-- **Aceleración y desaceleración sin pedales:** tablas por velocidad (aceleración a fondo con la marcha justa).
-- **Frenada y agarre lateral:** `base + perV2·v²` ajustado a lo medido (el agarre sale de v² × curvatura de la
-  trayectoria real). La telemetría tiene ~3,7 muestras por segundo, así que los picos de frenada se subestiman un poco.
+Simula cada vuelta sobre la trazada que hace la red y la compara con la velocidad real a lo largo de la vuelta
+(tools/openf1.js: las 5 mejores vueltas de la clasificación, proyectadas sobre el trazado), la punta con las
+trampas de velocidad y además pide que la puesta a punto de cada circuito sea la más rápida ahí (así se ajusta
+cuánto cuesta el alerón). Cosas a saber:
 
-Con este perfil, las velocidades del juego a lo largo de la vuelta coinciden con las reales (curvas lentas
-~95-110 km/h, punta ~305-325 km/h). Un piloto automático por el centro de la pista hace ~1:17,7; la vuelta real
-fue 1:12,5 (con trazada de carrera y al 100 %).
+- La velocidad sale de las posiciones (~4 por segundo), no de la telemetría del auto: los tiempos bailan, así que
+  está suavizada y la punta sale unos km/h de más (la de verdad es la de las trampas). Las frenadas no se pueden
+  medir bien, así que la frenada y la sensibilidad a la carga quedan fijas en valores razonables.
+- Las chicanas del juego (variantes de Monza, la última de Montreal) quedaron más abiertas que las reales: ahí el
+  juego va más rápido y por eso el error cuenta lineal pasados los 15 km/h.
+- Resultado: punta de 320 a 350 km/h según el circuito (como las trampas), ~2,5 g en curva lenta y ~4,9 g a
+  250 km/h, y vueltas simuladas de -5 a +0,5 s de la pole (lo más rápido, en los circuitos de chicanas).
+
+`node tools/lapcompare.js` grafica la pole real contra la red del juego dando una vuelta
+(`tools/.out/vueltas.html`).
+
+Las marchas y RPM siguen saliendo de `tools/car_profile.py` (las 15 vueltas más rápidas de una carrera en
+OpenF1: `python3 tools/car_profile.py Interlagos 2023 cars/f1-2023.json`), que además mide aceleración, frenada y
+agarre lateral, lo que usaba la física de antes.
 
 ## Trazados reales desde la telemetría de F1
 

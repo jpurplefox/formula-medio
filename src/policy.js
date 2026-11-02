@@ -2,17 +2,19 @@
 // Los pesos vienen de rl/export.py: capas lineales con tanh entre ellas.
 
 import { rescue } from './ai.js';
-import { OBS_SIZE, observe, SETUP_START, SETUP_VALUES, WHEEL_VALUES } from './sensors.js';
+import { LIMIT_VALUES, OBS_SIZE, observe, SETUP_START, SETUP_VALUES, WHEEL_VALUES } from './sensors.js';
 import { stationAt } from './track.js';
 
 export class Policy {
   // opponents: si aprendió a mirar a los demás autos (etapa 2); si no, se le pasan en cero, como al entrenar
   constructor({ obs_size, layers, opponents = false }) {
-    // las redes de antes del agarre por rueda leen sólo lo de adelante (va al final); las de antes del desgaste y
-    // la variación de autos, además, no reciben esos valores: se les sacan
+    // las redes de antes de los límites (puesta a punto y aire) y del agarre por rueda leen sólo lo de adelante
+    // (van al final); las de antes del desgaste y la variación de autos, además, no reciben esos valores: se les
+    // sacan
     this.size = obs_size;
-    this.legacy = obs_size === OBS_SIZE - WHEEL_VALUES - SETUP_VALUES;
-    if (obs_size !== OBS_SIZE && obs_size !== OBS_SIZE - WHEEL_VALUES && !this.legacy) {
+    this.legacy = obs_size === OBS_SIZE - LIMIT_VALUES - WHEEL_VALUES - SETUP_VALUES;
+    const reads = [OBS_SIZE, OBS_SIZE - LIMIT_VALUES, OBS_SIZE - LIMIT_VALUES - WHEEL_VALUES];
+    if (!reads.includes(obs_size) && !this.legacy) {
       throw new Error(`La red espera ${obs_size} valores y los sensores dan ${OBS_SIZE}`);
     }
     this.opponents = opponents;

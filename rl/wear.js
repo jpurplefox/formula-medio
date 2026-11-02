@@ -5,17 +5,17 @@
 
 import { readFileSync } from 'node:fs';
 import { Driver, gridSlots } from '../src/ai.js';
-import { Car } from '../src/car.js';
+import { Car, limitsOn } from '../src/car.js';
 import { racingLine } from '../src/racingline.js';
 import { sampleField, stationAt } from '../src/track.js';
 import { loadTrack, TRACK_IDS } from './tracks.js';
 
-const profile = JSON.parse(readFileSync(new URL('../cars/f1-2023.json', import.meta.url), 'utf8'));
+const profile = JSON.parse(readFileSync(new URL('../cars/f1-2025.json', import.meta.url), 'utf8'));
 const DT = 1 / 60;
 const all = [];
 for (const id of TRACK_IDS) {
   const track = loadTrack(id);
-  const line = racingLine(track, profile, { brakeUse: 0.93 });
+  const line = racingLine(track, limitsOn(profile, track), { brakeUse: 0.93 });
   const slot = gridSlots(track, 1)[0];
   const car = new Car(slot.x, slot.y, slot.angle, profile);
   car.launch();

@@ -27,6 +27,11 @@
     #minimap { position: absolute; top: 12px; right: 12px; width: clamp(120px, 18%, 220px); background: rgba(0, 0, 0, 0.45); border-radius: 6px; }
     #msg { position: absolute; top: 28%; left: 50%; transform: translate(-50%, -50%); font-size: clamp(16px, 3vw, 34px); font-weight: bold; padding: 6px 16px; background: rgba(0, 0, 0, 0.6); border-radius: 6px; opacity: 0; transition: opacity 0.2s; pointer-events: none; text-align: center; }
     #msg.show { opacity: 1; }
+    #damage { right: 12px; top: 50%; transform: translateY(-50%); display: none; gap: 10px; align-items: center; font-size: clamp(9px, 0.95vw, 12px); line-height: 1.5; }
+    #damage.show { display: flex; }
+    #damage svg { width: clamp(40px, 4.6vw, 64px); height: auto; }
+    #damage b { color: #ff3b30; }
+    #stage.replay #damage { display: none; }
     #help { bottom: 12px; left: 12px; font-size: clamp(10px, 1.1vw, 13px); color: #c8ced8; line-height: 1.5; }
     #help { transition: opacity 0.4s; }
     #help.hidden { opacity: 0; pointer-events: none; }
@@ -74,6 +79,11 @@
     #menu .sound label { display: flex; align-items: center; gap: 8px; color: #c8ced8; font-size: 14px; }
     #menu .sound input { width: 110px; accent-color: #ffd400; }
     #menu.mute .sound label { opacity: 0.4; }
+    #menu .tune { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
+    #menu .tune label { display: flex; align-items: center; gap: 8px; color: #c8ced8; font-size: 14px; }
+    #menu .tune input { width: 110px; accent-color: #ffd400; }
+    #menu .tune b { min-width: 2.2em; color: #ffd400; font-variant-numeric: tabular-nums; }
+    #menu .tune button { padding: 4px 10px; font-size: 13px; }
     #menu .teams { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
     #menu .teams button { display: flex; align-items: center; gap: 8px; text-align: left; padding: 8px; font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
     body:has(#menu.open) #stage > :not(#view) { visibility: hidden; }
@@ -112,6 +122,7 @@
       <div><span id="gear">1</span><span id="speed">0</span> <small>km/h</small></div>
       <small><span id="rpm">0</span> rpm · <span id="mode">AUTO</span></small>
     </div>
+    <div id="damage" class="panel"></div>
     <div id="help" class="panel">
       R reiniciar · Esc menú · N sonido<br />
       I/↑/W acelerar · K/↓/S frenar · J L/←→/A D doblar<br />
@@ -152,6 +163,21 @@
           <div id="menu-laps" class="seg"></div>
         </section>
       </div>
+      <section>
+        <h2>Daños</h2>
+        <div id="menu-damage" class="seg"></div>
+        <p id="menu-damage-hint" class="hint"></p>
+      </section>
+      <section>
+        <h2>Puesta a punto</h2>
+        <div class="tune">
+          <label>Alerón delantero <input id="tune-front" type="range" min="1" max="10" step="1" /><b id="tune-front-v"></b></label>
+          <label>Alerón trasero <input id="tune-rear" type="range" min="1" max="10" step="1" /><b id="tune-rear-v"></b></label>
+          <label>Balance <input id="tune-balance" type="range" min="-5" max="5" step="1" /><b id="tune-balance-v"></b></label>
+          <button id="tune-reset" type="button">La del circuito</button>
+        </div>
+        <p id="tune-hint" class="hint"></p>
+      </section>
       <section>
         <h2>Sonido</h2>
         <div class="sound">

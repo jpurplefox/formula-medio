@@ -35,13 +35,13 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Driver } from '../src/ai.js';
-import { Car, DEFAULT_PROFILE, isSolid, SAME_SETUP, slipstream } from '../src/car.js';
+import { Car, DEFAULT_PROFILE, isSolid, limitsOn, SAME_SETUP, slipstream } from '../src/car.js';
 import { collideCars } from '../src/collision.js';
 import { NeuralDriver, Policy } from '../src/policy.js';
 import { racingLine } from '../src/racingline.js';
 import { OBS_SIZE, observe, stationAt, trackHeading } from '../src/sensors.js';
 import { halfWidthAt, sampleField } from '../src/track.js';
-import { pointOnCenter, randomSetup, randomTyres, rng } from './env.js';
+import { pointOnCenter, randomSetup, randomTune, randomTyres, rng } from './env.js';
 import { loadTrack } from './tracks.js';
 
 const DT = 1 / 60;
@@ -90,7 +90,7 @@ export const SCENARIOS = { solo: 2400, pack: 300, start: 500, chase: 600, race: 
 
 let profile = DEFAULT_PROFILE;
 try {
-  profile = JSON.parse(readFileSync(fileURLToPath(new URL('../cars/f1-2023.json', import.meta.url)), 'utf8'));
+  profile = JSON.parse(readFileSync(fileURLToPath(new URL('../cars/f1-2025.json', import.meta.url)), 'utf8'));
 } catch {
   // sin el perfil medido, el de por defecto
 }
@@ -100,7 +100,7 @@ const tracks = new Map();
 function getTrack(id) {
   if (!tracks.has(id)) {
     const track = loadTrack(id);
-    const line = racingLine(track, profile, { brakeUse: 0.93 });
+    const line = racingLine(track, limitsOn(profile, track), { brakeUse: 0.93 });
     tracks.set(id, { track, line, corners: corners(track, line) });
   }
   return tracks.get(id);
@@ -296,6 +296,9 @@ export class RaceSim {
       if (s.kind === 'bot' && !s.setup && this.boost) {
         car.setup = { ...car.setup, grip: car.setup.grip * (1 + this.boost), power: car.setup.power * (1 + this.boost) };
       }
+      // la puesta a punto y el aire varían sólo para los que aprenden: los demás manejan para la del circuito
+      if (s.kind === 'agent') randomTune(car, r, track);
+      else car.placeOn(track);
       randomTyres(car, r, track);
       const e = { kind: s.kind, car, u: stationAt(track, car.x, car.y), start: wrap(s.u - front, L) * M, dist: 0, lastHit: -1e9, lastGrass: -1e9 };
       if (s.kind === 'bot') {

@@ -1,8 +1,8 @@
 // Trazada ideal: la línea que usa todo el ancho de la pista para abrir las curvas,
-// y la velocidad a la que se puede ir en cada punto de esa línea con el auto del perfil.
+// y la velocidad a la que se puede ir en cada punto de esa línea con los límites del auto (car.limits).
 // Todo se guarda por posición sobre la línea central (una entrada por celda), como los pianos.
 
-import { lookup } from './car.js';
+import { cornerSpeed } from './lapsim.js';
 import { curvature, halfWidthAt } from './track.js';
 
 const MARGIN = 1.3; // distancia mínima de la trazada al borde de la pista (m): medio auto y un poco más
@@ -16,7 +16,7 @@ const SMOOTH = [[4, 12]]; // suavizado final: [distancia a los vecinos (celdas),
 
 // limits: qué fracción del agarre y de la frenada usa (por defecto, con margen, para la trazada que ves;
 // los rivales usan una más al límite)
-export function racingLine(track, profile, { gripUse = GRIP_USE, brakeUse = BRAKE_USE } = {}) {
+export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE_USE } = {}) {
   const { path, meters, halfWidths } = track;
   const { n, x, y, st } = path;
   const wrap = (b) => ((b % n) + n) % n;
@@ -92,21 +92,16 @@ export function racingLine(track, profile, { gripUse = GRIP_USE, brakeUse = BRAK
   // 3) Velocidad: en cada punto, la máxima que aguanta el agarre (v²·curvatura = agarre, que crece con v²);
   //    después, hacia atrás, hay que llegar frenando, y hacia adelante, sólo se puede acelerar lo que da el motor.
   //    Se dan dos vueltas para que el final de la vuelta empalme con el principio.
-  const { base, perV2 } = profile.lateralGrip;
-  const v = new Float64Array(n);
-  for (let b = 0; b < n; b++) {
-    const k = curv[b] / gripUse;
-    v[b] = k > perV2 ? Math.min(profile.topSpeed, Math.sqrt(base / (k - perV2))) : profile.topSpeed;
-  }
+  const v = Float64Array.from(curv, (k) => cornerSpeed(limits, k, gripUse));
   for (let pass = 0; pass < 2; pass++) {
     for (let i = 2 * n - 1; i >= 0; i--) {
       const b = wrap(i), next = v[wrap(b + 1)];
-      const decel = (profile.brake.base + profile.brake.perV2 * next * next) * brakeUse;
+      const decel = (limits.brake(next) + limits.drag(next)) * brakeUse;
       v[b] = Math.min(v[b], Math.sqrt(next * next + 2 * decel * ds[b]));
     }
     for (let i = 0; i < 2 * n; i++) {
       const b = wrap(i), prev = v[wrap(b - 1)];
-      v[b] = Math.min(v[b], Math.sqrt(prev * prev + 2 * lookup(profile.accel, prev) * ds[wrap(b - 1)]));
+      v[b] = Math.min(v[b], Math.sqrt(prev * prev + 2 * Math.max(0, limits.accel(prev)) * ds[wrap(b - 1)]));
     }
   }
 
