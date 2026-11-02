@@ -13,6 +13,7 @@ Guarda cada tanto el modelo en rl/runs/<nombre>/ (y al terminar, model.zip). Con
 """
 
 import argparse
+import subprocess
 import time
 from collections import defaultdict, deque
 from pathlib import Path
@@ -25,7 +26,17 @@ from stable_baselines3.common.vec_env import VecNormalize
 
 from racing_env import TRACKS, RacingVecEnv
 
-OPPONENTS = 6  # como en src/sensors.js: los últimos 6 × 7 valores de la observación son los rivales
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def opponent_columns() -> tuple[int, int]:
+    """Dónde empiezan los valores de los rivales en la observación y cuántos son (src/sensors.js): después vienen
+    otros (ruedas, límites, daños), así que no son los últimos."""
+    code = "import('./src/sensors.js').then((m) => console.log(m.OPPONENT_START, m.OPPONENT_SIZE))"
+    out = subprocess.run(["node", "--input-type=module", "-e", code], cwd=ROOT, capture_output=True, text=True, check=True)
+    start, size = map(int, out.stdout.split())
+    return start, size
+
 
 RUNS = Path(__file__).resolve().parent / "runs"
 
@@ -225,10 +236,10 @@ def main():
             # En la etapa 1 los datos de los rivales siempre fueron cero: esos pesos de la primera capa nunca se
             # entrenaron y siguen al azar. En cero, la red arranca manejando igual que en la etapa 1 y aprende
             # de a poco a usar a los rivales (si no, el ruido le desarma lo aprendido)
-            n = OPPONENTS * 7
+            start, size = opponent_columns()
             with torch.no_grad():
                 for net in (model.policy.mlp_extractor.policy_net, model.policy.mlp_extractor.value_net):
-                    net[0].weight[:, -n:] = 0
+                    net[0].weight[:, start : start + size] = 0
     else:
         model = PPO(
             "MlpPolicy",

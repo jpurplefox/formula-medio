@@ -40,8 +40,9 @@ const OPPONENT_VALUES = 7;
 export const WHEEL_VALUES = 4;
 export const LIMIT_VALUES = 5;
 export const DAMAGE_VALUES = 15;
-export const OBS_SIZE = CAR_VALUES + SETUP_VALUES + POSITION_VALUES + LOOK_AHEAD.length + RAY_ANGLES.length
-  + OPPONENTS * OPPONENT_VALUES + WHEEL_VALUES + LIMIT_VALUES + DAMAGE_VALUES;
+export const OPPONENT_START = CAR_VALUES + SETUP_VALUES + POSITION_VALUES + LOOK_AHEAD.length + RAY_ANGLES.length;
+export const OPPONENT_SIZE = OPPONENTS * OPPONENT_VALUES; // dónde empiezan los rivales y cuántos valores son
+export const OBS_SIZE = OPPONENT_START + OPPONENT_SIZE + WHEEL_VALUES + LIMIT_VALUES + DAMAGE_VALUES;
 const DAMAGE_LEVEL = { off: 0, reduced: 0.5, real: 1 };
 const SLOW = 25, FAST = 70; // m/s: una curva lenta (90 km/h) y una rápida (250 km/h)
 
