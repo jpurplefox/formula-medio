@@ -6,7 +6,7 @@
 
 import { rgb } from './renderer.js';
 import { carbonTexture } from './textures.js';
-import { HALF_L, HALF_W, LIVERY_S, SIDE_L, SIDE_R, SIDEWALL_S, SIDEWALL_SIZE, TALL, TOP, TREAD_SIZE, RIM_S, RIM_SIZE, liveryTexture, rimTexture, sidewallTexture, treadTexture } from './livery.js';
+import { HALF_L, HALF_W, LIVERY_S, SIDE_L, SIDE_R, SIDEWALL_S, SIDEWALL_SIZE, TALL, TOP, TREAD_SIZE, RIM_S, RIM_SIZE, liveryTexture, plainDesign, rimTexture, sidewallTexture, treadTexture } from './livery.js';
 
 const CARBON = rgb(34, 34, 38);
 const COCKPIT = rgb(16, 16, 18);
@@ -466,9 +466,11 @@ function skin(parts, body, livery, sharp = 1) {
       const top = az >= ax && az >= ay, side = !top && ay >= ax;
       let uv = null;
       if (f.color === body) {
-        if (top) uv = pts.map(([x, y]) => [(x + HALF_L) * LIVERY_S * sharp, (TOP + (y + HALF_W) * LIVERY_S) * sharp]);
-        else if (side) {
-          const row = f.n[1] > 0 ? SIDE_R : SIDE_L;
+        // lo que mira hacia abajo (los bajos de los pontones, que se ven de costado) sigue el dibujo del costado,
+        // no el de arriba
+        if (top && f.n[2] > 0) uv = pts.map(([x, y]) => [(x + HALF_L) * LIVERY_S * sharp, (TOP + (y + HALF_W) * LIVERY_S) * sharp]);
+        else if (side || top) {
+          const row = (f.n[1] || center(pts)[1]) > 0 ? SIDE_R : SIDE_L;
           uv = pts.map(([x, , z]) => [(x + HALF_L) * LIVERY_S * sharp, (row + (TALL - z) * LIVERY_S) * sharp]);
         }
         if (uv) Object.assign(f, { tex: livery, slot: 1, dens: LIVERY_S * sharp });
@@ -504,8 +506,9 @@ function skin(parts, body, livery, sharp = 1) {
 // cámara de arriba (la "T"): como en la F1, negra en el primer auto de cada equipo y amarilla en el segundo
 export const TCAM = ['#161616', '#f2e600'];
 
-// sharp: decoración con más resolución (para el auto propio, que desde la cabina se ve de muy cerca)
-export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', accent = '#f4f4f4', tcam = TCAM[0], { sharp = 1 } = {}) {
+// sharp: decoración con más resolución (para el auto propio, que desde la cabina se ve de muy cerca); design: la
+// pintura y los sponsors del equipo (teamliveries.js; si no, una franja del color accent)
+export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', accent = '#f4f4f4', tcam = TCAM[0], { sharp = 1, design = null } = {}) {
   const body = hex(color), head = hex(helmet);
   const parts = [];
   const add = (...p) => parts.push(...p);
@@ -826,5 +829,5 @@ export function carModel(color = '#d8261c', helmet = '#ffd400', number = '16', a
       add(...wheel(x, s, y, w, front, hex(accent)));
     });
   }
-  return skin(parts, body, liveryTexture(color, accent, number, sharp), sharp);
+  return skin(parts, body, liveryTexture(color, design ?? plainDesign(color, accent), number, sharp), sharp);
 }
