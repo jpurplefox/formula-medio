@@ -111,9 +111,9 @@ function drawTop(g, color, accent, number) {
   label(g, 'RAYCAST', X(-1.45), Y(0), 0.1, up, accent, '#111111');
   // flap del alerón trasero
   label(g, 'RAYCAST', X(-2.35), Y(0), 0.13, up, accent);
-  // puntas del alerón delantero
+  // puntas del alerón delantero, con la aleta de arriba que sale hacia el costado
   g.fillStyle = accent;
-  for (const s of [-1, 1]) g.fillRect(X(2.2), Y(s > 0 ? 0.72 : -0.96), 0.35 * S, 0.24 * S);
+  for (const s of [-1, 1]) g.fillRect(X(2.15), Y(s > 0 ? 0.45 : -0.97), 0.45 * S, 0.52 * S);
 }
 
 // Atlas de la decoración de un auto
