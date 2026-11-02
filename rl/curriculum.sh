@@ -1,7 +1,9 @@
 #!/bin/sh
 # Entrena desde cero la receta de la red del juego (rl/CURRICULO.md): las fases 1–4 del tercer intento, las 5–6
-# del cuarto y una 7 contra rivales más rápidos. Cada fase parte del modelo final de la anterior y se exporta a
-# models/$NOMBRE/faseN.json; al final mide las dos últimas contra la elegida en la carrera tipo juego. No pisa la red
+# del cuarto y una 7 contra rivales más rápidos. Los daños (src/damage.js) se prenden recién al final: apagados en
+# las fases 1–4, reducidos en la 5 y mezclados (no, reducidos, reales) en la 6 y la 7, con algunos autos que ya
+# arrancan rotos. Cada fase parte del modelo final de la anterior y se exporta a models/$NOMBRE/faseN.json; al
+# final mide las dos últimas contra la elegida en la carrera tipo juego, con cada nivel de daños. No pisa la red
 # del juego: si una nueva es mejor, se cambia a mano CURRENT_NET en src/main.js (~3 h en una Mac M4 Pro).
 #
 #   sh rl/curriculum.sh [primera fase]      (por defecto 1; por ejemplo 7 para rehacer sólo la última)
@@ -27,6 +29,10 @@ CLEAN="--rewards progress:0.7,pass:0,paceFloor:1"
 PACE="--rewards progress:1,pass:0,paceFloor:1,paceAlways:1,paceCrowd:0.6,crowd:2.5"
 # autos de -15 % a +20 %: para poder subir la dificultad en el juego dándoles más agarre
 CARS="--spread 0.15,0.2"
+# daños: primero que no rompan del todo (fase 5), después de los tres niveles mezclados; el 15 % de los agentes
+# arranca con algo roto, para aprender a manejarlo
+REDUCED="--damage reduced --damaged-starts 0.15"
+DAMAGE="--damage mix --damaged-starts 0.15"
 
 run() { # fase, opciones de train.py
   fase=$1; shift
@@ -61,25 +67,27 @@ if [ "$FROM" -le 4 ]; then
 fi
 if [ "$FROM" -le 5 ]; then
   # ritmo sin chocar: persecuciones de un auto peor (la desventaja se achica en la fase), carreras y repaso
-  run fase5 --race --envs 4 --mix race:35,chase:25,start:15,pack:15,solo:10 $CARS $PACE $BUDGET \
+  run fase5 --race --envs 4 --mix race:35,chase:25,start:15,pack:15,solo:10 $CARS $PACE $BUDGET $REDUCED \
     --opponents "models/fase7.json,$OUT/fase4.json" --steps 35000000 \
     --resume "rl/runs/${N}fase4/model.zip" --contact-scale 2 --critic-warmup 2000000 --lr 1e-4
 fi
 if [ "$FROM" -le 6 ]; then
   # integrar: carreras completas con rivales que son redes, como en el juego
-  run fase6 --race --envs 4 --mix race:55,start:15,pack:10,chase:10,solo:10 $CARS $PACE $BUDGET \
+  run fase6 --race --envs 4 --mix race:55,start:15,pack:10,chase:10,solo:10 $CARS $PACE $BUDGET $DAMAGE \
     --opponents "models/fase7.json,$OUT/fase4.json,$OUT/fase5.json" --steps 30000000 \
     --resume "rl/runs/${N}fase5/model.zip" --critic-warmup 1000000 --lr 5e-5
 fi
 if [ "$FROM" -le 7 ]; then
   # ritmo contra rivales más rápidos: entre ellos sólo mejora hasta el ritmo del de adelante. Rivales con 8 % más de
   # agarre y potencia (la IA de siempre, de 1 a 1,1 de ritmo) y, como redes, la de la fase 6 y la más rápida que hubo
-  run fase7 --race --envs 4 --mix race:60,start:15,chase:10,pack:5,solo:10 $CARS $PACE $BUDGET --rivals-boost 0.08 \
+  run fase7 --race --envs 4 --mix race:60,start:15,chase:10,pack:5,solo:10 $CARS $PACE $BUDGET $DAMAGE --rivals-boost 0.08 \
     --opponents "models/fase7.json,$OUT/fase6.json" --steps 20000000 \
     --resume "rl/runs/${N}fase6/model.zip" --critic-warmup 1000000 --lr 3e-5
 fi
 
-# las nuevas contra la del juego, en la carrera tipo juego (toques, pasto y ritmo)
+# las nuevas contra la del juego, en la carrera tipo juego (toques, pasto y ritmo), con cada nivel de daños
 for m in "$ACTUAL" "$OUT/fase6.json" "$OUT/fase7.json"; do
-  echo "$m"; JUEGO=1 node rl/race_eval.js "$m" 2>&1 | tail -1
+  for d in off reduced real; do
+    echo "$m · daños $d"; JUEGO=1 DANOS=$d node rl/race_eval.js "$m" 2>&1 | tail -2
+  done
 done

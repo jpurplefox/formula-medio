@@ -118,6 +118,21 @@ export function applyHit(damage, lx, ly, hit, other, level) {
   return d;
 }
 
+// Daños al azar, para entrenar con autos ya rotos: una o dos piezas, con un poco o del todo (con daños reducidos,
+// como mucho REDUCED_MAX y sin pinchazos); nunca un abandono
+export function randomDamage(rand, level) {
+  let d = NO_DAMAGE;
+  const max = level === 'reduced' ? REDUCED_MAX : 1;
+  for (let n = rand() < 0.3 ? 2 : 1; n > 0; n--) {
+    const amount = Math.min(max, 0.2 + 0.8 * rand());
+    const part = ['frontWing', 'rearWing', 'sidepod', 'suspension', 'tyre'][Math.floor(rand() * (level === 'reduced' ? 4 : 5))];
+    const i = Math.floor(rand() * d[part].length);
+    const value = part === 'tyre' ? 1 : part === 'suspension' ? Math.min(0.7, amount) : amount;
+    d = { ...d, [part]: set(d[part], i, value) };
+  }
+  return d;
+}
+
 // Las gomas pinchadas se van desinflando
 export function deflate(damage, dt) {
   if (!damage.tyre.some((t) => t > 0 && t < 1)) return damage;
