@@ -29,6 +29,7 @@ class Worker:
         )
         hello = json.loads(self.proc.stdout.readline())
         self.obs_size = hello["obs_size"]
+        self.actions = hello.get("actions", 2)  # salidas de la red (src/sensors.js, ACTIONS)
         self.n = hello["envs"]  # agentes en total
 
     def _read(self, count: int) -> np.ndarray:
@@ -73,7 +74,7 @@ class RacingVecEnv(VecEnv):
         self.workers = [Worker(envs_per_worker, tracks, seed * 100 + w, **mode) for w in range(workers)]
         obs_size = self.workers[0].obs_size
         observation_space = spaces.Box(-3.0, 3.0, shape=(obs_size,), dtype=np.float32)
-        action_space = spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float32)
+        action_space = spaces.Box(-1.0, 1.0, shape=(self.workers[0].actions,), dtype=np.float32)
         self.per = self.workers[0].n
         super().__init__(workers * self.per, observation_space, action_space)
         self._actions = None

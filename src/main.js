@@ -13,6 +13,7 @@ import { CAMERA_MODES, CAMERA_NAMES, Recorder, replayCamera, tvCameras } from '.
 import { DIFFICULTIES, LAP_OPTIONS, RIVAL_OPTIONS, TEAMS, car as teamCar, gridOrder, rivalCars, rivalPaces, rivalSetups } from './teams.js';
 import { EngineAudio } from './audio.js';
 import { NeuralDriver, Policy } from './policy.js';
+import { LIGHTS_OUT, lightsAt, lightsDuration, randomHold } from './lights.js';
 import { RubberMap } from './rubber.js';
 import { DESIGNS } from './teamliveries.js';
 import { airDensity, carLimits, DEFAULT_TUNE, GRAVITY } from './dynamics.js';
@@ -38,10 +39,6 @@ const HEAD_DIVE = 5;
 const CAR_PROFILE = 'cars/f1-2025.json'; // ajustado con tools/calibrate.js
 const SHIFT_LIGHTS = 15;
 const REPLAY_DELAY = 6; // segundos de resultado antes de que empiece la repetición
-// semáforo, como en la F1: se prenden 5 luces rojas, una por segundo, y después de una espera al azar se apagan todas
-const LIGHT_FIRST = 1; // cuándo se prende la primera (s)
-const LIGHT_GAP = 1; // entre una luz y la siguiente (s)
-const LIGHT_HOLD = [0.4, 2.6]; // cuánto quedan las 5 prendidas antes de apagarse (s, al azar entre estos)
 const SETTINGS_KEY = 'raycast-racer-settings';
 
 // lo que se elige en el menú (se recuerda en el navegador): modo (carrera o contrarreloj), equipo, dificultad,
@@ -334,7 +331,7 @@ let lastGame = null; // la última carrera, para conservar el mejor tiempo y el 
 let carProfile = DEFAULT_PROFILE;
 // Los rivales manejan con la red entrenada (rl/CURRICULO.md); con ?ia=models/fase7.json, con otra, y con ?ia=clasica,
 // con la IA de siempre (ai.js), que es también la que queda si la red no carga
-const CURRENT_NET = 'models/v5/fase7.json';
+const CURRENT_NET = 'models/v19/fase18.json';
 const IA_PARAM = new URLSearchParams(location.search).get('ia') || CURRENT_NET;
 const NEURAL_URL = IA_PARAM === 'clasica' ? null : IA_PARAM;
 let neuralPolicy = null;
@@ -404,7 +401,7 @@ function resetGame(track) {
     e.lastPass = -1;
   }
   towerClock = 0;
-  game.lightsTotal = game.countdown = LIGHT_FIRST + 4 * LIGHT_GAP + LIGHT_HOLD[0] + Math.random() * (LIGHT_HOLD[1] - LIGHT_HOLD[0]);
+  game.lightsTotal = game.countdown = lightsDuration(randomHold());
   if (!guides.has(track)) guides.set(track, racingLine(track, limitsOn(carProfile, track)));
   // la goma arranca con la franja tenue de otra categoría sobre la trazada y la carrera la va marcando
   game.rubber = new RubberMap(track, guides.get(track).offset);
@@ -444,6 +441,9 @@ function lineCoords(track, x, y) {
   return { along: ax * line.dx + ay * line.dy, side: -ax * line.dy + ay * line.dx };
 }
 
+// si el rival lo maneja una red que ve el semáforo (sensors.js): sube las vueltas y larga ella
+const seesLights = (e) => e.driver instanceof NeuralDriver && e.driver.policy.lights;
+
 function update(dt) {
   const g = game;
   const input = readInput();
@@ -452,11 +452,29 @@ function update(dt) {
   if (g.countdown > 0) {
     g.countdown -= dt;
     g.car.rev(dt, input.throttle);
-    for (const e of g.entries) if (e.driver) e.car.rev(dt, e.car.rpm < e.revTarget);
+    // los rivales con una red que ve el semáforo suben y bajan las vueltas ellos (sensors.js); los demás, hasta las suyas
+    const lights = lightsAt(g.lightsTotal - Math.max(0, g.countdown), g.lightsTotal);
+    for (const e of g.entries) {
+      if (!e.driver) continue;
+      if (seesLights(e)) {
+        e.car.lights = lights;
+        const inp = e.driver.grid(dt, g.track, e, g.entries.filter((o) => o !== e));
+        e.car.revBy(dt, inp.revUp, inp.revDown);
+        e.car.throttle = inp.throttle;
+      } else e.car.rev(dt, e.car.rpm < e.revTarget);
+    }
     // se apagan las luces: el que viene acelerando suelta el embrague ya
     if (g.countdown <= 0) {
       if (input.throttle) g.car.launch();
       else g.awaitLaunch = true;
+      // las redes que ven el semáforo: como vos, sin la reacción de la IA (la pone la red, al acelerar)
+      for (const e of g.entries) {
+        if (!e.driver || !seesLights(e)) continue;
+        e.car.lights = LIGHTS_OUT;
+        e.react = 0;
+        if (e.driver.input.throttle > 0) e.car.launch();
+        else e.gridWait = true;
+      }
     }
   } else {
     g.raceTime += dt;
@@ -475,6 +493,16 @@ function update(dt) {
     const states = g.entries.map((e) => carState(g.track, e));
     g.entries.forEach((e, i) => {
       if (!e.driver || e.car.gone) return;
+      // una red que no venía acelerando cuando se apagaron las luces: larga cuando acelera
+      if (e.gridWait) {
+        if (e.driver.grid(dt, g.track, e, g.entries.filter((o) => o !== e)).throttle > 0) {
+          e.car.launch();
+          e.gridWait = false;
+        } else {
+          e.car.rev(dt, false);
+          return;
+        }
+      }
       // cada rival tarda un poquito en reaccionar al semáforo
       if (e.react > 0) {
         e.react -= dt;
@@ -1001,7 +1029,7 @@ async function draw(time) {
 // Se prenden de a una por segundo y, después de una espera al azar, se apagan todas: ahí se larga.
 function drawLights(g) {
   const elapsed = g.lightsTotal - Math.max(0, g.countdown);
-  const lit = g.countdown > 0 ? Math.min(5, Math.max(0, Math.floor((elapsed - LIGHT_FIRST) / LIGHT_GAP) + 1)) : 0;
+  const { lit } = lightsAt(elapsed, g.lightsTotal);
   const w = 26, gap = 6, x0 = 240 - (5 * w + 4 * gap) / 2, y0 = 22;
   ctx.save();
   ctx.scale(UI_SCALE, UI_SCALE);

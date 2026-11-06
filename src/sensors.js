@@ -15,6 +15,15 @@
 //               respecto del auto con los alerones al medio a nivel del mar. También al final, por lo mismo
 //   daños       cuánto tiene roto de cada pieza (damage.js: alerones, pontones, suspensiones, gomas) y el nivel de
 //               daños de la carrera (0 no, 0,5 reducidos, 1 reales). Al final, por lo mismo
+//   más rivales el 7.º y el 8.º más cercanos, con los mismos valores que los 6 primeros: en una grilla de 22, en la
+//               largada suele haber más de 6 a menos de 120 m. Al final, por lo mismo
+//   cómo van los rivales  de los mismos 8 y en el mismo orden: acelerador, freno y volante que están usando (sin
+//               memoria, que el de adelante frena se notaba recién cuando ya se le acercaba), cuánto más motor y
+//               agarre tiene su auto que el propio, cuánto tiene roto (la pieza más rota) y de qué lado de la pista
+//               va. Al final, por lo mismo
+//   semáforo    en la grilla: cuántas luces rojas hay prendidas, cuánto hace que se prendió la última y si ya se
+//               apagaron (src/lights.js), para llevar el motor a las vueltas de largar. En carrera, apagadas. Al
+//               final, por lo mismo
 //
 // Todo va más o menos entre -1 y 1. Las distancias de la pista se miden en metros, así sirve en cualquier
 // circuito sin importar el tamaño de sus celdas.
@@ -22,6 +31,7 @@
 import { SETUP_KEYS } from './car.js';
 import { carLimits, DEFAULT_TUNE, SEA_AIR } from './dynamics.js';
 import { NO_DAMAGE } from './damage.js';
+import { LIGHTS_OUT } from './lights.js';
 import { halfWidthAt, sampleField, stationAt } from './track.js';
 
 export const RAY_ANGLES = [-90, -60, -40, -28, -18, -11, -6, -3, -1, 0, 1, 3, 6, 11, 18, 28, 40, 60, 90]
@@ -40,9 +50,19 @@ const OPPONENT_VALUES = 7;
 export const WHEEL_VALUES = 4;
 export const LIMIT_VALUES = 5;
 export const DAMAGE_VALUES = 15;
+const MORE_OPPONENTS = 2; // el 7.º y el 8.º, al final
+const RIVAL_VALUES = 7; // acelerador, freno, volante, motor, agarre, daño y lado de la pista de cada rival
+export const ALL_OPPONENTS = OPPONENTS + MORE_OPPONENTS;
+export const OPPONENT_INPUT_SIZE = MORE_OPPONENTS * OPPONENT_VALUES + ALL_OPPONENTS * RIVAL_VALUES;
 export const OPPONENT_START = CAR_VALUES + SETUP_VALUES + POSITION_VALUES + LOOK_AHEAD.length + RAY_ANGLES.length;
 export const OPPONENT_SIZE = OPPONENTS * OPPONENT_VALUES; // dónde empiezan los rivales y cuántos valores son
-export const OBS_SIZE = OPPONENT_START + OPPONENT_SIZE + WHEEL_VALUES + LIMIT_VALUES + DAMAGE_VALUES;
+export const OPPONENT_INPUT_START = OPPONENT_START + OPPONENT_SIZE + WHEEL_VALUES + LIMIT_VALUES + DAMAGE_VALUES;
+export const START_VALUES = 3;
+// salidas de la red: volante, pedal y, sólo con el semáforo en rojo, cuánto sube y cuánto baja las rpm (las redes de
+// antes del semáforo tienen las dos primeras)
+export const ACTIONS = 4;
+export const START_INPUT_START = OPPONENT_INPUT_START + OPPONENT_INPUT_SIZE;
+export const OBS_SIZE = START_INPUT_START + START_VALUES;
 const DAMAGE_LEVEL = { off: 0, reduced: 0.5, real: 1 };
 const SLOW = 25, FAST = 70; // m/s: una curva lenta (90 km/h) y una rápida (250 km/h)
 
@@ -111,7 +131,9 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
   put(car.throttle);
   put(car.brake);
   put(car.gear / 8);
-  put(car.rpm / 12000);
+  // con el semáforo en rojo no ve las rpm: no las necesita (sus salidas de rpm las fijan) y el crítico, que en carrera
+  // aprendió que más rpm es más velocidad, premiaba subirlas hasta el corte aunque así larga peor (v18)
+  put(car.lights && !car.lights.out ? 0 : car.rpm / 12000);
   put(car.grip?.[0] ?? 1);
   put(car.grip?.[1] ?? 1);
   put(car.aLon / 40);
@@ -147,11 +169,10 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
     if (d < OPPONENT_RANGE) near.push([d, o, dx, dy]);
   }
   near.sort((a, b) => a[0] - b[0]);
-  for (let k = 0; k < OPPONENTS; k++) {
-    const n = near[k];
+  const rival = (n) => {
     if (!n) {
       for (let j = 0; j < OPPONENT_VALUES; j++) put(0);
-      continue;
+      return;
     }
     const [, o, dx, dy] = n;
     const [ox, oy] = velocity(o);
@@ -164,7 +185,8 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
     put((-rvx * sa + rvy * ca) / 10);
     put(Math.sin(oa));
     put(Math.cos(oa));
-  }
+  };
+  for (let k = 0; k < OPPONENTS; k++) rival(near[k]);
 
   // agarre de cada rueda: delantera izquierda, derecha, trasera izquierda, derecha
   for (const g of car.wheelGrip ?? [1, 1, 1, 1]) put(g);
@@ -176,6 +198,33 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
   const d = car.damage ?? NO_DAMAGE;
   for (const part of [d.frontWing, d.rearWing, d.sidepod, d.suspension, d.tyre]) for (const x of part) put(x);
   put(DAMAGE_LEVEL[car.damageLevel] ?? 0);
+
+  // el 7.º y el 8.º rival
+  for (let k = OPPONENTS; k < ALL_OPPONENTS; k++) rival(near[k]);
+
+  // cómo van los 8: pedales, volante, su auto respecto del propio, lo roto y de qué lado de la pista
+  const half = halfWidthAt(track, u);
+  for (let k = 0; k < ALL_OPPONENTS; k++) {
+    const o = near[k]?.[1];
+    if (!o) {
+      for (let j = 0; j < RIVAL_VALUES; j++) put(0);
+      continue;
+    }
+    put(o.throttle);
+    put(o.brake);
+    put(o.steer);
+    put(((o.setup?.power ?? 1) - (car.setup?.power ?? 1)) / SETUP_SPREAD.power);
+    put(((o.setup?.grip ?? 1) - (car.setup?.grip ?? 1)) / SETUP_SPREAD.grip);
+    const od = o.damage ?? NO_DAMAGE;
+    put(Math.max(...od.frontWing, ...od.rearWing, ...od.sidepod, ...od.suspension, ...od.tyre));
+    put(sampleField(track.lat, W, o.x, o.y) / half);
+  }
+
+  // semáforo: luces prendidas, segundos desde la última y si ya se largó
+  const lights = car.lights ?? LIGHTS_OUT;
+  put(lights.lit / 5);
+  put(lights.since / 3);
+  put(lights.out ? 1 : 0);
   return out;
 }
 

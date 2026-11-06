@@ -35,6 +35,8 @@ const STANDING_START = 0.2; // parte de los episodios que larga con el auto quie
 const ROUGH_START = 0.2; // y parte que larga cruzado o con dos ruedas afuera, para aprender a recuperarse
 const BACKWARDS_LIMIT = 30; // m de retroceso acumulado
 const END_PENALTY = 2;
+const RETIRE_PENALTY = 10; // por romper el auto contra el muro hasta abandonar (con daños)
+const DAMAGE_LEVELS = ['off', 'reduced', 'real'];
 
 let profile = DEFAULT_PROFILE;
 try {
@@ -93,9 +95,12 @@ export function randomTyres(car, rand, track) {
 }
 
 export class RaceEnv {
-  // rewards: escala del castigo por pasto y por muro (la fase 1 del tercer intento los hace más caros)
-  constructor({ trackIds, seed = 1, spread = 0.02, rewards = {}, tuneSpread = TUNE_SPREAD }) {
+  // rewards: escala del castigo por pasto y por muro (la fase 1 del tercer intento los hace más caros); damage: los
+  // daños (src/damage.js: 'off', 'reduced', 'real' o 'mix', uno de los tres al azar en cada episodio). Con daños,
+  // un golpe fuerte contra el muro rompe el auto y si abandona termina el episodio
+  constructor({ trackIds, seed = 1, spread = 0.02, rewards = {}, tuneSpread = TUNE_SPREAD, damage = 'off' }) {
     this.tuneSpread = tuneSpread;
+    this.damage = damage;
     this.rewards = { grass: 1, wall: 1, ...rewards };
     this.trackIds = trackIds;
     this.spread = spread;
@@ -125,6 +130,7 @@ export class RaceEnv {
     car.setup = randomSetup(this.rand, this.spread);
     randomTune(car, this.rand, track, this.tuneSpread);
     randomTyres(car, this.rand, track);
+    car.damageLevel = this.damage === 'mix' ? DAMAGE_LEVELS[Math.floor(this.rand() * 3)] : this.damage;
     this.car = car;
     this.u = stationAt(track, car.x, car.y);
     this.steps = 0;
@@ -176,14 +182,15 @@ export class RaceEnv {
     this.stuck = Math.abs(car.speed) < 1 ? this.stuck + dt : 0;
     this.steps++;
 
-    const done = this.grass > GRASS_LIMIT || this.stuck > STUCK_LIMIT || this.back > BACKWARDS_LIMIT;
-    if (done) reward -= END_PENALTY;
+    const retired = !!car.damage.retired;
+    const done = retired || this.grass > GRASS_LIMIT || this.stuck > STUCK_LIMIT || this.back > BACKWARDS_LIMIT;
+    if (done) reward -= retired ? RETIRE_PENALTY : END_PENALTY;
     const truncated = !done && this.steps >= EPISODE_STEPS;
     this.ret += reward;
     const info = { lap, track: this.id };
     if (done || truncated) {
       info.episode = { r: this.ret, l: this.steps, dist: this.dist, track: this.id,
-        end: this.grass > GRASS_LIMIT ? 'grass' : this.stuck > STUCK_LIMIT ? 'stuck' : this.back > BACKWARDS_LIMIT ? 'back' : 'time' };
+        end: retired ? 'retired' : this.grass > GRASS_LIMIT ? 'grass' : this.stuck > STUCK_LIMIT ? 'stuck' : this.back > BACKWARDS_LIMIT ? 'back' : 'time' };
     }
     return { obs: observe(track, car, this.u, [], this.obs), reward, done, truncated, info };
   }

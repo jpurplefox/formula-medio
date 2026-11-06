@@ -2,23 +2,26 @@
 // Los pesos vienen de rl/export.py: capas lineales con tanh entre ellas.
 
 import { rescue } from './ai.js';
-import { DAMAGE_VALUES, LIMIT_VALUES, OBS_SIZE, observe, SETUP_START, SETUP_VALUES, WHEEL_VALUES } from './sensors.js';
+import { DAMAGE_VALUES, LIMIT_VALUES, OBS_SIZE, observe, OPPONENT_INPUT_SIZE, SETUP_START, SETUP_VALUES, START_VALUES, WHEEL_VALUES } from './sensors.js';
 import { stationAt } from './track.js';
 
 export class Policy {
   // opponents: si aprendió a mirar a los demás autos (etapa 2); si no, se le pasan en cero, como al entrenar
   constructor({ obs_size, layers, opponents = false }) {
-    // las redes de antes de los daños, de los límites (puesta a punto y aire) y del agarre por rueda leen sólo lo
-    // de adelante (van al final); las de antes del desgaste y la variación de autos, además, no reciben esos
-    // valores: se les sacan
+    // las redes de antes del semáforo, de los pedales de los rivales, de los daños, de los límites (puesta a punto y aire) y del
+    // agarre por rueda leen sólo lo de adelante (van al final); las de antes del desgaste y la variación de autos,
+    // además, no reciben esos valores: se les sacan
     this.size = obs_size;
-    const tail = DAMAGE_VALUES + LIMIT_VALUES + WHEEL_VALUES;
-    this.legacy = obs_size === OBS_SIZE - tail - SETUP_VALUES;
-    const reads = [OBS_SIZE, OBS_SIZE - DAMAGE_VALUES, OBS_SIZE - DAMAGE_VALUES - LIMIT_VALUES, OBS_SIZE - tail];
+    const reads = [OBS_SIZE];
+    for (const n of [START_VALUES, OPPONENT_INPUT_SIZE, DAMAGE_VALUES, LIMIT_VALUES, WHEEL_VALUES]) reads.push(reads.at(-1) - n);
+    this.legacy = obs_size === reads.at(-1) - SETUP_VALUES;
     if (!reads.includes(obs_size) && !this.legacy) {
       throw new Error(`La red espera ${obs_size} valores y los sensores dan ${OBS_SIZE}`);
     }
     this.opponents = opponents;
+    // si ve el semáforo y sube y baja las rpm ella (dos salidas más): si no, larga con las vueltas y la reacción de la IA
+    // de siempre
+    this.lights = obs_size === OBS_SIZE && layers.at(-1).out >= 4;
     this.layers = layers.map((l) => {
       const w = floats(l.w);
       return { w: Array.from({ length: l.out }, (_, i) => w.subarray(i * l.in, (i + 1) * l.in)), b: floats(l.b) };
@@ -29,7 +32,7 @@ export class Policy {
     return new Policy(await fetch(url).then((r) => r.json()));
   }
 
-  // obs → [volante, pedal], los dos entre -1 y 1
+  // obs → [volante, pedal] y, en las redes que ven el semáforo, [subir rpm, bajar rpm]: todos entre -1 y 1
   act(obs) {
     let x = obs.subarray(0, this.legacy ? this.size + SETUP_VALUES : this.size);
     if (this.legacy) {
@@ -99,6 +102,22 @@ export class NeuralDriver {
       const cars = this.opponents ? others.map((o) => o.car) : [];
       const [steer, pedal] = this.policy.act(observe(track, car, this.u, cars, this.obs));
       this.input = { steer, throttle: Math.max(0, pedal), brake: Math.max(0, -pedal) };
+    }
+    return this.input;
+  }
+
+  // Quieta en la grilla (con el semáforo prendido, o apagado sin haber largado todavía): sólo decide, sin rescates.
+  // revUp y revDown suben y bajan las vueltas (car.revBy); quien llama suelta el embrague cuando acelera con las luces
+  // apagadas (car.lights: cómo está el semáforo)
+  grid(dt, track, { car }, others = []) {
+    const u = stationAt(track, car.x, car.y);
+    if (u >= 0) this.u = u;
+    this.wait -= dt;
+    if (this.wait <= 0) {
+      this.wait += DECISION_DT;
+      const cars = this.opponents ? others.map((o) => o.car) : [];
+      const [steer, pedal, up = 0, down = 0] = this.policy.act(observe(track, car, this.u, cars, this.obs));
+      this.input = { steer, throttle: Math.max(0, pedal), brake: Math.max(0, -pedal), revUp: up, revDown: down };
     }
     return this.input;
   }

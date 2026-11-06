@@ -87,6 +87,7 @@ export const LAUNCH_WINDOW = [9500, 10500]; // rpm de la largada perfecta
 const LAUNCH_TIME = 1.6; // cuánto dura el efecto de la largada (s)
 const REV_RATE = 6500; // cuánto suben las rpm por segundo en punto muerto, a fondo (más lento cerca del corte)
 const REV_DROP = 7000; // y cuánto bajan sin acelerar
+const REV_BASE = 8000, REV_SPAN = 4000, REV_FOLLOW = 40000; // la red en la grilla (revBy): vueltas sin pedir nada y cuánto suma o resta cada salida a fondo
 // desgaste de las gomas: se gastan al andar, más cuanto más se exige su agarre (doblando, frenando, acelerando,
 // deslizando); gastadas del todo agarran y frenan WEAR_GRIP menos
 const WEAR_GRIP = 0.08;
@@ -230,6 +231,20 @@ export class Car {
 
   // En la grilla, con el auto detenido (embrague apretado): el acelerador sólo sube las vueltas,
   // hasta un punto que depende de cuánto se lo pisa (0..1; true es a fondo)
+  // En la grilla con el semáforo en rojo, como lo hace la red: up suma y down resta vueltas (cada uno de -1 a 1, en
+  // línea recta: recortados en 0, con el ruido de explorar el promedio al entrenar no era lo que pedía sin ruido, y
+  // aprendió a pedir de más) a las de REV_BASE, y el motor va hacia esas. Con las dos en cero, REV_BASE: así explora
+  // alrededor de unas vueltas intermedias (con subir y bajar a ritmo, el ruido de un paso se compensaba con el del
+  // siguiente y quedaba siempre en ralentí)
+  revBy(dt, up, down) {
+    const max = this.profile.maxRpm, clip = (x) => Math.max(-1, Math.min(1, +x || 0));
+    const target = Math.max(IDLE_RPM, Math.min(max, REV_BASE + (REV_SPAN / 2) * (clip(up) - clip(down))));
+    // en vacío y sin carga sigue casi al instante (si tardaba, el ruido de cada paso se promediaba y todas las largadas
+    // salían iguales: no había de qué aprender)
+    const step = REV_FOLLOW * dt;
+    this.rpm = this.rpm < target ? Math.min(target, this.rpm + step) : Math.max(target, this.rpm - step);
+  }
+
   rev(dt, throttle) {
     const max = this.profile.maxRpm, thr = pedal(throttle);
     const target = IDLE_RPM + (max - IDLE_RPM) * thr;

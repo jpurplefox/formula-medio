@@ -2,12 +2,14 @@
 //
 //   node rl/worker.js solo  <entornos> <circuitos separados por coma> <semilla> [config]
 //   node rl/worker.js race  <carreras> <circuitos> <semilla> [config]
+//   node rl/worker.js herd  <carreras> <circuitos> <semilla> [config]
 //
-// "solo" es la fase 1 (un auto por entorno); "race" las fases 2 a 4 (rl/race.js: varios agentes por carrera).
+// "solo" es la fase 1 (un auto por entorno); "race" las carreras con rivales (rl/race.js: varios agentes por
+// carrera); "herd" las carreras en manada, todos los autos agentes (rl/herd.js).
 // config es un JSON con las opciones de RaceEnv o RaceSim (spread, agents, opponents, mix, raceSpread).
 // Para Python cada agente es un entorno más: en total, entornos × agentes.
 //
-// Al arrancar escribe una línea JSON ({ obs_size, envs }) y espera órdenes. Cada orden empieza con un byte:
+// Al arrancar escribe una línea JSON ({ obs_size, actions, envs }) y espera órdenes. Cada orden empieza con un byte:
 //   0 = paso: le siguen las acciones (float32, 2 por agente). Responde con un bloque binario
 //       (observaciones, recompensas, terminado, cortado; float32) y una línea JSON con lo que pasó en cada
 //       agente que terminó una vuelta o un episodio (y la última observación de ese episodio).
@@ -16,9 +18,10 @@
 //   2 = ajustes de las carreras: le siguen 4 bytes con el largo y un JSON, por ejemplo { contactScale, progress }
 //       (rl/race.js). No responde.
 
-import { OBS_SIZE } from '../src/sensors.js';
+import { ACTIONS, OBS_SIZE } from '../src/sensors.js';
 import { RaceEnv } from './env.js';
 import { RaceSim } from './race.js';
+import { HerdSim } from './herd.js';
 
 const [mode, n, ids, seed, config = '{}'] = process.argv.slice(2);
 const trackIds = ids.split(',');
@@ -42,8 +45,9 @@ class Solo {
   }
 }
 
-const sims = Array.from({ length: Number(n) }, (_, k) => mode === 'race'
-  ? new RaceSim({ ...options, trackIds, seed: Number(seed) * 1000 + k })
+const Sim = { race: RaceSim, herd: HerdSim }[mode];
+const sims = Array.from({ length: Number(n) }, (_, k) => Sim
+  ? new Sim({ ...options, trackIds, seed: Number(seed) * 1000 + k })
   : new Solo(Number(seed) * 1000 + k));
 const N = sims.reduce((a, s) => a + s.agents, 0);
 const obs = new Float32Array(N * OBS_SIZE);
@@ -59,7 +63,7 @@ function stepAll(actions) {
   const infos = [];
   let k = 0;
   for (const sim of sims) {
-    const results = sim.step(actions.subarray(2 * k, 2 * (k + sim.agents)));
+    const results = sim.step(actions.subarray(ACTIONS * k, ACTIONS * (k + sim.agents)));
     // si la carrera terminó (se cortó por tiempo), arranca otra y esas son las observaciones nuevas
     const fresh = results.some((r) => r.truncated) ? sim.reset() : null;
     results.forEach((r, j) => {
@@ -84,7 +88,7 @@ function stepAll(actions) {
 
 // lectura de órdenes: se van juntando los bytes que llegan hasta tener una orden completa
 let pending = Buffer.alloc(0);
-const STEP_BYTES = 1 + N * 2 * 4;
+const STEP_BYTES = 1 + N * ACTIONS * 4;
 process.stdin.on('data', (chunk) => {
   pending = Buffer.concat([pending, chunk]);
   while (pending.length) {
@@ -111,4 +115,4 @@ process.stdin.on('data', (chunk) => {
 });
 process.stdin.on('end', () => process.exit(0));
 
-process.stdout.write(JSON.stringify({ obs_size: OBS_SIZE, envs: N }) + '\n');
+process.stdout.write(JSON.stringify({ obs_size: OBS_SIZE, actions: ACTIONS, envs: N }) + '\n');

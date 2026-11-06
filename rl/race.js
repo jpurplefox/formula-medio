@@ -20,6 +20,7 @@
 //   - ser pasado limpio (bastante menos: defender sí, pero nunca a costa de un toque)
 //   - zigzag defendiendo: en recta y con alguien pegado atrás, cambiar de dirección más de una vez
 //   - ir lento con la pista libre (piso de ritmo, si la fase lo usa)
+//   - largada lenta: perder en la primera vuelta desde parado más de lo que se permite (launch, si la fase lo usa)
 //
 // Cada fase puede escalar partes del premio (rewards: progress, pass, paceFloor, paceAlways, paceCrowd, crowd) y el castigo
 // por toque provocado se multiplica por contactScale, que el entrenamiento ajusta solo según un presupuesto de
@@ -45,7 +46,7 @@ import { Car, DEFAULT_PROFILE, isSolid, limitsOn, SAME_SETUP, slipstream } from 
 import { collideCars } from '../src/collision.js';
 import { NeuralDriver, Policy } from '../src/policy.js';
 import { racingLine } from '../src/racingline.js';
-import { OBS_SIZE, observe, stationAt, trackHeading } from '../src/sensors.js';
+import { ACTIONS, OBS_SIZE, observe, stationAt, trackHeading } from '../src/sensors.js';
 import { halfWidthAt, sampleField } from '../src/track.js';
 import { pointOnCenter, randomSetup, randomTune, randomTyres, rng, TUNE_SPREAD } from './env.js';
 import { NO_DAMAGE, randomDamage } from '../src/damage.js';
@@ -91,11 +92,34 @@ const PACE_FLOOR = 0.75, PACE_PENALTY = 1, FREE_ROAD = 40;
 const CROWD_NEAR = 30, CROWD_CLOSE = 3, TTC_CROWD = 1.5;
 // Con paceCrowd (una fracción, como PACE_FLOOR) el piso también cuenta amontonado, pero más bajo: en una largada
 // meterse en fila levantando el pie cuesta tiempo, así que si hay lugar conviene seguir a la par
+// Largada (launch): desde parado, lo que la primera vuelta va perdiendo contra su ritmo de vuelta lanzada. Se
+// permiten LAUNCH_START s de la salida desde parado más LAUNCH_LAP s repartidos en la vuelta: lo que perdía la fase 2
+// de v6 (la primera vuelta de 7,5 a 10 s más lenta que la mejor), antes de aprender a no chocar haciendo fila. Pasado
+// eso, cada segundo de más cuesta LAUNCH_PENALTY, y más cuanto más lleva perdido (×2 a LAUNCH_SCALE s de más): perder
+// un poco es aceptable, mucho no. Para no castigar lo que ya cuesta ir más lento, el ritmo de vuelta lanzada es el
+// de las vueltas recientes de los agentes en ese circuito (LAUNCH_PACE: el cuartil más rápido de las últimas)
+const LAUNCH_START = 5, LAUNCH_LAP = 10, LAUNCH_PENALTY = 2, LAUNCH_SCALE = 3;
+const LAUNCH_PACE = { laps: 60, min: 8, quantile: 0.25, initial: 1.08 };
 // Persecución: desventaja del rival de adelante (menos agarre y motor) al principio y al final de la fase
 const CHASE_HANDICAP = [0.2, 0.08];
 
 // escenarios: duración (decisiones, a 20 por segundo)
 export const SCENARIOS = { solo: 2400, pack: 300, start: 500, chase: 600, race: 2400 };
+
+// vueltas lanzadas recientes de los agentes por circuito, como fracción de la vuelta de la trazada para su auto
+const paces = new Map();
+export function recordPace(id, ratio) {
+  if (!paces.has(id)) paces.set(id, []);
+  const xs = paces.get(id);
+  xs.push(ratio);
+  if (xs.length > LAUNCH_PACE.laps) xs.shift();
+}
+export function paceOf(id) {
+  const xs = paces.get(id);
+  if (!xs || xs.length < LAUNCH_PACE.min) return LAUNCH_PACE.initial;
+  const sorted = [...xs].sort((a, b) => a - b);
+  return sorted[Math.floor(LAUNCH_PACE.quantile * (sorted.length - 1))];
+}
 
 let profile = DEFAULT_PROFILE;
 try {
@@ -106,11 +130,14 @@ try {
 
 // circuito, trazada ideal y dónde están las curvas (el punto más lento de cada una, en celdas)
 const tracks = new Map();
-function getTrack(id) {
+export function getTrack(id) {
   if (!tracks.has(id)) {
     const track = loadTrack(id);
     const line = racingLine(track, limitsOn(profile, track), { brakeUse: 0.93 });
-    tracks.set(id, { track, line, corners: corners(track, line) });
+    // segundos hasta cada celda yendo a la velocidad de la trazada (para medir lo que se pierde en la largada)
+    const clock = new Float64Array(line.speed.length + 1);
+    line.speed.forEach((v, i) => (clock[i + 1] = clock[i] + track.meters / Math.max(1, v)));
+    tracks.set(id, { track, line, clock, corners: corners(track, line) });
   }
   return tracks.get(id);
 }
@@ -139,8 +166,8 @@ function getPolicy(file) {
   return policies.get(file);
 }
 
-const wrap = (d, L) => ((d % L) + 1.5 * L) % L - L / 2; // diferencia de posición en la vuelta, entre -L/2 y L/2
-const mod = (u, L) => ((u % L) + L) % L;
+export const wrap = (d, L) => ((d % L) + 1.5 * L) % L - L / 2; // diferencia de posición en la vuelta, entre -L/2 y L/2
+export const mod = (u, L) => ((u % L) + L) % L;
 
 export class RaceSim {
   // agents: cuántos autos aprenden; opponents: redes que manejan algunos rivales; mix: peso de cada escenario
@@ -153,7 +180,7 @@ export class RaceSim {
     // boost: los rivales con esa fracción más de agarre y potencia, y la IA de siempre a más ritmo (de 1 a 1,1):
     // para seguir mejorando el ritmo detrás de autos más rápidos que uno mismo
     this.boost = boost;
-    this.rewards = { progress: 1, pass: 1, paceFloor: 0, paceAlways: 0, paceCrowd: 0, crowd: 1, ...rewards };
+    this.rewards = { progress: 1, pass: 1, paceFloor: 0, paceAlways: 0, paceCrowd: 0, crowd: 1, launch: 0, ...rewards };
     this.contactScale = contactScale;
     this.progress = progress;
     this.trackIds = trackIds;
@@ -203,10 +230,10 @@ export class RaceSim {
   reset() {
     const r = this.rand;
     const id = this.trackIds[Math.floor(r() * this.trackIds.length)];
-    const { track, line, corners } = getTrack(id);
+    const { track, line, clock, corners } = getTrack(id);
     const scenario = this.pickScenario();
     const damage = this.damage === 'mix' ? DAMAGE_LEVELS[Math.floor(r() * 3)] : this.damage;
-    Object.assign(this, { id, track, line, corners, scenario, damage, steps: 0, time: 0, length: SCENARIOS[scenario] });
+    Object.assign(this, { id, track, line, clock, corners, scenario, damage, steps: 0, time: 0, length: SCENARIOS[scenario] });
     const L = track.length, M = track.meters, half = track.halfWidth * M;
     const corner = () => corners.length ? corners[Math.floor(r() * corners.length)] : r() * L;
     const spread = scenario === 'race' ? this.raceSpread : this.spread;
@@ -321,7 +348,11 @@ export class RaceSim {
         // la IA de siempre no sabe de su auto: con menos agarre, menos ritmo (la velocidad en curva va con su raíz)
         if (e.driver.pace) e.driver.pace *= Math.sqrt(Math.min(1, car.setup.grip));
       }
-      else this.newEpisode(e);
+      else {
+        this.newEpisode(e);
+        // largando parado: se mide cuánto tiempo pierde en la primera vuelta contra la trazada
+        if (!s.v) e.launch = { from: e.dist, clock: this.launchClock(car, e.u), worst: 0 };
+      }
       return e;
     });
     this.agentsList = this.cars.filter((e) => e.kind === 'agent');
@@ -332,7 +363,7 @@ export class RaceSim {
 
   newEpisode(e) {
     Object.assign(e, { grass: 0, stuck: 0, back: 0, ret: 0, steps: 0, lapStart: null, epDist: 0,
-      passes: 0, passed: 0, hits: 0, faults: 0, slow: 0, danger: 0, weaves: 0, rescues: 0, defDir: 0, moves: 0, behind: 0, ext: undefined });
+      lag: 0, lagRef: 0, launchCost: 0, passes: 0, passed: 0, hits: 0, faults: 0, slow: 0, danger: 0, weaves: 0, rescues: 0, defDir: 0, moves: 0, behind: 0, ext: undefined });
   }
 
   observe(e) {
@@ -359,7 +390,7 @@ export class RaceSim {
     const rewards = new Float32Array(this.agentsList.length);
     const laps = this.agentsList.map(() => null);
     this.agentsList.forEach((e, k) => {
-      const steer = clamp(actions[2 * k]), pedal = clamp(actions[2 * k + 1]);
+      const steer = clamp(actions[ACTIONS * k]), pedal = clamp(actions[ACTIONS * k + 1]);
       e.input = { steer, throttle: Math.max(0, pedal), brake: Math.max(0, -pedal) };
     });
     const states = cars.map((e) => ({ car: e.car, st: e.u, lat: sampleField(track.lat, track.W, e.car.x, e.car.y) }));
@@ -396,7 +427,10 @@ export class RaceSim {
         if (du < -L / 2) {
           du += L;
           if (k >= 0) {
-            if (e.lapStart !== null) laps[k] = this.time - e.lapStart;
+            if (e.lapStart !== null) {
+              laps[k] = this.time - e.lapStart;
+              recordPace(this.id, laps[k] / this.idealLap(e));
+            }
             e.lapStart = this.time;
           }
         } else if (du > L / 2) {
@@ -418,6 +452,7 @@ export class RaceSim {
     const dt = DT * SUBSTEPS;
     this.passes(rewards);
     this.agentsList.forEach((e, k) => {
+      rewards[k] -= this.lag(e);
       rewards[k] -= this.danger(e, dt);
       rewards[k] -= this.weave(e, dt);
       if (this.rewards.paceFloor) rewards[k] -= this.slow(e, dt);
@@ -447,7 +482,7 @@ export class RaceSim {
       const info = { lap: laps[k], track: this.id };
       if (truncated || retired) {
         info.episode = { r: e.ret, l: e.steps, dist: e.epDist, track: this.id, scenario: this.scenario, damage: this.damage, retired,
-          passes: e.passes, passed: e.passed, hits: e.hits, faults: e.faults, slow: e.slow, danger: e.danger, weaves: e.weaves, rescues: e.rescues };
+          passes: e.passes, passed: e.passed, hits: e.hits, faults: e.faults, slow: e.slow, lag: e.lag, lagRef: e.lagRef, launchCost: e.launchCost, danger: e.danger, weaves: e.weaves, rescues: e.rescues };
       }
       return { obs: null, reward: rewards[k], done: retired, truncated: truncated && !retired, info, e, rescue, retired };
     });
@@ -463,7 +498,7 @@ export class RaceSim {
         Object.assign(e.car, { setup: old.setup, wear: old.wear, wearRate: old.wearRate, ownTune: old.ownTune, ownAir: old.ownAir,
           damageLevel: old.damageLevel, damage: r.retired ? NO_DAMAGE : old.damage });
         e.car.placeOn(track);
-        Object.assign(e, { grass: 0, stuck: 0, back: 0 });
+        Object.assign(e, { grass: 0, stuck: 0, back: 0, launch: null });
         if (r.retired) this.newEpisode(e);
       }
       if (r.retired) r.next = this.observe(e);
@@ -551,6 +586,53 @@ export class RaceSim {
     }
     if (worst > 0) e.danger += dt;
     return DANGER_PENALTY * worst;
+  }
+
+  // Segundos hasta cada celda de la vuelta largando desde u parado (o a v0 m/s): la trazada para ese auto (más lenta
+  // con menos agarre, como en el piso de ritmo), pero acelerando desde v0 con lo que da su motor
+  launchClock(car, u, v0 = 0) {
+    const { track } = this, L = track.length, M = track.meters, n = this.line.speed.length;
+    const g = Math.sqrt(Math.min(1, car.setup.grip)), lim = car.limits;
+    const clock = new Float32Array(L + 1);
+    let v = v0;
+    for (let i = 0; i < L; i++) {
+      const cap = this.line.speed[(Math.floor(mod(u, L)) + i + 1) % n] * g;
+      const next = Math.min(cap, Math.sqrt(v * v + 2 * Math.max(0, lim.accel(v)) * M));
+      clock[i + 1] = clock[i] + (2 * M) / Math.max(1, v + next);
+      v = next;
+    }
+    return clock;
+  }
+
+  // vuelta de la trazada para el auto de e (s; con menos agarre, más lenta, como en el piso de ritmo)
+  idealLap(e) {
+    return this.clock[this.clock.length - 1] / Math.sqrt(Math.min(1, e.car.setup.grip));
+  }
+
+  // Largada: lo que pierde en la primera vuelta desde parado (lag, s) contra su ritmo de vuelta lanzada en ese
+  // circuito (lagRef: los segundos de trazada que lleva recorridos, para su auto). Deja de medirse al completar la
+  // vuelta o si lo rescatan. Devuelve el castigo (con launch) por lo que pierde de más (ver LAUNCH_START)
+  lag(e) {
+    const { launch } = e;
+    if (!launch) return 0;
+    const L = this.track.length, M = this.track.meters;
+    const d = e.dist - launch.from;
+    if (d >= L * M) {
+      e.launch = null;
+      return 0;
+    }
+    const lap = this.idealLap(e);
+    e.lagRef = launch.clock[Math.max(0, Math.floor(d / M))];
+    e.lag = this.time - e.lagRef * paceOf(this.id);
+    if (!this.rewards.launch) return 0;
+    const excess = e.lag - LAUNCH_START - (LAUNCH_LAP * e.lagRef) / lap;
+    if (excess <= launch.worst) return 0;
+    const more = excess - Math.max(0, launch.worst);
+    launch.worst = excess;
+    if (excess <= 0) return 0;
+    const cost = this.rewards.launch * LAUNCH_PENALTY * more * (1 + excess / LAUNCH_SCALE);
+    e.launchCost += cost;
+    return cost;
   }
 
   // Piso de ritmo: con nadie adelante en su carril a menos de FREE_ROAD metros (o siempre, con paceAlways, salvo en

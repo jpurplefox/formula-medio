@@ -27,13 +27,17 @@ def layers(seq):
 
 
 def main(src: str, dst: str, mode: str = ""):
-    policy = PPO.load(src, device="cpu").policy
+    export(PPO.load(src, device="cpu").policy, dst, mode == "rivales")
+
+
+def export(policy, dst: str, opponents: bool = True):
+    """La política de un modelo (en memoria) a JSON; también la usa el entrenamiento para medirse a sí mismo."""
     linear = layers(policy.mlp_extractor.policy_net) + [policy.action_net]
     acts = [type(m).__name__ for m in policy.mlp_extractor.policy_net if not isinstance(m, torch.nn.Linear)]
     assert all(a == "Tanh" for a in acts), acts
     data = {
         "obs_size": linear[0].in_features,
-        "opponents": mode == "rivales",
+        "opponents": opponents,
         # pesos en float32 little-endian, en base64 (w: una fila por neurona de salida)
         "layers": [
             {"in": m.in_features, "out": m.out_features, "w": b64(m.weight), "b": b64(m.bias)}
