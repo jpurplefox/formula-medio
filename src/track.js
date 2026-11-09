@@ -4,7 +4,26 @@
 import { airDensity, DEFAULT_TUNE } from './dynamics.js';
 
 export const T = { GRASS: 0, ROAD: 1, WALL: 3 };
-export const KERB_W = 0.9; // ancho del piano (en celdas)
+export const KERB_W = 0.9; // ancho del piano por defecto (en celdas)
+export const DEFAULT_KERB = [[235, 235, 235], [200, 30, 30]]; // blanco y rojo
+export const MAX_KERB_COLORS = 4;
+// Lo que hay al costado de la pista donde hay piano, de adentro hacia afuera:
+//   piano      lomo con franjas de colores y serrucho (escalones a lo largo), de ancho width
+//   verde      franja plana pintada de verde abrasivo detrás del piano, de ancho green (0 = no hay)
+//   salchicha  lomo alto y amarillo, sólo del lado de adentro de las curvas más cerradas (si sausage)
+// Cada circuito puede cambiar el estilo (kerbStyle en tracks/index.js); el resto queda como acá.
+export const KERB_STYLE = {
+  width: KERB_W, // ancho del piano (celdas)
+  stripe: 1.6, // largo de cada franja de color (celdas)
+  line: true, // línea blanca entre la pista y el piano
+  green: 0.8, // ancho de la franja verde (celdas; 0 = sin franja)
+  sausage: true, // salchichas en las curvas más cerradas
+};
+export const KERB_H = 0.07; // altura del lomo del piano (en celdas)
+export const RIDGE = 0.8; // largo de cada escalón del serrucho (celdas)
+export const RIDGE_DEPTH = 0.35; // cuánto baja el lomo al principio de cada escalón (fracción de la altura)
+export const SAUSAGE_W = 0.45; // ancho de la salchicha (celdas)
+export const SAUSAGE_H = 0.09; // altura de la salchicha (celdas)
 
 const N8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 const N4 = N8.slice(0, 4);
@@ -84,7 +103,8 @@ function buildTrackFromPath(path, W, H, def, elevation, start) {
   const spawn = { x: line.x - line.dx * 6, y: line.y - line.dy * 6, angle: Math.atan2(line.dy, line.dx) };
 
   const curv = curvature(path);
-  const { left: kerbLeft, right: kerbRight } = kerbFlags(path, st, curv);
+  const kerbStyle = { ...KERB_STYLE, ...def.kerbStyle };
+  const { left: kerbLeft, right: kerbRight, sausageLeft, sausageRight } = kerbFlags(path, st, curv, kerbStyle.sausage);
   const height = computeHeight(elevation, (def.elevationScale ?? 1) / meters, station, length, sdf, -(runoff + 1), W, H);
 
   const trees = placeTrees(dist, tiles, W, H, runoff);
@@ -94,8 +114,10 @@ function buildTrackFromPath(path, W, H, def, elevation, start) {
 
   return {
     W, H, meters, runoff, halfWidth, halfWidths, tiles, road, sdf, station, lat, length, kerbLeft, kerbRight, height,
+    sausageLeft, sausageRight, kerbStyle,
     path: { n: path.n, x: path.x, y: path.y, st }, // línea central: puntos y su posición acumulada
     progress, maxProgress, line, spawn, trees, boards, scale: def.scale ?? 3, name: def.name,
+    kerbColors: def.kerb ?? DEFAULT_KERB, // colores de las franjas del piano, en orden
     // el aire (más arriba, menos denso) y la puesta a punto por defecto de los autos ahí (dynamics.js)
     air: airDensity(def.altitude ?? 0), tune: def.tune ?? DEFAULT_TUNE,
   };
@@ -351,13 +373,63 @@ export function kerbAt(track, x, y) {
   return kerbAmount(sampleField(track.lat, track.W, x, y) > 0 ? track.kerbRight : track.kerbLeft, st);
 }
 
-// Qué hay en un punto: 'road' (la pista), 'kerb' (el piano, por fuera del borde) o 'grass'. Las propiedades de
-// cada superficie (agarre, freno) están en SURFACES de car.js; para poner otro material al costado de la pista
-// (grava, asfalto) alcanza con devolverlo acá donde corresponda y agregarlo allá.
+// Hasta dónde puede llegar lo que hay al costado de la pista (piano, verde y salchicha), en celdas desde el borde
+export const edgeReach = (style) => style.width + style.green + SAUSAGE_W;
+
+// Bordes de las franjas del costado (distancias al borde de la pista, negativas: hacia afuera), con k = cuánto
+// piano hay y q = cuánta salchicha: el piano va de kerb a 0, el verde de green a kerb y la salchicha de sausage a green
+export function edgeBounds(style, k, q) {
+  const kerb = -style.width * k;
+  const green = kerb - style.green * k;
+  return { kerb, green, sausage: green - SAUSAGE_W * q };
+}
+
+// Qué hay a una distancia s del borde (ver edgeBounds) y cuánto se levanta el piso ahí (celdas), según la
+// posición st sobre la línea central (el serrucho del piano)
+export function edgeAt(style, s, k, q, st) {
+  if (s >= 0) return { surface: 'road', lift: 0 };
+  const b = edgeBounds(style, k, q);
+  if (k > 0.02 && s > b.kerb) return { surface: 'kerb', lift: kerbLift(s, b.kerb, k, st) };
+  if (k > 0.02 && s > b.green) return { surface: 'green', lift: 0 };
+  if (q > 0.02 && s > b.sausage) return { surface: 'sausage', lift: SAUSAGE_H * q * Math.sin((Math.PI * (s - b.sausage)) / (b.green - b.sausage)) };
+  return { surface: 'grass', lift: 0 };
+}
+
+// El lomo del piano: sube desde afuera, hace cumbre y baja hacia la pista; a lo largo, escalones de serrucho
+// (cada uno sube despacio y cae de golpe)
+export function kerbLift(s, outer, k, st) {
+  const t = (s - outer) / -outer;
+  const r = st / RIDGE - Math.floor(st / RIDGE);
+  const saw = r < 0.8 ? r / 0.8 : (1 - r) / 0.2;
+  return KERB_H * k * Math.sin(Math.PI * t) * (1 - RIDGE_DEPTH * (1 - saw));
+}
+
+// Cuánta salchicha hay en este punto (0..1)
+export function sausageAt(track, x, y) {
+  const st = stationAt(track, x, y);
+  if (st < 0) return 0;
+  return kerbAmount(sampleField(track.lat, track.W, x, y) > 0 ? track.sausageRight : track.sausageLeft, st);
+}
+
+// Qué hay en un punto: 'road' (la pista), 'kerb' (el piano, por fuera del borde), 'green' (la franja verde detrás
+// del piano), 'sausage' (la salchicha) o 'grass', y cuánto se levanta el piso ahí (lift, en celdas). Las
+// propiedades de cada superficie (agarre, freno) están en SURFACES de car.js; para poner otro material al costado
+// de la pista (grava, asfalto) alcanza con devolverlo acá donde corresponda y agregarlo allá.
+export function edgeInfo(track, x, y) {
+  const s = sampleField(track.sdf, track.W, x, y);
+  if (s >= 0) return { surface: 'road', lift: 0 };
+  const style = track.kerbStyle ?? KERB_STYLE;
+  if (s < -edgeReach(style) - 0.1) return { surface: 'grass', lift: 0 };
+  const st = stationAt(track, x, y);
+  if (st < 0) return { surface: 'grass', lift: 0 };
+  const right = sampleField(track.lat, track.W, x, y) > 0;
+  const k = kerbAmount(right ? track.kerbRight : track.kerbLeft, st);
+  const sq = right ? track.sausageRight : track.sausageLeft;
+  return edgeAt(style, s, k, sq ? kerbAmount(sq, st) : 0, st);
+}
+
 export function surfaceAt(track, x, y) {
-  const edge = sampleField(track.sdf, track.W, x, y);
-  if (edge >= 0) return 'road';
-  return edge > -KERB_W * kerbAt(track, x, y) ? 'kerb' : 'grass';
+  return edgeInfo(track, x, y).surface;
 }
 
 export function kerbAmount(amounts, st) {
@@ -373,6 +445,7 @@ const KERB_INSIDE = 1 / 28; // curvatura mínima para piano interno (radio < 28 
 const KERB_EXIT = 1 / 16; // curvatura mínima para piano externo a la salida
 const KERB_MIN = 5; // largo mínimo de un piano y de un hueco entre pianos (celdas)
 const KERB_RAMP = 3; // largo de la punta de cada piano, donde crece de 0 al ancho completo (celdas)
+const SAUSAGE_CURV = 1 / 15; // curvatura mínima para poner salchicha del lado de adentro (radio < 15 celdas)
 
 // Curvatura de la línea central en cada punto (radianes por celda; positiva = curva a la derecha), suavizada
 export function curvature({ n, x, y, wrap }) {
@@ -396,22 +469,30 @@ export function curvature({ n, x, y, wrap }) {
   return curv;
 }
 
-function kerbFlags({ n, wrap }, st, curv) {
+function kerbFlags({ n, wrap }, st, curv, sausages = true) {
   const L = Math.ceil(st[n]) + 1;
   const left = new Uint8Array(L), right = new Uint8Array(L);
+  const sLeft = new Uint8Array(L), sRight = new Uint8Array(L);
   let b = 0;
   for (let u = 0; u < L; u++) {
     while (b < n - 1 && st[b + 1] <= u) b++;
     const k = curv[b];
     if (k > KERB_INSIDE) right[u] = 1;
     if (k < -KERB_INSIDE) left[u] = 1;
+    // salchicha: del lado de adentro de las curvas más cerradas, para que no convenga cortarlas
+    if (sausages && k > SAUSAGE_CURV) sRight[u] = 1;
+    if (sausages && k < -SAUSAGE_CURV) sLeft[u] = 1;
     for (let back = 3; back <= 18; back++) {
       const kb = curv[wrap(b - back)];
       if (kb > KERB_EXIT) left[u] = 1;
       if (kb < -KERB_EXIT) right[u] = 1;
     }
   }
-  return { left: taper(cleanRuns(left)), right: taper(cleanRuns(right)) };
+  const kl = taper(cleanRuns(left)), kr = taper(cleanRuns(right));
+  // la salchicha va detrás de un piano: donde no hay piano, tampoco
+  const sl = taper(cleanRuns(sLeft)).map((q, u) => Math.min(q, kl[u]));
+  const sr = taper(cleanRuns(sRight)).map((q, u) => Math.min(q, kr[u]));
+  return { left: kl, right: kr, sausageLeft: sl, sausageRight: sr };
 }
 
 // Carteles de distancia antes de las curvas fuertes (200, 150, 100 y 50 m hasta el punto donde empieza la curva),

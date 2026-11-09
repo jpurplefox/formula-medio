@@ -8,12 +8,13 @@
 // La resolución de la imagen es la de la pantalla (con un tope); las cuentas de cámara siguen en los mismos
 // "píxeles virtuales" de 960 de ancho que usa el resto del juego.
 
-import { KERB_W, kerbAmount, stationAt } from './track.js';
+import { DEFAULT_KERB, KERB_STYLE, MAX_KERB_COLORS, RIDGE, RIDGE_DEPTH, SAUSAGE_H, SAUSAGE_W, edgeReach, kerbAmount, stationAt } from './track.js';
 import { RUBBER_DARK } from './rubber.js';
 import { asphaltTexture, grassTexture, macroNoise, wallTexture } from './textures.js';
 import {
   FOG_END, FOG_START, GRASS_BAND, GRASS_TPC, GUIDE_W, KERB_H, LINE_W, MACRO_TPC, MAX_DIST, MODEL_NEAR, NEAR_RISE, PLANE_LEN,
-  BODY_PIVOT_Z, ROAD_TPC, SHADOW, SHADOW_SHIFT, STRIPE, SUN, WALL_H, WALL_STRIPE, WALL_T, Z_NEAR,
+  BODY_PIVOT_Z, ROAD_TPC, SHADOW, SHADOW_SHIFT, SUN, WALL_H, WALL_STRIPE, WALL_T, Z_NEAR,
+  KERB_RUBBER_MAX, KERB_DIRT_MAX, WEAR_CELL,
 } from './renderer.js';
 import { sampleField } from './track.js';
 import { lineFrame, pointAt } from './ai.js';
@@ -62,10 +63,14 @@ const TERRAIN_FS = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 uniform sampler2D uField, uStation, uLine, uAsphalt, uGrass, uWall, uMacro, uRubber;
+uniform sampler2D uSausage; // cuánta salchicha hay en cada celda (r, 0..1)
+uniform vec4 uKerbStyle; // ancho del piano, largo de cada franja, ancho del verde, línea blanca (1) o no (0)
 uniform vec2 uMap;
 uniform int uLineN;
 uniform vec2 uRubberSize; // largo de la vuelta y de la línea central al último carril (celdas)
 uniform float uRunoff;
+uniform vec3 uKerb[${MAX_KERB_COLORS}]; // colores de las franjas del piano, en orden (0..1)
+uniform int uKerbN;
 uniform vec4 uStart;
 uniform float uStartHalf;
 uniform int uFlags;
@@ -77,20 +82,20 @@ ${FOG}
 const float MAX_DIST = ${glsl(MAX_DIST)}, NEAR = ${glsl(MODEL_NEAR)}, FAR = ${glsl(FAR)};
 ${DEPTH}
 const float WALL_H = ${glsl(WALL_H)}, WALL_T = ${glsl(WALL_T)}, WALL_STRIPE = ${glsl(WALL_STRIPE)};
-const float KERB_W = ${glsl(KERB_W)}, KERB_H = ${glsl(KERB_H)}, LINE_W = ${glsl(LINE_W)}, STRIPE = ${glsl(STRIPE)};
+const float KERB_H = ${glsl(KERB_H)}, LINE_W = ${glsl(LINE_W)}, RIDGE = ${glsl(RIDGE)}, RIDGE_DEPTH = ${glsl(RIDGE_DEPTH)};
+const float SAUSAGE_W = ${glsl(SAUSAGE_W)}, SAUSAGE_H = ${glsl(SAUSAGE_H)};
+const float KERB_RUBBER_MAX = ${glsl(KERB_RUBBER_MAX)}, KERB_DIRT_MAX = ${glsl(KERB_DIRT_MAX)}, WEAR_CELL = ${glsl(WEAR_CELL)};
+const vec3 KERB_GREEN = vec3(46.0, 135.0, 80.0) / 255.0, SAUSAGE_YELLOW = vec3(245.0, 196.0, 20.0) / 255.0;
+const vec3 DIRT = vec3(120.0, 96.0, 62.0) / 255.0, KERB_RUBBER = vec3(25.0) / 255.0;
 const float RUBBER_DARK = ${glsl(RUBBER_DARK)};
 const float ROAD_TPC = ${glsl(ROAD_TPC)}, GRASS_TPC = ${glsl(GRASS_TPC)}, GRASS_BAND = ${glsl(GRASS_BAND)}, MACRO_TPC = ${glsl(MACRO_TPC)};
-const vec3 KERB_RED = vec3(200.0, 30.0, 30.0) / 255.0, KERB_WHITE = vec3(235.0) / 255.0, EDGE_WHITE = vec3(225.0) / 255.0;
+const vec3 EDGE_WHITE = vec3(225.0) / 255.0;
 const vec3 LINE_BLACK = vec3(20.0) / 255.0, LINE_WHITE = vec3(245.0) / 255.0, WALL_TOP = vec3(150.0, 150.0, 155.0) / 255.0;
 const vec3 SKY_TOP = vec3(70.0, 130.0, 210.0) / 255.0, MOUNTAIN = vec3(110.0, 135.0, 160.0) / 255.0;
 
 vec4 field(vec2 p) { return texture(uField, p / uMap); }
-// el piano es un lomo por fuera del borde: sube desde el pasto, hace cumbre y baja hacia la pista
-float kerbBump(vec4 f) {
-  float kw = KERB_W * f.w;
-  return f.w > 0.02 && f.y < 0.0 && f.y > -kw ? KERB_H * f.w * sin(3.14159265 * (f.y + kw) / kw) : 0.0;
-}
 vec3 shade(vec3 c, float k) { return min(c * k, vec3(1.0)); }
+float hash(float i) { return fract(sin(i * 12.9898) * 43758.5453); }
 vec4 lineData(int i) { i = (i % uLineN + uLineN) % uLineN; return texelFetch(uLine, ivec2(i % ${LINE_TEX_W}, i / ${LINE_TEX_W}), 0); }
 
 // posición sobre la línea central (como stationAt de track.js): interpolada, salvo donde salta
@@ -105,18 +110,43 @@ float stationAt(vec2 p) {
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
-vec3 zone(float s, float outer, vec3 grass, vec3 kerb, vec3 road, vec3 edge) {
-  if (s < outer) return grass;
+// lo que hay al costado de la pista (como edgeAt de track.js): el piano es un lomo por fuera del borde, con
+// serrucho a lo largo; detrás, el verde (plano) y, en algunas curvas, la salchicha, más alta y angosta
+float edgeBump(vec4 f, vec2 p) {
+  float k = f.w, s = f.y;
+  if (k <= 0.02 || s >= 0.0) return 0.0;
+  float kb = -uKerbStyle.x * k;
+  if (s > kb) {
+    float r = fract(stationAt(p) / RIDGE);
+    float saw = r < 0.8 ? r / 0.8 : (1.0 - r) / 0.2;
+    return KERB_H * k * sin(3.14159265 * (s - kb) / -kb) * (1.0 - RIDGE_DEPTH * (1.0 - saw));
+  }
+  float gb = kb - uKerbStyle.z * k;
+  if (s > gb) return 0.0;
+  float q = texture(uSausage, p / uMap).r;
+  float sb = gb - SAUSAGE_W * q;
+  return q > 0.02 && s > sb ? SAUSAGE_H * q * sin(3.14159265 * (s - sb) / (gb - sb)) : 0.0;
+}
+
+// bordes de las franjas del costado (de afuera hacia adentro): b = salchicha, verde, piano, línea blanca
+vec3 zone(float s, vec4 b, vec3 grass, vec3 sausage, vec3 green, vec3 kerb, vec3 edge, vec3 road) {
+  if (s < b.x) return grass;
+  if (s < b.y) return sausage;
+  if (s < b.z) return green;
   if (s < 0.0) return kerb;
-  if (s < LINE_W) return edge;
+  if (s < b.w) return edge;
   return road;
 }
 
 // el color del piso (lo mismo que groundColor de renderer.js)
-vec3 ground(vec2 p, float fw, float s, float k, float st, float side, float lit) {
+vec3 ground(vec2 p, float fw, float s, float k, float q, float st, float side, float lit) {
   float light = lit * (0.88 + 0.24 * texture(uMacro, p * MACRO_TPC / 64.0).r);
-  bool isKerb = k > 0.02;
-  float outer = isKerb ? -KERB_W * k : 0.0;
+  bool isKerb = k > 0.02, isSausage = isKerb && q > 0.02;
+  float kb = isKerb ? -uKerbStyle.x * k : 0.0;
+  float gb = isKerb ? kb - uKerbStyle.z * k : 0.0;
+  float outer = isSausage ? gb - SAUSAGE_W * q : gb;
+  float lb = isKerb && uKerbStyle.w < 0.5 ? 0.0 : LINE_W;
+  vec4 b = vec4(outer, gb, kb, lb);
   vec3 grass = vec3(0.0);
   if (s < outer + fw) {
     float ph = (p.x + p.y) * (0.7071 / GRASS_BAND);
@@ -129,7 +159,8 @@ vec3 ground(vec2 p, float fw, float s, float k, float st, float side, float lit)
     if (s < outer - fw) return grass;
   }
   float ga = fw * ROAD_TPC / 256.0;
-  vec3 road = textureGrad(uAsphalt, p * ROAD_TPC / 256.0, vec2(ga, 0.0), vec2(0.0, ga)).rgb;
+  vec3 asphalt = textureGrad(uAsphalt, p * ROAD_TPC / 256.0, vec2(ga, 0.0), vec2(0.0, ga)).rgb;
+  vec3 road = asphalt;
   float dark = 0.0;
   if ((uFlags & 2) != 0 && st >= 0.0) {
     // la goma del mapa (rubber.js): a lo largo según st, a lo ancho según de qué lado y cuánto
@@ -143,24 +174,45 @@ vec3 ground(vec2 p, float fw, float s, float k, float st, float side, float lit)
     float l = -a2.x * uStart.w + a2.y * uStart.z;
     if (abs(l) < uStartHalf) road = shade(mod(floor((al + 0.7) * 2.0) + floor((l + 200.0) * 2.0), 2.0) > 0.5 ? LINE_WHITE : LINE_BLACK, lit);
   }
-  if (s > LINE_W + fw) return road;
-  vec3 kerbC = EDGE_WHITE;
+  if (s > lb + fw) return road;
+  vec3 kerbC = EDGE_WHITE, greenC = KERB_GREEN, sausageC = SAUSAGE_YELLOW;
   if (isKerb) {
-    float ph = st / STRIPE, fr = fract(ph);
-    bool red = mod(floor(ph), 2.0) > 0.5;
-    vec3 cur = red ? KERB_RED : KERB_WHITE, other = red ? KERB_WHITE : KERB_RED;
-    float e = min(0.5, fw / STRIPE);
+    // franjas de los colores del circuito, en orden; en el borde entre franjas se mezcla con la vecina
+    float stripe = uKerbStyle.y;
+    float ph = st / stripe, fr = fract(ph);
+    int i = int(floor(ph));
+    float e = min(0.5, fw / stripe);
     float ow = fr < e ? (e - fr) / (2.0 * e) : fr > 1.0 - e ? (fr - 1.0 + e) / (2.0 * e) : 0.0;
-    kerbC = mix(cur, other, ow);
+    int n = max(uKerbN, 1);
+    int ci = ((i % n) + n) % n, oi = (((fr < e ? i - 1 : i + 1) % n) + n) % n;
+    kerbC = mix(uKerb[ci], uKerb[oi], ow);
+    // desgaste: manchas de goma del lado de la pista y de tierra del lado del pasto (de lejos, el promedio)
+    float t = clamp((s - kb) / -kb, 0.0, 1.0);
+    float fade = clamp(1.0 - fw / WEAR_CELL, 0.0, 1.0);
+    float cell = floor(st / WEAR_CELL) + (side > 0.0 ? 7919.0 : 0.0);
+    float n1 = 0.5 + (hash(cell) - 0.5) * fade, n2 = 0.5 + (hash(cell + 101.0) - 0.5) * fade;
+    kerbC = mix(kerbC, KERB_RUBBER, KERB_RUBBER_MAX * smoothstep(0.35, 1.0, t) * n1);
+    kerbC = mix(kerbC, DIRT, KERB_DIRT_MAX * (1.0 - smoothstep(0.0, 0.4, t)) * n2 * n2);
+    // serrucho: la cara empinada de cada escalón queda en sombra (de lejos no se distingue)
+    float r = fract(st / RIDGE);
+    float ridge = 1.0 + ((r < 0.8 ? 1.05 : 0.75) - 1.0) * clamp(1.0 - 2.0 * fw / RIDGE, 0.0, 1.0);
+    kerbC = shade(kerbC, light * (1.0 - dark) * ridge);
+    // el verde: pintura sobre el asfalto (se ve el grano); la salchicha, amarilla
+    greenC = shade(mix(asphalt, KERB_GREEN, 0.75), light);
+    if (isSausage) sausageC = shade(SAUSAGE_YELLOW, lit);
   }
-  kerbC = shade(kerbC, lit);
   vec3 edgeC = shade(EDGE_WHITE, lit);
+  // antialiasing: cerca de un cambio de zona, mezclamos los dos colores
   float edge = outer;
-  if (isKerb && abs(s) < abs(s - edge)) edge = 0.0;
-  if (abs(s - LINE_W) < abs(s - edge)) edge = LINE_W;
+  if (isKerb) {
+    if (abs(s - gb) < abs(s - edge)) edge = gb;
+    if (abs(s - kb) < abs(s - edge)) edge = kb;
+    if (abs(s) < abs(s - edge)) edge = 0.0;
+  }
+  if (abs(s - lb) < abs(s - edge)) edge = lb;
   float zs = s - edge;
-  if (zs > -fw && zs < fw) return mix(zone(edge - fw, outer, grass, kerbC, road, edgeC), zone(edge + fw, outer, grass, kerbC, road, edgeC), (zs + fw) / (2.0 * fw));
-  return zone(s, outer, grass, kerbC, road, edgeC);
+  if (zs > -fw && zs < fw) return mix(zone(edge - fw, b, grass, sausageC, greenC, kerbC, edgeC, road), zone(edge + fw, b, grass, sausageC, greenC, kerbC, edgeC, road), (zs + fw) / (2.0 * fw));
+  return zone(s, b, grass, sausageC, greenC, kerbC, edgeC, road);
 }
 
 void main() {
@@ -178,7 +230,7 @@ void main() {
   bool hit = false;
   for (int i = 0; i < 400; i++) {
     vec4 f = field(uCam.xy + rd * d);
-    float top = f.x + (f.y < wallIn && f.y > wallOut ? WALL_H : kerbBump(f));
+    float top = f.x + (f.y < wallIn && f.y > wallOut ? WALL_H : edgeBump(f, uCam.xy + rd * d));
     if (uCam.z - drop * d <= top) { hit = true; break; }
     // paso: unos píxeles de pantalla, y nunca más que la distancia a la franja del muro
     float band = f.y > wallIn ? f.y - wallIn : (f.y < wallOut ? wallOut - f.y : 0.0);
@@ -206,7 +258,7 @@ void main() {
   for (int k = 0; k < 7; k++) {
     float m = (a + b) * 0.5;
     vec4 f = field(uCam.xy + rd * m);
-    float top = f.x + (f.y < wallIn && f.y > wallOut ? WALL_H : kerbBump(f));
+    float top = f.x + (f.y < wallIn && f.y > wallOut ? WALL_H : edgeBump(f, uCam.xy + rd * m));
     if (uCam.z - drop * m <= top) b = m; else a = m;
   }
   d = b;
@@ -227,11 +279,17 @@ void main() {
     float gx = (field(p + vec2(1.0, 0.0)).x - field(p - vec2(1.0, 0.0)).x) * 0.5;
     float gy = (field(p + vec2(0.0, 1.0)).x - field(p - vec2(0.0, 1.0)).x) * 0.5;
     float lit = clamp(1.0 - (gx * -0.6 + gy * -0.8) * 4.0, 0.65, 1.3);
-    float st = stationAt(p), side = f.z, k = f.w;
-    float kw = KERB_W * k;
-    if (k > 0.0 && s < 0.0 && s > -kw) lit *= 1.0 - 0.22 * cos(3.14159265 * (s + kw) / kw);
+    float st = stationAt(p), side = f.z, k = f.w, q = 0.0;
+    if (k > 0.0 && s < 0.0) {
+      // los lomos del piano y de la salchicha: la cara que mira a la pista, más iluminada
+      float kb = -uKerbStyle.x * k, gb = kb - uKerbStyle.z * k;
+      q = texture(uSausage, p / uMap).r;
+      float sb = gb - SAUSAGE_W * q;
+      if (s > kb) lit *= 1.0 - 0.22 * cos(3.14159265 * (s - kb) / -kb);
+      else if (q > 0.02 && s < gb && s > sb) lit *= 1.0 - 0.3 * cos(3.14159265 * (s - sb) / (gb - sb));
+    }
     float fw = max(0.03, d * uPlane / uView.x);
-    c = ground(p, fw, s, k, st, side, lit);
+    c = ground(p, fw, s, k, q, st, side, lit);
   }
   outColor = vec4(fog(c, d), 1.0);
   gl_FragDepth = clamp(depthOf(d), 0.0, 1.0);
@@ -626,21 +684,27 @@ export class GLRenderer {
   trackTextures(track) {
     let t = this.trackData.get(track);
     if (!t) {
-      const { W, H, height, sdf, lat, station, kerbLeft, kerbRight } = track;
-      // por celda: altura, distancia al borde, distancia de costado a la línea central y cuánto piano hay (0..1)
-      const f = new Float32Array(W * H * 4);
+      const { W, H, height, sdf, lat, station, kerbLeft, kerbRight, sausageLeft, sausageRight } = track;
+      const reach = edgeReach(track.kerbStyle ?? KERB_STYLE);
+      // por celda: altura, distancia al borde, distancia de costado a la línea central y cuánto piano hay (0..1);
+      // aparte, cuánta salchicha
+      const f = new Float32Array(W * H * 4), sq = new Float32Array(W * H * 4);
       for (let i = 0; i < W * H; i++) {
         f[i * 4] = height[i];
         f[i * 4 + 1] = sdf[i];
         f[i * 4 + 2] = lat[i];
-        if (sdf[i] > -KERB_W - 1 && sdf[i] < 1) {
+        if (sdf[i] > -reach - 1 && sdf[i] < 1) {
           const st = stationAt(track, (i % W) + 0.5, Math.floor(i / W) + 0.5);
-          if (st >= 0) f[i * 4 + 3] = kerbAmount(lat[i] > 0 ? kerbRight : kerbLeft, st);
+          if (st >= 0) {
+            f[i * 4 + 3] = kerbAmount(lat[i] > 0 ? kerbRight : kerbLeft, st);
+            if (sausageLeft) sq[i * 4] = kerbAmount(lat[i] > 0 ? sausageRight : sausageLeft, st);
+          }
         }
       }
       const n = kerbLeft.length, rows = Math.ceil(n / LINE_TEX_W);
       t = {
         field: this.texture(f, W, H, { format: 'RGBA16F', clamp: true }),
+        sausage: this.texture(sq, W, H, { format: 'RGBA16F', clamp: true }),
         station: this.texture(Float32Array.from(station), W, H, { format: 'R32F', nearest: true, clamp: true }),
         n, rows, kerbLeft, kerbRight, offset: undefined, line: null,
         guide: this.texture(new Uint8Array(LINE_TEX_W * rows * 4), LINE_TEX_W, rows, { nearest: true, clamp: true }),
@@ -822,9 +886,15 @@ export class GLRenderer {
     this.bind(5, this.grass, tp, 'uGrass');
     this.bind(6, this.wall, tp, 'uWall');
     this.bind(7, this.macro, tp, 'uMacro');
+    this.bind(8, t.sausage, tp, 'uSausage');
+    const ks = track.kerbStyle ?? KERB_STYLE;
+    gl.uniform4f(tp.u.uKerbStyle, ks.width, ks.stripe, ks.green, ks.line ? 1 : 0);
     gl.uniform2f(tp.u.uMap, track.W, track.H);
     gl.uniform1i(tp.u.uLineN, t.n);
     gl.uniform1f(tp.u.uRunoff, track.runoff);
+    const kerb = (track.kerbColors ?? DEFAULT_KERB).slice(0, MAX_KERB_COLORS);
+    gl.uniform3fv(tp.u.uKerb, kerb.flatMap(([r, g, b]) => [r / 255, g / 255, b / 255]));
+    gl.uniform1i(tp.u.uKerbN, kerb.length);
     const { line } = track;
     gl.uniform4f(tp.u.uStart, line.x, line.y, line.dx, line.dy);
     gl.uniform1f(tp.u.uStartHalf, line.half);

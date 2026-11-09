@@ -5,10 +5,10 @@
 // Acá está lo que pasa en cada instante: pedales, marchas, traslado de peso, la cola que se abre, golpes, pasto y
 // daños (damage.js: lo que se rompe en los choques de collision.js).
 
-import { sampleField, surfaceAt } from './track.js';
+import { sampleField, edgeInfo } from './track.js';
 import { collideWalls } from './collision.js';
 import { carLimits, DEFAULT_TUNE, GRAVITY, SEA_AIR } from './dynamics.js';
-import { deflate, NO_DAMAGE, steerPull, wheelDrag as damageDrag, wheelGrip as damageGrip } from './damage.js';
+import { applyHit, deflate, NO_DAMAGE, steerPull, wheelDrag as damageDrag, wheelGrip as damageGrip } from './damage.js';
 
 // Auto por defecto, por si no se carga uno (como cars/f1-2025.json)
 export const DEFAULT_PROFILE = {
@@ -33,11 +33,25 @@ export const DEFAULT_PROFILE = {
 //   grip      fracción del agarre de esa rueda
 //   drag      cuánto frena esa rueda (m/s², pasando DRAG_FROM); si frena más de un lado, el auto tira para ese lado
 //   maxSpeed  con las dos traseras ahí, el motor ya no empuja más allá de esta velocidad (m/s)
+//   slide     (opcional) cuánto agarre más pierde la rueda con el auto de costado (con SLIDE_FULL m/s de deslizamiento)
+//   wear      (opcional) cuántas veces más se gastan las gomas ahí
 export const SURFACES = {
   road: { grip: 1, drag: 0, maxSpeed: Infinity },
-  kerb: { grip: 1, drag: 0, maxSpeed: Infinity },
+  // el piano: pintura lisa con escalones, agarra un poco menos que el asfalto, y de costado bastante menos
+  kerb: { grip: 0.9, drag: 0.5, maxSpeed: Infinity, slide: 0.3 },
+  // la franja verde detrás del piano: abrasiva, agarra menos y come las gomas
+  green: { grip: 0.8, drag: 2, maxSpeed: Infinity, slide: 0.2, wear: 4 },
+  // la salchicha: el auto salta (y puede romper el piso, ver SAUSAGE_HIT), casi no agarra y frena mucho
+  sausage: { grip: 0.4, drag: 10, maxSpeed: Infinity, slide: 0.3 },
   grass: { grip: 0.6, drag: 5, maxSpeed: 25 }, // con las cuatro: 20 m/s² de freno y no pasa de ~90 km/h
 };
+const SLIDE_FULL = 4; // m/s de deslizamiento de costado con el que una superficie pierde todo su `slide`
+// subirse a una salchicha: un golpe en el piso de esta intensidad (m/s, como los choques de damage.js) por cada m/s
+// de velocidad: desde ~28 m/s (100 km/h) empieza a romper, a 160 km/h se lleva un 20 % del piso y a 250 km/h, la
+// mitad. Y el auto pega un salto y un tirón para el otro lado
+const SAUSAGE_HIT = 0.25;
+const SAUSAGE_KICK = 0.012; // rad/s de giro por cada m/s de velocidad, hacia el lado contrario de la salchicha
+const SAUSAGE_KICK_MAX = 0.5; // rad/s
 const DRAG_FROM = 15; // m/s
 const PULL = 0.006; // giro (rad/s) por cada m/s² que una rueda frena más que la del otro lado
 const SURFACE_RATE = 5; // 1/s: al cambiar de superficie, el agarre y el freno de la rueda cambian en ~0,2 s
@@ -166,6 +180,12 @@ export class Car {
     this.grass = 0; // fracción de las ruedas en el pasto
     this.onGrass = false; // dos ruedas o más en el pasto: afuera de la pista
     this.onKerb = false;
+    this.onSausage = false; // alguna rueda arriba de una salchicha
+    this.wheelLift = [0, 0, 0, 0]; // cuánto está levantada cada rueda por el piano o la salchicha (celdas)
+    this.lift = 0; // y el auto: cuánto sube (celdas), cuánto rola (rad, +: el costado derecho sube) y cabecea
+    this.liftRoll = 0; // (rad, +: la trompa baja), para dibujarlo
+    this.liftDive = 0;
+    this.jolt = 0; // sacudón de la salchicha (0..1, se va solo), para la cámara y el sonido
     this.bump = 0;
     this.slope = 0;
     this.slip = 0; // velocidad de costado, hacia la derecha (m/s): la dejan los golpes y se va con el agarre
@@ -291,19 +311,41 @@ export class Car {
     }
     // qué pisa cada rueda, en su lugar (los pianos están por fuera del límite de pista: pisarlos no es ir al pasto)
     const ca0 = Math.cos(this.angle), sa0 = Math.sin(this.angle);
-    this.wheels = WHEELS.map(([f, r]) => surfaceAt(track, this.x + (ca0 * f - sa0 * r) / M, this.y + (sa0 * f + ca0 * r) / M));
+    const under = WHEELS.map(([f, r]) => edgeInfo(track, this.x + (ca0 * f - sa0 * r) / M, this.y + (sa0 * f + ca0 * r) / M));
+    this.wheels = under.map((u) => u.surface);
     const surf = this.wheels.map((w) => SURFACES[w]);
     // la goma no pasa de agarrar a patinar de golpe: entra de a poco en lo que pisa
     const blend = Math.min(1, dt * SURFACE_RATE);
+    // de costado, en el piano y el verde se agarra todavía menos
+    const sliding = Math.min(1, Math.abs(this.slip) / SLIDE_FULL);
     // (una rueda con la suspensión torcida o pinchada, además, agarra menos y una pinchada frena)
     surf.forEach((sf, i) => {
-      this.wheelGrip[i] += (sf.grip * damageGrip(this.damage, i) - this.wheelGrip[i]) * blend;
+      const g = sf.grip * (1 - (sf.slide ?? 0) * sliding);
+      this.wheelGrip[i] += (g * damageGrip(this.damage, i) - this.wheelGrip[i]) * blend;
       this.wheelDrag[i] += (sf.drag + damageDrag(this.damage, i) - this.wheelDrag[i]) * blend;
     });
     const wg = this.wheelGrip;
     this.grass = this.wheels.filter((w) => w === 'grass').length / 4;
     this.onGrass = this.grass >= 0.5;
     this.onKerb = this.wheels.includes('kerb');
+    this.surfaceWear = surf.reduce((a, sf) => a + (sf.wear ?? 1), 0) / 4;
+    // cuánto levantan al auto el piano y la salchicha debajo de cada rueda
+    const L = (this.wheelLift = under.map((u) => u.lift));
+    this.lift = (L[0] + L[1] + L[2] + L[3]) / 4;
+    this.liftRoll = Math.atan((((L[1] + L[3]) - (L[0] + L[2])) / 2) * M / (WHEELS[1][1] - WHEELS[0][1]));
+    this.liftDive = Math.atan((((L[2] + L[3]) - (L[0] + L[1])) / 2) * M / (WHEELS[0][0] - WHEELS[2][0]));
+    // subirse a una salchicha: salto, tirón para el otro lado y, rápido, un golpe en el piso
+    const onSausage = this.wheels.includes('sausage');
+    const v0 = Math.abs(this.speed);
+    // (una vez por salto: mientras dura el sacudón, rebotar sobre la misma salchicha no vuelve a romper)
+    if (onSausage && !this.onSausage && v0 > 5 && this.jolt < 0.2) {
+      this.jolt = Math.min(1, v0 / 40);
+      const i = this.wheels.indexOf('sausage');
+      this.spin += -Math.sign(WHEELS[i][1]) * Math.min(SAUSAGE_KICK_MAX, v0 * SAUSAGE_KICK);
+      this.damage = applyHit(this.damage, 0, 0, v0 * SAUSAGE_HIT, null, this.damageLevel);
+    }
+    this.onSausage = onSausage;
+    this.jolt = Math.max(0, this.jolt - dt * 2.5);
 
     const v = Math.abs(this.speed);
     // pedales y volante pueden ir a medias (joystick): 0..1 y -1..1; el teclado manda true/false
@@ -422,7 +464,7 @@ export class Car {
     // desgaste: cuánto se exige el agarre (doblar + empujar o frenar, sobre lo que agarran) y el deslizamiento
     if (this.wearRate) {
       const use = (sp * Math.abs(this.omega) + Math.abs(this.aLon)) / whole + Math.abs(this.slip) / 5;
-      this.wear = Math.min(1, this.wear + this.wearRate * setup.wear * (WEAR_BASE + WEAR_USE * (1 - WEAR_BASE) * use) * sp * dt);
+      this.wear = Math.min(1, this.wear + this.wearRate * setup.wear * (this.surfaceWear ?? 1) * (WEAR_BASE + WEAR_USE * (1 - WEAR_BASE) * use) * sp * dt);
     }
     // el deslizamiento lo frena lo que le sobra a las gomas después de doblar (círculo de fricción): doblando al
     // límite, el auto se sigue abriendo (siempre un poco, así un deslizamiento termina)

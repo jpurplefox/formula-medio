@@ -4,7 +4,7 @@
 // no estaba tapada (y-buffer). Así las lomas tapan lo que tienen detrás.
 // Orden de dibujo: cielo → terreno (con muros como escalones) → sprites y modelos 3D, de lejos a cerca.
 
-import { KERB_W, stationAt, kerbAmount, sampleField } from './track.js';
+import { DEFAULT_KERB, KERB_H, KERB_STYLE, RIDGE, SAUSAGE_H, SAUSAGE_W, edgeReach, kerbLift, stationAt, kerbAmount, sampleField } from './track.js';
 import { asphaltTexture, grassTexture, macroNoise, sample, wallTexture } from './textures.js';
 import { RUBBER_DARK, RubberMap } from './rubber.js';
 
@@ -15,9 +15,8 @@ export const Z_NEAR = 0.6;
 export const WALL_H = 0.32; // altura de los muros (en celdas)
 export const WALL_T = 0.5; // espesor de los muros (en celdas)
 export const WALL_STRIPE = 1.2; // largo de cada franja del muro (en celdas)
-export const KERB_H = 0.07; // altura del lomo del piano (en celdas)
+export { KERB_H }; // altura del lomo del piano (en celdas; está en track.js, con el resto del piano)
 export const LINE_W = 0.22; // ancho de la línea blanca de borde (en celdas)
-export const STRIPE = 1.6; // largo de cada franja del piano (en celdas)
 export const GUIDE_W = 0.2; // medio ancho de la trazada ideal (en celdas)
 export const ROAD_TPC = 64; // texeles de asfalto por celda (la textura se repite cada 4 celdas, ~10 m)
 export const GRASS_TPC = 32; // texeles de césped por celda
@@ -38,12 +37,35 @@ export const rgb = (r, g, b) => (0xff000000 | (b << 16) | (g << 8) | r) >>> 0;
 
 const FR = 196, FG = 214, FB = 230;
 const FOG = rgb(FR, FG, FB);
-const KERB_RED = rgb(200, 30, 30);
-const KERB_WHITE = rgb(235, 235, 235);
 const EDGE_WHITE = rgb(225, 225, 225);
+const KERB_GREEN = rgb(46, 135, 80); // franja verde abrasiva detrás del piano
+const SAUSAGE_YELLOW = rgb(245, 196, 20);
+const DIRT = rgb(120, 96, 62); // tierra que traen las ruedas desde el pasto
+const KERB_RUBBER = rgb(25, 25, 25);
+// desgaste del piano: dónde hay goma (del lado de la pista) y tierra (del lado del pasto)
+export const KERB_RUBBER_MAX = 0.45; // lo más que oscurece la goma
+export const KERB_DIRT_MAX = 0.5; // lo más que tapa la tierra
+export const WEAR_CELL = 0.4; // largo de cada mancha (celdas)
+// valor al azar (0..1) fijo para cada número entero, igual que en el shader de glrenderer.js
+export const hash = (i) => {
+  const x = Math.sin(i * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+};
+const smooth = (a, b, x) => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
 const LINE_BLACK = rgb(20, 20, 20);
 const LINE_WHITE = rgb(245, 245, 245);
 const WALL_TOP = rgb(150, 150, 155);
+
+// colores del piano del circuito, ya empaquetados (se calculan una vez por circuito)
+const kerbCache = new WeakMap();
+function kerbColors(track) {
+  let c = kerbCache.get(track);
+  if (!c) kerbCache.set(track, (c = (track.kerbColors ?? DEFAULT_KERB).map(([r, g, b]) => rgb(r, g, b))));
+  return c;
+}
 
 function mix(c, f) {
   if (f <= 0) return c;
@@ -65,11 +87,15 @@ function blend(a, b, t) {
 }
 
 // color de una zona del borde según la distancia s al límite de la pista
-function zone(s, outer, grass, kerb, road, edge) {
-  if (s < outer) return grass;
-  if (s < 0) return kerb;
-  if (s < LINE_W) return edge;
-  return road;
+// sb, gb, kb, lb: bordes de las franjas del costado (de afuera hacia adentro: salchicha, verde, piano, línea blanca);
+// c: sus colores, más el pasto y el asfalto
+function zone(s, sb, gb, kb, lb, c) {
+  if (s < sb) return c.grass;
+  if (s < gb) return c.sausage;
+  if (s < kb) return c.green;
+  if (s < 0) return c.kerb;
+  if (s < lb) return c.edge;
+  return c.road;
 }
 
 function fogFactor(d) {
@@ -195,7 +221,8 @@ export class Renderer {
 
   drawTerrain(track, cam, dirX, dirY, planeX, planeY, horizon, x0, x1) {
     const { w, h, buf, P, clip } = this;
-    const { W, H, height, sdf, lat, kerbLeft, kerbRight } = track;
+    const { W, H, height, sdf, lat, kerbLeft, kerbRight, sausageLeft, sausageRight } = track;
+    const style = track.kerbStyle ?? KERB_STYLE, reach = edgeReach(style);
     // el muro es la franja continua que empieza a `runoff` celdas del borde de la pista
     const wallIn = -track.runoff, wallOut = wallIn - WALL_T;
     const light = this.lightFor.get(track);
@@ -228,7 +255,7 @@ export class Renderer {
 
         const fx = cam.x + rdx * z, fy = cam.y + rdy * z;
         let ground, isWall = false, ix, iy, i;
-        let s = -1e9, k = 0, st = -1, side = 0, kerbShade = 1;
+        let s = -1e9, k = 0, q = 0, st = -1, side = 0, kerbShade = 1;
         if (fx < 1 || fy < 1 || fx >= W - 1 || fy >= H - 1) {
           ix = Math.min(W - 1, Math.max(0, fx | 0));
           iy = Math.min(H - 1, Math.max(0, fy | 0));
@@ -247,17 +274,26 @@ export class Renderer {
           s = sdf[j] * a + sdf[j + 1] * b + sdf[j + W] * c + sdf[j + W + 1] * d;
           // cerca del borde: dónde estamos sobre la línea central y de qué lado, para saber si hay piano
           // (en el resto de la pista, para la trazada y la goma, se calcula recién si la muestra se pinta)
-          if (s > -KERB_W - 1 && s < 1) {
+          if (s > -reach - 1 && s < 1) {
             st = stationAt(track, fx, fy);
             side = lat[j] * a + lat[j + 1] * b + lat[j + W] * c + lat[j + W + 1] * d;
-            if (st >= 0) k = kerbAmount(side > 0 ? kerbRight : kerbLeft, st);
+            if (st >= 0) {
+              k = kerbAmount(side > 0 ? kerbRight : kerbLeft, st);
+              if (sausageLeft) q = kerbAmount(side > 0 ? sausageRight : sausageLeft, st);
+            }
           }
-          // el piano es un lomo por fuera del borde: sube desde el pasto, hace cumbre y baja hacia la pista
-          const kw = KERB_W * k;
-          if (k > 0 && s < 0 && s > -kw) {
-            const t = (s + kw) / kw;
-            ground += KERB_H * k * Math.sin(Math.PI * t);
-            kerbShade = 1 - 0.22 * Math.cos(Math.PI * t); // la cara que mira a la pista, más iluminada
+          // el piano es un lomo por fuera del borde (con serrucho, ver kerbLift); detrás, el verde (plano) y, en
+          // algunas curvas, la salchicha: otro lomo, más alto y angosto
+          if (k > 0 && s < 0) {
+            const kb = -style.width * k, gb = kb - style.green * k, sb = gb - SAUSAGE_W * q;
+            if (s > kb) {
+              ground += kerbLift(s, kb, k, st);
+              kerbShade = 1 - 0.22 * Math.cos((Math.PI * (s - kb)) / -kb); // la cara que mira a la pista, más iluminada
+            } else if (q > 0.02 && s < gb && s > sb) {
+              const t = (s - sb) / (gb - sb);
+              ground += SAUSAGE_H * q * Math.sin(Math.PI * t);
+              kerbShade = 1 - 0.3 * Math.cos(Math.PI * t);
+            }
           }
           // muro: estamos dentro de la franja, o el paso la cruzó entera (pasa a lo lejos, con pasos largos)
           isWall = (s < wallIn && s > wallOut) || (prevS > wallIn && s <= wallOut);
@@ -317,7 +353,7 @@ export class Renderer {
                 st = stationAt(track, fx, fy);
                 side = (lat[j] * (1 - u) + lat[j + 1] * u) * (1 - v) + (lat[j + W] * (1 - u) + lat[j + W + 1] * u) * v;
               }
-              c = this.groundColor(track, fx, fy, fw, s, k, st, side, light[i] * kerbShade);
+              c = this.groundColor(track, fx, fy, fw, s, k, st, side, light[i] * kerbShade, q);
             }
             c = mix(c, f);
             for (let y = sy; y < ybuf; y++) buf[y * w + x] = c;
@@ -341,13 +377,17 @@ export class Renderer {
   // De afuera hacia adentro: pasto | piano (sólo en curvas, por fuera del límite) | línea blanca | asfalto.
   // Es lo que más se ejecuta del render: sólo calcula el pasto o el asfalto si van a hacer falta, y cada color
   // se ilumina una sola vez.
-  groundColor(track, fx, fy, fw, s, k, st, side, lit) {
+  groundColor(track, fx, fy, fw, s, k, st, side, lit, q = 0) {
     const { line } = track;
+    const style = track.kerbStyle ?? KERB_STYLE;
     // variación de brillo a gran escala, igual para pasto y asfalto
     const mc = this.macro;
     const light = lit * mc.data[((((fy * MACRO_TPC) | 0) & (mc.size - 1)) * mc.size) + (((fx * MACRO_TPC) | 0) & (mc.size - 1))];
-    const isKerb = k > 0.02;
-    const outer = isKerb ? -KERB_W * k : 0; // borde exterior de lo pintado (en las puntas, más angosto)
+    const isKerb = k > 0.02, isSausage = isKerb && q > 0.02;
+    // bordes de lo pintado (en las puntas, más angosto): piano, verde, salchicha, y la línea blanca adentro
+    const kb = isKerb ? -style.width * k : 0;
+    const gb = isKerb ? kb - style.green * k : 0;
+    const outer = isSausage ? gb - SAUSAGE_W * q : gb, lb = isKerb && !style.line ? 0 : LINE_W;
 
     let grass = 0;
     if (s < outer + fw) {
@@ -362,10 +402,10 @@ export class Renderer {
       if (s < outer - fw) return grass;
     }
 
-    let roadC = sample(this.asphalt, fx * ROAD_TPC, fy * ROAD_TPC, fw * ROAD_TPC);
-    // goma: por donde pasaron las ruedas el asfalto está más oscuro
+    const asphalt = sample(this.asphalt, fx * ROAD_TPC, fy * ROAD_TPC, fw * ROAD_TPC);
+    // goma: por donde pasaron las ruedas el asfalto (y el piano) está más oscuro
     const dark = this.rubber && st >= 0 ? RUBBER_DARK * RubberMap.sample(this.rubber, st, side) : 0;
-    roadC = shade(roadC, light * (1 - dark));
+    let roadC = shade(asphalt, light * (1 - dark));
     // línea de largada a cuadros
     const ax = fx - line.x, ay = fy - line.y;
     const a = ax * line.dx + ay * line.dy;
@@ -382,33 +422,52 @@ export class Renderer {
       const d = Math.abs(side - guide.offset[u]);
       if (d < GUIDE_W + fw) roadC = blend(roadC, shade(guide.color[u], lit), 0.8 * Math.min(1, (GUIDE_W + fw - d) / (2 * fw)));
     }
-    if (s > LINE_W + fw) return roadC;
+    if (s > lb + fw) return roadC;
 
-    let kerbC = EDGE_WHITE;
+    let kerbC = EDGE_WHITE, greenC = KERB_GREEN, sausageC = SAUSAGE_YELLOW;
     if (isKerb) {
       // franjas perpendiculares a la pista, según la posición sobre la línea central
-      const ph = st / STRIPE;
-      const fr = ph - Math.floor(ph);
-      const cur = Math.floor(ph) & 1 ? KERB_RED : KERB_WHITE;
-      const other = cur === KERB_RED ? KERB_WHITE : KERB_RED;
-      const e = Math.min(0.5, fw / STRIPE);
+      // los colores del circuito se repiten en orden; en el borde entre franjas se mezcla con la vecina
+      const cols = kerbColors(track);
+      const n = cols.length, stripe = style.stripe;
+      const ph = st / stripe;
+      const i = Math.floor(ph);
+      const fr = ph - i;
+      const cur = cols[((i % n) + n) % n];
+      const e = Math.min(0.5, fw / stripe);
       const ow = fr < e ? (e - fr) / (2 * e) : fr > 1 - e ? (fr - 1 + e) / (2 * e) : 0;
+      const other = cols[((((fr < e ? i - 1 : i + 1) % n) + n) % n)];
       kerbC = ow > 0 ? blend(cur, other, ow) : cur;
+      // desgaste: manchas de goma del lado de la pista y de tierra del lado del pasto (de lejos, el promedio)
+      const t = Math.max(0, Math.min(1, (s - kb) / -kb));
+      const fade = Math.max(0, Math.min(1, 1 - fw / WEAR_CELL));
+      const cell = Math.floor(st / WEAR_CELL) + (side > 0 ? 7919 : 0);
+      const n1 = 0.5 + (hash(cell) - 0.5) * fade, n2 = 0.5 + (hash(cell + 101) - 0.5) * fade;
+      kerbC = blend(kerbC, KERB_RUBBER, KERB_RUBBER_MAX * smooth(0.35, 1, t) * n1);
+      kerbC = blend(kerbC, DIRT, KERB_DIRT_MAX * (1 - smooth(0, 0.4, t)) * n2 * n2);
+      // serrucho: la cara empinada de cada escalón queda en sombra (de lejos no se distingue)
+      const r = st / RIDGE - Math.floor(st / RIDGE);
+      const ridge = 1 + ((r < 0.8 ? 1.05 : 0.75) - 1) * Math.max(0, Math.min(1, 1 - (2 * fw) / RIDGE));
+      kerbC = shade(kerbC, light * (1 - dark) * ridge);
+      // el verde: pintura sobre el asfalto (se ve el grano)
+      greenC = shade(blend(asphalt, KERB_GREEN, 0.75), light);
+      if (isSausage) sausageC = shade(SAUSAGE_YELLOW, lit); // la salchicha, amarilla
     }
-    kerbC = shade(kerbC, lit);
     const edgeC = shade(EDGE_WHITE, lit);
+    const c = { grass, sausage: sausageC, green: greenC, kerb: kerbC, edge: edgeC, road: roadC };
 
     // antialiasing: cerca de un cambio de zona, mezclamos los dos colores
     let edge = outer;
-    if (isKerb && Math.abs(s) < Math.abs(s - edge)) edge = 0;
-    if (Math.abs(s - LINE_W) < Math.abs(s - edge)) edge = LINE_W;
-    const zs = s - edge;
-    if (zs > -fw && zs < fw) {
-      const inner = zone(edge + fw, outer, grass, kerbC, roadC, edgeC);
-      const outerC = zone(edge - fw, outer, grass, kerbC, roadC, edgeC);
-      return blend(outerC, inner, (zs + fw) / (2 * fw));
+    const near = (e) => { if (Math.abs(s - e) < Math.abs(s - edge)) edge = e; };
+    if (isKerb) {
+      near(gb);
+      near(kb);
+      near(0);
     }
-    return zone(s, outer, grass, kerbC, roadC, edgeC);
+    near(lb);
+    const zs = s - edge;
+    if (zs > -fw && zs < fw) return blend(zone(edge - fw, outer, gb, kb, lb, c), zone(edge + fw, outer, gb, kb, lb, c), (zs + fw) / (2 * fw));
+    return zone(s, outer, gb, kb, lb, c);
   }
 
   drawSprites(track, cam, sprites, models, dirX, dirY, planeX, planeY, horizon) {
@@ -727,8 +786,8 @@ class TerrainPool {
     const offset = (r.guide && r.guide.offset) || null;
     if (track !== this.track || offset !== this.offset) {
       // el circuito (y por dónde pasa la trazada) se manda una sola vez, copiado a cada worker
-      const { W, H, height, sdf, lat, station, kerbLeft, kerbRight, runoff, line } = track;
-      const data = { W, H, height, sdf, lat, station, kerbLeft, kerbRight, runoff, line };
+      const { W, H, height, sdf, lat, station, kerbLeft, kerbRight, sausageLeft, sausageRight, kerbStyle, kerbColors, runoff, line } = track;
+      const data = { W, H, height, sdf, lat, station, kerbLeft, kerbRight, sausageLeft, sausageRight, kerbStyle, kerbColors, runoff, line };
       for (const p of this.parts) p.worker.postMessage({ type: 'track', track: data, offset });
       this.track = track;
       this.offset = offset;
