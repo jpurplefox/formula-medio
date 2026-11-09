@@ -4,8 +4,8 @@
 // no estaba tapada (y-buffer). Así las lomas tapan lo que tienen detrás.
 // Orden de dibujo: cielo → terreno (con muros como escalones) → sprites y modelos 3D, de lejos a cerca.
 
-import { DEFAULT_KERB, KERB_H, KERB_STYLE, RIDGE, SAUSAGE_H, SAUSAGE_W, edgeReach, kerbLift, stationAt, kerbAmount, sampleField } from './track.js';
-import { asphaltTexture, grassTexture, macroNoise, sample, wallTexture } from './textures.js';
+import { DEFAULT_KERB, KERB_H, KERB_STYLE, RIDGE, SAUSAGE_H, SAUSAGE_W, edgeReach, kerbLift, stationAt, kerbAmount, runoffAt, sampleField } from './track.js';
+import { asphaltTexture, grassTexture, gravelTexture, macroNoise, sample, wallTexture } from './textures.js';
 import { RUBBER_DARK, RubberMap } from './rubber.js';
 
 export const MAX_DIST = 140;
@@ -20,6 +20,8 @@ export const LINE_W = 0.22; // ancho de la línea blanca de borde (en celdas)
 export const GUIDE_W = 0.2; // medio ancho de la trazada ideal (en celdas)
 export const ROAD_TPC = 64; // texeles de asfalto por celda (la textura se repite cada 4 celdas, ~10 m)
 export const GRASS_TPC = 32; // texeles de césped por celda
+export const GRAVEL_TPC = 48; // texeles de leca por celda
+export const RUNOFF_LIGHT = 1.15; // la escapatoria asfaltada, más clara que la pista (no tiene goma)
 export const GRASS_BAND = 2.2; // ancho de cada franja del corte de césped (en celdas)
 export const MACRO_TPC = 2; // muestras de la variación grande por celda (se repite cada 32 celdas, ~80 m)
 export const PLANE_LEN = 0.7; // medio ancho del plano de la cámara a distancia 1: campo de visión de unos 70°
@@ -147,6 +149,7 @@ export class Renderer {
 
     this.asphalt = asphaltTexture();
     this.grass = grassTexture();
+    this.gravel = gravelTexture();
     this.macro = macroNoise();
     this.wall = wallTexture();
 
@@ -223,6 +226,7 @@ export class Renderer {
     const { w, h, buf, P, clip } = this;
     const { W, H, height, sdf, lat, kerbLeft, kerbRight, sausageLeft, sausageRight } = track;
     const style = track.kerbStyle ?? KERB_STYLE, reach = edgeReach(style);
+    const near = Math.max(reach + 1, track.runoff + 0.5); // hasta dónde hace falta saber dónde estamos
     // el muro es la franja continua que empieza a `runoff` celdas del borde de la pista
     const wallIn = -track.runoff, wallOut = wallIn - WALL_T;
     const light = this.lightFor.get(track);
@@ -272,9 +276,10 @@ export class Renderer {
           const a = (1 - u) * (1 - v), b = u * (1 - v), c = (1 - u) * v, d = u * v;
           ground = height[j] * a + height[j + 1] * b + height[j + W] * c + height[j + W + 1] * d;
           s = sdf[j] * a + sdf[j + 1] * b + sdf[j + W] * c + sdf[j + W + 1] * d;
-          // cerca del borde: dónde estamos sobre la línea central y de qué lado, para saber si hay piano
-          // (en el resto de la pista, para la trazada y la goma, se calcula recién si la muestra se pinta)
-          if (s > -reach - 1 && s < 1) {
+          // cerca del borde y en la escapatoria: dónde estamos sobre la línea central y de qué lado, para saber si
+          // hay piano (y verde y salchicha) y qué hay afuera (en el resto de la pista, para la trazada y la goma, se
+          // calcula recién si la muestra se pinta)
+          if (s > -near && s < 1) {
             st = stationAt(track, fx, fy);
             side = lat[j] * a + lat[j + 1] * b + lat[j + W] * c + lat[j + W + 1] * d;
             if (st >= 0) {
@@ -374,7 +379,7 @@ export class Renderer {
   // s = distancia con signo al borde (positiva = sobre la pista), k = cuánto piano hay acá (0..1),
   // st = posición sobre la línea central (para las franjas del piano), side = distancia de costado a la línea central,
   // lit = luz del terreno en este punto (pendiente y lomo del piano).
-  // De afuera hacia adentro: pasto | piano (sólo en curvas, por fuera del límite) | línea blanca | asfalto.
+  // De afuera hacia adentro: pasto, leca o asfalto de escapatoria | piano (sólo en curvas, por fuera del límite) | línea blanca | asfalto.
   // Es lo que más se ejecuta del render: sólo calcula el pasto o el asfalto si van a hacer falta, y cada color
   // se ilumina una sola vez.
   groundColor(track, fx, fy, fw, s, k, st, side, lit, q = 0) {
@@ -391,14 +396,21 @@ export class Renderer {
 
     let grass = 0;
     if (s < outer + fw) {
-      // césped con franjas del corte, en diagonal; cerca del cambio de franja se mezclan para que no serruche
-      const ph = (fx + fy) * (0.7071 / GRASS_BAND);
-      const fr = ph - Math.floor(ph);
-      const e = Math.min(0.5, fw / GRASS_BAND);
-      let band = Math.floor(ph) & 1 ? 1 : 0;
-      if (fr < e) band = band + (1 - 2 * band) * ((e - fr) / (2 * e));
-      else if (fr > 1 - e) band = band + (1 - 2 * band) * ((fr - 1 + e) / (2 * e));
-      grass = shade(sample(this.grass, fx * GRASS_TPC, fy * GRASS_TPC, fw * GRASS_TPC), light * (0.9 + band * 0.2));
+      // lo de afuera: pasto, leca o asfalto (más claro que el de la pista: no tiene goma), según la escapatoria
+      // de ese lado en ese tramo (RUNOFF de track.js), hasta el muro; más allá, pasto
+      const mat = st >= 0 && s > -track.runoff ? runoffAt(side > 0 ? track.runoffRight : track.runoffLeft, st) : 0;
+      if (mat === 2) grass = shade(sample(this.asphalt, fx * ROAD_TPC, fy * ROAD_TPC, fw * ROAD_TPC), light * RUNOFF_LIGHT);
+      else if (mat === 1) grass = shade(sample(this.gravel, fx * GRAVEL_TPC, fy * GRAVEL_TPC, fw * GRAVEL_TPC), light);
+      else {
+        // césped con franjas del corte, en diagonal; cerca del cambio de franja se mezclan para que no serruche
+        const ph = (fx + fy) * (0.7071 / GRASS_BAND);
+        const fr = ph - Math.floor(ph);
+        const e = Math.min(0.5, fw / GRASS_BAND);
+        let band = Math.floor(ph) & 1 ? 1 : 0;
+        if (fr < e) band = band + (1 - 2 * band) * ((e - fr) / (2 * e));
+        else if (fr > 1 - e) band = band + (1 - 2 * band) * ((fr - 1 + e) / (2 * e));
+        grass = shade(sample(this.grass, fx * GRASS_TPC, fy * GRASS_TPC, fw * GRASS_TPC), light * (0.9 + band * 0.2));
+      }
       if (s < outer - fw) return grass;
     }
 
@@ -786,8 +798,8 @@ class TerrainPool {
     const offset = (r.guide && r.guide.offset) || null;
     if (track !== this.track || offset !== this.offset) {
       // el circuito (y por dónde pasa la trazada) se manda una sola vez, copiado a cada worker
-      const { W, H, height, sdf, lat, station, kerbLeft, kerbRight, sausageLeft, sausageRight, kerbStyle, kerbColors, runoff, line } = track;
-      const data = { W, H, height, sdf, lat, station, kerbLeft, kerbRight, sausageLeft, sausageRight, kerbStyle, kerbColors, runoff, line };
+      const { W, H, height, sdf, lat, station, kerbLeft, kerbRight, sausageLeft, sausageRight, kerbStyle, kerbColors, runoffLeft, runoffRight, runoff, line } = track;
+      const data = { W, H, height, sdf, lat, station, kerbLeft, kerbRight, sausageLeft, sausageRight, kerbStyle, kerbColors, runoffLeft, runoffRight, runoff, line };
       for (const p of this.parts) p.worker.postMessage({ type: 'track', track: data, offset });
       this.track = track;
       this.offset = offset;

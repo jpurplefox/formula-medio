@@ -898,8 +898,9 @@ function paddles(p, gear, dt) {
   return p;
 }
 
-// cuánto tiembla el volante: en el pasto y en los pianos, más cuanto más rápido (cambia en cada cuadro)
-const buzz = (c) => (c.grass * Math.min(1, Math.abs(c.speed) / 25) + (c.onKerb ? Math.min(1, Math.abs(c.speed) / 35) * 0.5 : 0) + c.jolt)
+// cuánto tiembla el volante: en el pasto, en la leca y en los pianos, más cuanto más rápido, y con el salto de la
+// salchicha (cambia en cada cuadro)
+const buzz = (c) => ((c.rough ?? c.grass) * Math.min(1, Math.abs(c.speed) / 25) + (c.onKerb ? Math.min(1, Math.abs(c.speed) / 35) * 0.5 : 0) + (c.jolt ?? 0))
   * BUZZ * (Math.random() * 2 - 1);
 
 // la cabeza del piloto, inclinada por las fuerzas: [hacia el costado, hacia adelante]
@@ -945,9 +946,9 @@ async function draw(time) {
   }
 
   // cámara en la cabina o un poco detrás del auto, a la altura del terreno,
-  // con traqueteo en el pasto, en los pianos y al chocar
+  // con traqueteo en el pasto, en la leca, en los pianos y al chocar
   const shake =
-    car.grass * Math.min(1, Math.abs(car.speed) / 25) * 3 +
+    (car.rough ?? car.grass) * Math.min(1, Math.abs(car.speed) / 25) * 3 +
     (car.onKerb ? Math.min(1, Math.abs(car.speed) / 35) * 1.2 : 0) +
     car.bump * 4 + car.jolt * 5;
   // contra un muro, la cámara de afuera se acerca hasta que deja de estar adentro
