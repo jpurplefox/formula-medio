@@ -2,7 +2,7 @@
 // Cada auto tiene masa (todos iguales, así que se toma 1) y momento de inercia, y entre autos es un juego de piezas
 // (las zonas de damage.js: alerones, ruedas, pontones; 5,6 × 2 m en total). Contra los muros, tres círculos.
 // Su velocidad en el mundo es la de marcha (car.speed, hacia donde apunta) más la de costado (car.slip),
-// y gira a car.omega (lo que dobla con el volante más car.spin, el giro que le dejan los golpes).
+// y gira a car.omega.
 // En un choque se calcula el punto de contacto y se aplica un impulso según la velocidad con que se acercan
 // ahí los dos cuerpos: con un poco de rebote y de rozamiento. Si el contacto está fuera del centro, el auto gira.
 // Mientras dos cuerpos sólo se apoyan (no se acercan) no hay impulso: se deslizan sin frenarse.
@@ -66,9 +66,7 @@ function push(car, rx, ry, px, py) {
   const nx = vx + px, ny = vy + py;
   car.speed = nx * ca + ny * sa;
   car.slip = -nx * sa + ny * ca;
-  const dw = cross(rx, ry, px, py) / INERTIA;
-  car.spin = Math.max(-MAX_SPIN, Math.min(MAX_SPIN, car.spin + dw));
-  car.omega += dw;
+  car.omega = Math.max(-MAX_SPIN, Math.min(MAX_SPIN, car.omega + cross(rx, ry, px, py) / INERTIA));
 }
 
 // Impulso en un contacto con normal n (de A hacia B) y punto a rA de A y rB de B (b = null: muro, que no se mueve).
@@ -225,7 +223,7 @@ export function collideCars(cars, track, isSolid) {
         if (launched) {
           launched.speed *= LAUNCH_SPEED;
           const turn = (Math.random() < 0.5 ? -1 : 1) * LAUNCH_SPIN * (0.5 + 0.5 * Math.random());
-          launched.spin = Math.max(-MAX_SPIN, Math.min(MAX_SPIN, launched.spin + turn));
+          launched.omega = Math.max(-MAX_SPIN, Math.min(MAX_SPIN, launched.omega + turn));
           launched.bump = 1;
         }
       }

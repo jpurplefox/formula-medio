@@ -2,7 +2,7 @@ import { TRACKS } from '../tracks/index.js';
 import { loadImage, buildTrack, buildTrackFromLayout, sampleField, stationAt, RIDGE, T } from './track.js';
 import { Renderer, rgb } from './renderer.js';
 import { GLRenderer } from './glrenderer.js';
-import { Car, DEFAULT_PROFILE, LAUNCH_WINDOW, isSolid, limitsOn, slipstream, wheelAngle } from './car.js';
+import { Car, cornerGrip, DEFAULT_PROFILE, keyboardSteer, LAUNCH_WINDOW, isSolid, limitsOn, rearMargin, slipstream, TRACTION_CONTROL, wheelAngle } from './car.js';
 import { racingLine } from './racingline.js';
 import { boardTexture, treeTexture } from './sprites.js';
 import { carModel, STEERING, TCAM, WHEEL_R } from './carmodel.js';
@@ -44,7 +44,7 @@ const SETTINGS_KEY = 'raycast-racer-settings';
 // lo que se elige en el menú (se recuerda en el navegador): modo (carrera o contrarreloj), equipo, dificultad,
 // circuito, vueltas, cantidad de rivales, daños (damage.js), volúmenes y tu puesta a punto en cada circuito donde la cambiaste (tunes).
 // El sonido arranca siempre apagado (se prende con N o desde el menú) y eso no se recuerda.
-const settings = { mode: 'race', team: 'hierrari', difficulty: 'dificil', track: TRACKS[0].id, laps: 3, rivals: 21, damage: 'real', gearbox: 'auto', sound: false, volMaster: 0.8, volEngines: 1, volMusic: 0.6, tunes: {} };
+const settings = { mode: 'race', team: 'hierrari', difficulty: 'dificil', track: TRACKS[0].id, laps: 3, rivals: 21, damage: 'real', gearbox: 'auto', traction: 'high', sound: false, volMaster: 0.8, volEngines: 1, volMusic: 0.6, tunes: {} };
 // ?prueba: las teclas 1 a 9 rompen piezas de tu auto y 0 lo arregla, para probar cómo maneja con daños
 const DAMAGE_TEST = new URLSearchParams(location.search).has('prueba');
 const MODES = [
@@ -259,16 +259,18 @@ addEventListener('blur', () => {
   held.clear();
 });
 
-function readInput() {
+let keySteer = 0; // el volante con teclado, que va subiendo de a poco (keyboardSteer en car.js)
+function readInput(dt, speed) {
   // flechas, WASD o IJKL, más el joystick: lo que se pise más fuerte de los dos
   const left = keys.has('ArrowLeft') || keys.has('KeyA') || keys.has('KeyJ');
   const right = keys.has('ArrowRight') || keys.has('KeyD') || keys.has('KeyL');
   const up = keys.has('ArrowUp') || keys.has('KeyW') || keys.has('KeyI');
   const down = keys.has('ArrowDown') || keys.has('KeyS') || keys.has('KeyK') || keys.has('Space');
+  keySteer = keyboardSteer(keySteer, (right ? 1 : 0) - (left ? 1 : 0), speed, dt);
   return {
     throttle: Math.max(up ? 1 : 0, pad.throttle),
     brake: Math.max(down ? 1 : 0, pad.brake),
-    steer: Math.max(-1, Math.min(1, (right ? 1 : 0) - (left ? 1 : 0) + pad.steer)),
+    steer: Math.max(-1, Math.min(1, keySteer + pad.steer)),
   };
 }
 
@@ -332,6 +334,10 @@ let carProfile = DEFAULT_PROFILE;
 // Los rivales manejan con la red entrenada (rl/CURRICULO.md); con ?ia=models/fase7.json, con otra, y con ?ia=clasica,
 // con la IA de siempre (ai.js), que es también la que queda si la red no carga
 const CURRENT_NET = 'models/v20/fase18.json';
+// los rivales llevan control de tracción bajo: la red del juego aprendió con la física de antes (el auto giraba al
+// instante) y sin él, con las gomas de ahora, acelerando en las curvas lentas la cola se le va (medido con
+// rl/race_eval.js); hasta reentrenarla con estas gomas
+const RIVAL_TC = TRACTION_CONTROL.low;
 const IA_PARAM = new URLSearchParams(location.search).get('ia') || CURRENT_NET;
 const NEURAL_URL = IA_PARAM === 'clasica' ? null : IA_PARAM;
 let neuralPolicy = null;
@@ -349,11 +355,11 @@ function resetGame(track) {
   // grilla: los rivales adelante (los mejores autos tienden a largar primero) y vos al final
   const slots = gridSlots(track, others.length + 1), grid = gridOrder(others.length);
   const spawn = slots[others.length];
-  const car = Object.assign(new Car(spawn.x, spawn.y, spawn.angle, carProfile), { manual: settings.gearbox === 'manual', ownTune: settings.tunes[settings.track] ?? null }).placeOn(track);
+  const car = Object.assign(new Car(spawn.x, spawn.y, spawn.angle, carProfile), { manual: settings.gearbox === 'manual', tc: TRACTION_CONTROL[settings.traction] ?? 0, ownTune: settings.tunes[settings.track] ?? null }).placeOn(track);
   const mine = teamCar(team, 0);
   const player = { name: 'Vos', team: team.name, code: 'VOS', number: mine.number, color: team.color, car, driver: null, race: newRace(track, car), model: modelFor(mine, 2), dist: 0, gridBack: spawn.back };
   const rivals = others.map((o, i) => {
-    const t = o.team, s = slots[grid[i]], c = new Car(s.x, s.y, s.angle, carProfile).placeOn(track);
+    const t = o.team, s = slots[grid[i]], c = Object.assign(new Car(s.x, s.y, s.angle, carProfile), { tc: RIVAL_TC }).placeOn(track);
     // con la red, la dificultad es el auto: más o menos agarre y potencia
     if (neuralPolicy) c.setup = setups[i];
     return {
@@ -447,7 +453,7 @@ const seesLights = (e) => e.driver instanceof NeuralDriver && e.driver.policy.li
 
 function update(dt) {
   const g = game;
-  const input = readInput();
+  const input = readInput(dt, g.car.speed);
 
   // con el semáforo en rojo los autos quedan quietos en la grilla, pero se puede subir de vueltas
   if (g.countdown > 0) {
@@ -1010,7 +1016,7 @@ async function draw(time) {
   hud.help.classList.toggle('hidden', Math.abs(car.speed) > 3);
   hud.gear.textContent = car.gear === 0 ? 'R' : car.gear;
   hud.rpm.textContent = Math.round(car.rpm / 100) * 100;
-  hud.mode.textContent = car.manual ? 'MAN' : 'AUTO';
+  hud.mode.textContent = (car.manual ? 'MAN' : 'AUTO') + (car.tcCut ? ' · TC' : '');
   // luces de cambio: se van prendiendo desde 9.000 rpm hasta el corte (verde, rojo, azul)
   const lit = Math.round(((car.rpm - 9000) / (car.profile.maxRpm * 0.97 - 9000)) * SHIFT_LIGHTS);
   const leds = hud.lights.children;
@@ -1267,7 +1273,7 @@ function renderMain() {
   $('tile-tune').textContent = tuneSummary();
   const rivals = `${settings.rivals} ${settings.rivals === 1 ? 'rival' : 'rivales'}`;
   $('tile-options').textContent = (settings.mode === 'trial' ? [] : [rivals, DIFFICULTY().name.toLowerCase()])
-    .concat([`daños ${DAMAGE().name.toLowerCase()}`, `caja ${GEARBOXES.find((b) => b.value === settings.gearbox).label.toLowerCase()}`]).join(' · ');
+    .concat([`daños ${DAMAGE().name.toLowerCase()}`, `caja ${GEARBOXES.find((b) => b.value === settings.gearbox).label.toLowerCase()}`, `control de tracción ${TRACTION().label.toLowerCase()}`]).join(' · ');
 }
 
 // ---- el auto ----
@@ -1400,6 +1406,12 @@ const GEARBOXES = [
   { value: 'auto', label: 'Automática', hint: 'Los cambios se pasan solos' },
   { value: 'manual', label: 'Manual', hint: 'Subís con O o X y bajás con U o Z (en el joystick, RB sube y LB baja)' },
 ];
+const TRACTIONS = [
+  { value: 'high', label: 'Alto', hint: 'Corta motor antes de que la cola se suelte: para manejar con teclado' },
+  { value: 'low', label: 'Bajo', hint: 'Deja usar casi todo el agarre de la cola: más rápido, pero hay que dosificar un poco' },
+  { value: 'off', label: 'Apagado', hint: 'Como los F1 de verdad: acelerando a fondo en una curva lenta, la cola se va' },
+];
+const TRACTION = () => TRACTIONS.find((t) => t.value === settings.traction) || TRACTIONS[0];
 function renderOptions() {
   choices($('menu-diff'), DIFFICULTIES.map((d) => ({ value: d.id, label: d.name })), 'difficulty');
   choices($('menu-rivals'), RIVAL_OPTIONS.map((n) => ({ value: n, label: String(n) })), 'rivals');
@@ -1408,6 +1420,8 @@ function renderOptions() {
   $('menu-damage-hint').textContent = DAMAGE().hint;
   choices($('menu-gearbox'), GEARBOXES, 'gearbox');
   $('menu-gearbox-hint').textContent = GEARBOXES.find((b) => b.value === settings.gearbox).hint;
+  choices($('menu-traction'), TRACTIONS, 'traction');
+  $('menu-traction-hint').textContent = TRACTION().hint;
   choices($('menu-sound'), [{ value: true, label: 'Sí' }, { value: false, label: 'No' }], 'sound', applySound);
   for (const [id, key] of VOLUME_SLIDERS) $(id).value = Math.round(settings[key] * 100);
 }
@@ -1424,7 +1438,9 @@ const TUNE_SLIDERS = [['tune-front', 'front'], ['tune-rear', 'rear'], ['tune-bal
 const trackDef = () => TRACKS.find((t) => t.id === settings.track);
 const trackTune = () => trackDef()?.tune ?? DEFAULT_TUNE;
 const myTune = () => settings.tunes[settings.track] ?? trackTune();
-const BALANCE_WORDS = [[-0.03, 'subvira'], [0.03, 'neutro'], [Infinity, 'sobrevira']];
+// según cuánto más agarra la cola que la trompa (rearMargin de car.js; parejo da 0,15): con mucho margen la trompa no
+// dobla; con poco, frenando en curva o al soltar el freno la cola se va; sin margen, se va siempre
+const BALANCE_WORDS = [[0, 'sobrevira'], [0.08, 'nervioso'], [0.12, 'ágil'], [0.2, 'estable'], [Infinity, 'subvira']];
 const signed = (v) => (v > 0 ? `+${v}` : `${v}`);
 function tuneSummary() {
   const t = myTune();
@@ -1432,12 +1448,8 @@ function tuneSummary() {
 }
 function tuneLimits(t) {
   const lim = carLimits(carProfile, t, airDensity(trackDef()?.altitude ?? 0));
-  // con más agarre adelante que atrás la cola se abre (sobrevira); con menos, la trompa no dobla (subvira)
-  const balance = (v) => {
-    const [f, r] = lim.axles(v);
-    return BALANCE_WORDS.find(([max]) => f / r - 1 < max)[1];
-  };
-  return { top: lim.topSpeed * 3.6, grip: lim.lateral(70) / GRAVITY, slow: balance(25), fast: balance(70) };
+  const balance = (v) => BALANCE_WORDS.find(([max]) => rearMargin(lim, v) < max)[1];
+  return { top: lim.topSpeed * 3.6, grip: cornerGrip(lim, 70) / GRAVITY, slow: balance(25), fast: balance(70) };
 }
 function renderTune() {
   const t = myTune(), own = settings.tunes[settings.track];

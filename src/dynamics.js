@@ -26,6 +26,15 @@ export const WING_MIN = 1, WING_MAX = 10, BALANCE_MAX = 5;
 // densidad del aire (kg/m³) a una altura sobre el nivel del mar (m)
 export const airDensity = (altitude = 0) => SEA_AIR * Math.exp(-altitude / AIR_SCALE);
 
+// La goma de costado: qué parte de su agarre da según cuánto desliza. x es la deriva (el ángulo entre para dónde
+// apunta la goma y para dónde va) sobre la deriva del pico. Hasta el pico la fuerza crece (casi recta al principio);
+// pasado el pico, cae de a poco hasta slide (la goma arrastrándose de costado agarra menos que en el pico). Por eso
+// pedir más volante del que se puede no dobla más: abre la curva (subviraje) o suelta la cola (sobreviraje).
+export function tyreCurve(x, slide = 0.75) {
+  const a = Math.abs(x), peak = (2 * a) / (1 + a * a);
+  return Math.sign(x) * (a <= 1 ? peak : slide + (1 - slide) * peak);
+}
+
 const wing = (x) => (Math.max(WING_MIN, Math.min(WING_MAX, x)) - WING_MIN) / (WING_MAX - WING_MIN); // 0..1
 
 // Los límites del auto con esa puesta a punto, ese aire, esa variación (setup: multiplicadores de car.js) y esos
