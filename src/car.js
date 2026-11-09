@@ -7,7 +7,7 @@
 
 import { sampleField, surfaceAt } from './track.js';
 import { collideWalls } from './collision.js';
-import { carLimits, DEFAULT_TUNE, GRAVITY, SEA_AIR } from './dynamics.js';
+import { carLimits, DEFAULT_TUNE, GRAVITY, SEA_AIR, tyreCurve } from './dynamics.js';
 import { deflate, NO_DAMAGE, steerPull, wheelDrag as damageDrag, wheelGrip as damageGrip } from './damage.js';
 
 // Auto por defecto, por si no se carga uno (como cars/f1-2025.json)
@@ -39,7 +39,6 @@ export const SURFACES = {
   grass: { grip: 0.6, drag: 5, maxSpeed: 25 }, // con las cuatro: 20 m/s² de freno y no pasa de ~90 km/h
 };
 const DRAG_FROM = 15; // m/s
-const PULL = 0.006; // giro (rad/s) por cada m/s² que una rueda frena más que la del otro lado
 const SURFACE_RATE = 5; // 1/s: al cambiar de superficie, el agarre y el freno de la rueda cambian en ~0,2 s
 // dónde apoya cada rueda, en m desde el centro del auto (adelante, a la derecha), como en carmodel.js:
 // delantera izquierda, delantera derecha, trasera izquierda, trasera derecha
@@ -54,10 +53,29 @@ const MIN_WHEEL_ANGLE = 0.05; // rad: aun a fondo se ve que doblan un poco
 const DRAFT_DIST = 45; // m: hasta dónde se siente
 const DRAFT_WIDTH = 1.6; // m de costado: el ancho de la estela
 const DRAFT_DRAG = 0.3; // fracción de la resistencia del aire que se ahorra pegado al de adelante
-const SLIP_GRIP = 0.8; // las gomas frenan el deslizamiento de costado con esta fracción de su agarre
-const SLIP_LEFT = 0.15; // aunque estén doblando al límite, con al menos esta parte
-const SPIN_DAMP = 7; // y el giro que dejan los golpes, a este ritmo (rad/s²; en el pasto, la mitad)
-const SPIN_GRIP = 0.25; // más esta fracción del agarre: a más velocidad, las gomas enderezan antes el auto
+// Gomas de costado (modelo de bicicleta: cada eje como una sola rueda). El auto tiene velocidad hacia adelante
+// (speed), de costado (slip) y de giro (omega); cada eje empuja de costado según su deriva (tyreCurve de
+// dynamics.js), hasta lo que agarra (dynamics.js más el traslado de peso, lo que pisa y lo que gasta en frenar o
+// empujar). Lo que empuja cada eje hace girar el auto según a qué distancia del centro de gravedad está.
+const PEAK_SLIP = 0.08; // rad (~4,6°): deriva con la que la goma da todo su agarre
+const SLIDE = 0.75; // arrastrándose de costado, la goma agarra esta parte de lo que agarra en el pico
+const SLIP_SPEED = 5; // m/s: por debajo de esto la deriva se mide como si fuera a esta velocidad (parado no hay ángulo)
+const YAW_K2 = 1.25; // m²: momento de inercia de giro por kilo (~1000 kg·m² en 810 kg)
+const SUBSTEPS = 4; // pasos de las gomas por cada paso del juego (la goma responde más rápido que 1/60 s)
+const SETTLE = 0.5; // en un paso, una goma no empuja más que esta parte de lo que frenaría del todo su deslizamiento
+// la cola agarra de costado esta parte más de lo que dice dynamics.js: así un auto parejo, al pasarse del límite,
+// se abre de trompa (subvira) en vez de soltar la cola, como los autos de verdad con su puesta de fábrica. Con una
+// puesta muy cargada adelante (balance o alerón delantero) la cola igual se suelta: es lo que tiene que pasar
+const REAR_MARGIN = 1.15;
+// con el volante a fondo, además del ángulo que hace doblar al auto, las ruedas suman esta parte de PEAK_SLIP: lo
+// que la trompa tiene que derivar más que la cola (que, con REAR_MARGIN, agarra más con menos deriva)
+const LOCK_SLIP = 0.45;
+// Control de tracción (ayuda, sobre todo para el teclado, que acelera todo o nada): el motor no empuja más de lo que
+// las de atrás pueden empujar sin dejar de sostener la curva. tc es qué parte del círculo de fricción de la cola
+// puede usarse entre doblar y empujar (0 = sin control); si la cola ya está deslizando, corta casi todo
+export const TRACTION_CONTROL = { off: 0, low: 0.97, high: 0.85 };
+const TC_FLOOR = 0.1; // aun con la cola al límite, deja empujar esta parte de la tracción (para no quedarse clavado)
+const WHEEL_SIDE = 0.8; // m: distancia de cada rueda al centro, de costado (para el tirón de una rueda en el pasto)
 // traslado de peso: al frenar el peso se pasa adelante y al acelerar, atrás; cada eje agarra según la carga que
 // tiene y lo que le queda después de frenar o traccionar (círculo de fricción). En una curva sin pedales da lo que
 // dice dynamics.js; frenando fuerte la cola queda liviana y se abre, y a fondo en una curva lenta también.
@@ -65,6 +83,8 @@ const CG_H = 0.25; // m: altura del centro de gravedad
 const MAX_SHIFT = 0.07; // lo más que se pasa de un eje al otro (fracción del peso)
 const LOAD_EXP = 0.8; // el doble de carga da 2^0,8 = 1,74 veces el agarre: al pasarse el peso se pierde agarre
 const BRAKE_USE = 0.7; // frenando a fondo, qué parte del agarre de las gomas se va en frenar
+const BRAKE_BIAS = 0.57; // parte de la frenada que hacen las de adelante (los equipos la corren adelante: así, frenando
+// en curva, la cola no se queda sin agarre de costado)
 const LONG_GRIP = 1.25; // las gomas agarran más para empujar o frenar que de costado: empujando a fondo en recta
 // usan 3/4 de su agarre (la tracción de dynamics.js), y lo que queda alcanza para doblar con cuidado
 const TRANSFER_RATE = 10; // 1/s: el peso tarda un instante en pasarse (lo frena la suspensión)
@@ -73,11 +93,6 @@ const TRANSFER_RATE = 10; // 1/s: el peso tarda un instante en pasarse (lo frena
 const THROTTLE_RISE = 3; // 1/s: de nada a fondo en 1/3 s
 const BRAKE_RISE = 10; // 1/s
 const PEDAL_DROP = 12; // 1/s: soltar es rápido
-const OVERSTEER = 2.5; // cuánto más gira el auto cuando a la cola le falta agarre (1 = lo justo que le falta)
-const LOOSE_RATE = 4; // 1/s: qué tan rápido se abre la cola
-const LOOSE_SLIP = 0.25; // con la cola suelta, las gomas frenan el deslizamiento de costado mucho menos
-const REAR_HOLD = 1.05; // hasta cuánto más de lo que agarra la cola puede doblar el auto (cruzándose)
-const SCRUB = 0.5; // y las de atrás, arrastrándose de costado, frenan el auto: esta parte de lo que les falta
 const PARKED = 2; // s parado después de abandonar hasta que lo sacan de la pista
 const IDLE_RPM = 4000;
 const LAUNCH_RPM = 8000; // con el embrague patinando, en 1ª y 2ª el motor no cae de acá
@@ -108,12 +123,47 @@ function yawRate(sp, grip) {
   return Math.min(MAX_YAW, grip / Math.max(sp, 1)) * Math.min(1, sp / 4);
 }
 
-// Ángulo de las ruedas delanteras para dibujarlas: el que hace doblar al auto lo que de verdad dobla
-// (ángulo ≈ distancia entre ejes × giro / velocidad). A baja velocidad doblan mucho; a fondo, apenas.
-export function wheelAngle(steer, speed, limits) {
+// Ángulo de las ruedas delanteras con el volante a fondo (rad): el que hace doblar al auto lo que puede doblar
+// (ángulo ≈ distancia entre ejes × giro / velocidad, más lo que deriva la trompa de más). A baja velocidad doblan
+// mucho; a fondo, apenas. Es la ayuda para manejar con teclado: el volante va de 0 a lo justo, no de 0 a todo lo que
+// gira la dirección. grip: el agarre lateral (m/s²) con que se calcula; por defecto, el del auto sano en asfalto.
+export function steerLock(speed, limits, grip) {
   const sp = Math.max(4, Math.abs(speed)); // parado o casi, como a paso de hombre: con todo el giro
-  const a = Math.atan((WHEELBASE * yawRate(sp, limits.lateral(sp))) / sp);
-  return steer * Math.max(MIN_WHEEL_ANGLE, Math.min(MAX_WHEEL_ANGLE, a));
+  const a = Math.atan((WHEELBASE * yawRate(sp, grip ?? limits.lateral(sp))) / sp) + LOCK_SLIP * PEAK_SLIP;
+  return Math.min(MAX_WHEEL_ANGLE, a);
+}
+
+// Para la puesta a punto, en régimen a velocidad v (m/s), con los límites de dynamics.js:
+// cuánto dobla el auto (m/s²): lo que aguanta el eje que menos agarra, con el margen de la cola
+export function cornerGrip(limits, v) {
+  const [f, r] = limits.axles(v);
+  return Math.min(f, r * REAR_MARGIN);
+}
+// y cuánto más puede sostener la cola que la trompa (0,15 con un auto parejo): con poco margen, frenando en curva o al
+// soltar el freno la cola se va (el peso pasa adelante); con menos de 0, sobrevira aun en régimen
+export function rearMargin(limits, v) {
+  const [f, r] = limits.axles(v);
+  return (r * REAR_MARGIN) / f - 1;
+}
+
+// Volante con teclado (todo o nada): al apretar, el volante salta enseguida a KEY_STEER_START (responde sin demora) y
+// de ahí sigue subiendo de a poco, más despacio cuanto más rápido va (a 300 km/h, ~0,4 s hasta el fondo). Así un toque
+// corrige sin tirar el auto para adentro, como pasaba yendo de 0 a fondo de golpe; al soltar vuelve rápido al centro.
+// now: cómo está ahora (-1..1); want: lo que piden las teclas (-1, 0 o 1).
+const KEY_STEER_START = 0.35;
+const KEY_STEER_RISE = 8; // 1/s: parado, de KEY_STEER_START a fondo en 0,08 s
+const KEY_STEER_SPEED = 25; // m/s: a esta velocidad sube a la mitad de ritmo (a 300 km/h, a menos de un cuarto)
+const KEY_STEER_RETURN = 10; // 1/s
+export function keyboardSteer(now, want, speed, dt) {
+  if (want && want * now < KEY_STEER_START) now = want * KEY_STEER_START; // recién apretada (o cambió de lado)
+  const away = want !== now && (now === 0 || Math.sign(want - now) === Math.sign(now)); // más volante
+  const rate = away ? KEY_STEER_RISE / (1 + Math.abs(speed) / KEY_STEER_SPEED) : KEY_STEER_RETURN;
+  return now + Math.max(-rate * dt, Math.min(rate * dt, want - now));
+}
+
+// El ángulo de las ruedas delanteras para dibujarlas (aun a fondo se ve que doblan un poco)
+export function wheelAngle(steer, speed, limits) {
+  return steer * Math.max(MIN_WHEEL_ANGLE, steerLock(speed, limits));
 }
 
 // Rebufo de car (0..1) por los autos que tiene adelante: más cuanto más cerca y más alineado con la estela.
@@ -168,9 +218,9 @@ export class Car {
     this.onKerb = false;
     this.bump = 0;
     this.slope = 0;
-    this.slip = 0; // velocidad de costado, hacia la derecha (m/s): la dejan los golpes y se va con el agarre
-    this.spin = 0; // giro que dejan los golpes (rad/s), aparte del que da el volante
-    this.omega = 0; // giro total en este momento (rad/s)
+    this.slip = 0; // velocidad de costado, hacia la derecha (m/s)
+    this.omega = 0; // velocidad de giro (rad/s; positiva, para la derecha)
+    this.delta = 0; // ángulo de las ruedas delanteras (rad)
     this.throttle = 0; // cuánto va acelerando, 0..1 (para el sonido)
     this.brake = 0; // cuánto va frenando, 0..1
     this.aLon = 0; // aceleración de las gomas hacia adelante (m/s², suavizada): de acá sale el traslado de peso
@@ -180,6 +230,9 @@ export class Car {
     this.gear = 1; // 0 = marcha atrás
     this.rpm = IDLE_RPM;
     this.manual = false;
+    this.tc = 0; // control de tracción (TRACTION_CONTROL): 0 = sin control
+    this.tcCap = Infinity; // lo más que puede empujar el motor según el control de tracción (m/s², del paso anterior)
+    this.tcCut = false; // si en este paso el control de tracción cortó motor
     this.setup = SAME_SETUP;
     this.tune = DEFAULT_TUNE; // puesta a punto (dynamics.js): la del circuito, salvo que tenga una propia (ownTune)
     this.ownTune = null;
@@ -345,6 +398,9 @@ export class Car {
       const full = this.speed < Math.max(surf[2].maxSpeed, surf[3].maxSpeed) ? lim.thrust(v) * power * launch : 0;
       // acelerando, el motor no frena: el pie levanta el freno motor (con el pie a fondo, todo)
       drive = thr * (full + lim.coast(v) - lim.drag(v) - lim.rolling);
+      // el control de tracción corta lo que la cola no puede empujar sin soltarse
+      this.tcCut = this.tc > 0 && drive > this.tcCap;
+      if (this.tcCut) drive = this.tcCap;
       // frenada: lo que agarran las gomas (más a más velocidad, por la carga aerodinámica) más el aire
       braking = brk * Math.max(0, lim.brake(v) * tyres + lim.drag(v) + lim.rolling - losses);
       this.speed = Math.max(0, this.speed + (drive - losses - braking) * dt);
@@ -383,57 +439,76 @@ export class Car {
     const usage = (x) => Math.sqrt(1 - Math.min(1, x) ** 2);
     const frontLoad = ((FS + shift) / FS) ** LOAD_EXP;
     const rearLoad = ((1 - FS - shift) / (1 - FS)) ** LOAD_EXP;
-    // los frenos reparten la fuerza según la carga de cada eje, así que el eje cargado la aguanta mejor
-    // (con LOAD_EXP < 1, apenas); el empuje del motor va todo a las de atrás
+    // frenando, cada eje gasta en frenar su parte de la frenada (BRAKE_BIAS) sobre lo que agarra; el empuje del
+    // motor va todo a las de atrás
     const braked = braking > 0 ? brk * BRAKE_USE : 0;
-    const front = axleF * tyres * frontSurf * frontLoad * usage(braked * frontLoad ** (1 / LOAD_EXP - 1));
+    const gripFront = FS * frontLoad, gripRear = (1 - FS) * rearLoad, gripBoth = gripFront + gripRear;
+    const brakeF = (braked * BRAKE_BIAS * gripBoth) / gripFront, brakeR = (braked * (1 - BRAKE_BIAS) * gripBoth) / gripRear;
+    const front = axleF * tyres * frontSurf * frontLoad * usage(brakeF);
     // lo que pueden empujar las traseras sobre lo que pisan (m/s² de todo el auto)
     const traction = axleR * tyres * rearSurf * (1 - FS) * LONG_GRIP;
     const rearSteady = axleR * tyres * rearSurf; // lo que agarra la cola sin frenar ni empujar
-    const rear = rearSteady * rearLoad * usage(braked * rearLoad ** (1 / LOAD_EXP - 1) + drive / traction / rearLoad);
+    const rear = rearSteady * rearLoad * usage(brakeR + drive / traction / rearLoad);
     this.grip = [front / grip, rear / grip]; // para mostrarlo o probarlo: 1 es lo que agarra en régimen
 
-    // dirección: el giro está limitado por lo que agarran las gomas de adelante (v²/r ≤ agarre), que crece con
-    // la velocidad por la carga aerodinámica; aun así, a más velocidad las curvas se abren
-    // con una suspensión de adelante torcida, la dirección tira para ese lado
+    // volante: con una suspensión de adelante torcida, la dirección tira para ese lado
     const target = Math.max(-1, Math.min(1, (+input.steer || 0) + steerPull(this.damage)));
     this.steer += (target - this.steer) * Math.min(1, dt * 10);
-    // y también por las de atrás: la curva la tienen que sostener los dos ejes. La cola puede pasarse apenas
-    // (REAR_HOLD), pero no doblar como si agarrara de más (un alerón trasero roto o una puesta muy sobrevirante
-    // hacen más lentas las curvas). Lo que la cola gasta frenando o empujando no achica la curva: la abre (abajo)
-    const dir = Math.sign(this.speed || 1);
-    const steerYaw = this.steer * yawRate(sp, Math.min(front, rearSteady * REAR_HOLD)) * dir;
-    // si la cola no alcanza a sostener la curva que pide el volante, se abre: el auto gira sobre sí mismo más de
-    // lo que dobla (contravolanteando o levantando el pie, la cola vuelve a agarrar)
-    const loose = Math.max(0, sp * Math.abs(this.steer * yawRate(sp, front)) - rear);
-    this.speed -= Math.sign(this.speed) * Math.min(Math.abs(this.speed), SCRUB * loose * dt);
-    if (loose > 0) this.spin += ((Math.sign(steerYaw) * loose * OVERSTEER) / Math.max(sp, 1) - this.spin) * Math.min(1, dt * LOOSE_RATE);
-    // con el volante la velocidad dobla junto con el auto; el giro de un golpe, en cambio, hace girar el auto
-    // pero la velocidad sigue para donde iba: esa diferencia queda como deslizamiento de costado
-    const turn = this.spin * dt, c = Math.cos(turn), s = Math.sin(turn);
-    [this.speed, this.slip] = [this.speed * c + this.slip * s, -this.speed * s + this.slip * c];
-    this.omega = steerYaw + this.spin + pull * PULL * Math.sign(this.speed);
-    this.angle += this.omega * dt;
-    // las gomas frenan el deslizamiento y el giro; mientras la cola está suelta, el giro no y el deslizamiento
-    // apenas: el auto queda cruzado y la trompa apunta más adentro de lo que va
-    const settle = (value, rate) => value - Math.sign(value) * Math.min(Math.abs(value), rate * dt);
-    // el agarre de todo el auto, para el deslizamiento, el giro de los golpes y el desgaste
-    const allSurf = (frontSurf + rearSurf) / 2, whole = grip * allSurf;
+    // ángulo de las ruedas: con el volante a fondo, lo justo para doblar lo que agarra en este momento el eje que
+    // menos agarra (steerLock)
+    const delta = (this.delta = this.steer * steerLock(sp, lim, Math.min(front, rear * REAR_MARGIN)));
+    const cd = Math.cos(delta), sd = Math.sin(delta);
+    // lo que puede empujar de costado cada eje (m/s² de todo el auto) y a qué distancia está del centro de gravedad
+    const gripF = FS * front, gripR = (1 - FS) * rear * REAR_MARGIN;
+    const A = WHEELBASE * (1 - FS), B = WHEELBASE * FS;
+    // una rueda que frena más que la del otro lado (en el pasto) hace girar el auto para ese lado
+    const pullYaw = WHEEL_SIDE * pull * Math.sign(this.speed);
+    // fuerza de costado de un eje (m/s² de todo el auto): según su deriva (velocidad de costado sobre la de
+    // marcha de la goma), pero sin pasarse de lo que frenaría del todo ese deslizamiento en un paso (k: cuánto
+    // cambia la velocidad de costado del eje por cada m/s² que empuja ahí, contando el giro que provoca)
+    const h = dt / SUBSTEPS;
+    const axle = (across, along, most, k) => {
+      const f = -most * tyreCurve(across / (PEAK_SLIP * Math.max(Math.abs(along), SLIP_SPEED)), SLIDE);
+      const cap = (SETTLE * Math.abs(across)) / (h * k);
+      return Math.max(-cap, Math.min(cap, f));
+    };
+    const kF = 1 + (A * A) / YAW_K2, kR = 1 + (B * B) / YAW_K2;
+    let lastR = 0, lastSlipR = 0;
+    for (let i = 0; i < SUBSTEPS; i++) {
+      // velocidad de costado de cada eje: la del auto más la que le da el giro (adelante suma, atrás resta);
+      // la delantera, medida según para dónde apuntan las ruedas
+      const sideF = this.slip + A * this.omega, sideR = this.slip - B * this.omega;
+      const fF = axle(sideF * cd - this.speed * sd, this.speed * cd + sideF * sd, gripF, kF);
+      const fR = axle(sideR, this.speed, gripR, kR);
+      lastR = fR;
+      lastSlipR = sideR / (PEAK_SLIP * Math.max(Math.abs(this.speed), SLIP_SPEED));
+      // lo que empujan las gomas, en el marco del auto (las delanteras dobladas también frenan un poco), y el giro
+      // del auto: la velocidad gira al revés en su marco (lo que era de costado pasa a ser de marcha y al revés)
+      const ax = -fF * sd, ay = fF * cd + fR, vx = this.speed;
+      this.speed += (ax + this.slip * this.omega) * h;
+      this.slip += (ay - vx * this.omega) * h;
+      this.omega += ((A * fF * cd - B * fR + pullYaw) / YAW_K2) * h;
+      this.angle += this.omega * h;
+      const ca = Math.cos(this.angle), sa = Math.sin(this.angle);
+      this.x += ((ca * this.speed - sa * this.slip) * h) / M;
+      this.y += ((sa * this.speed + ca * this.slip) * h) / M;
+    }
+    // control de tracción, para el paso siguiente: qué parte del agarre de la cola (sin empujar) se va en doblar, y
+    // cuánto le queda para empujar; con la cola pasada del pico (deslizando), casi nada
+    if (this.tc > 0) {
+      const rearAll = (1 - FS) * rearSteady * rearLoad * usage(brakeR) * REAR_MARGIN;
+      const cornering = Math.abs(lastSlipR) > 1 ? 1 : Math.min(1, Math.abs(lastR) / Math.max(rearAll, 1e-6));
+      const push = Math.max(TC_FLOOR, Math.sqrt(Math.max(0, this.tc ** 2 - cornering ** 2)));
+      this.tcCap = push * traction * rearLoad;
+    }
     // desgaste: cuánto se exige el agarre (doblar + empujar o frenar, sobre lo que agarran) y el deslizamiento
+    const whole = grip * (frontSurf + rearSurf) / 2;
     if (this.wearRate) {
       const use = (sp * Math.abs(this.omega) + Math.abs(this.aLon)) / whole + Math.abs(this.slip) / 5;
       this.wear = Math.min(1, this.wear + this.wearRate * setup.wear * (WEAR_BASE + WEAR_USE * (1 - WEAR_BASE) * use) * sp * dt);
     }
-    // el deslizamiento lo frena lo que le sobra a las gomas después de doblar (círculo de fricción): doblando al
-    // límite, el auto se sigue abriendo (siempre un poco, así un deslizamiento termina)
-    const left = Math.max(SLIP_LEFT * whole, whole - sp * Math.abs(steerYaw));
-    this.slip = settle(this.slip, left * SLIP_GRIP * (loose > 0 ? LOOSE_SLIP : 1));
-    this.spin = settle(this.spin, (SPIN_DAMP + whole * SPIN_GRIP) * allSurf * (loose > 0 ? 0 : 1));
 
-    // movimiento (hacia adelante y de costado) y choques contra los muros
-    const ca = Math.cos(this.angle), sa = Math.sin(this.angle);
-    this.x += ((ca * this.speed - sa * this.slip) * dt) / M;
-    this.y += ((sa * this.speed + ca * this.slip) * dt) / M;
+    // choques contra los muros
     this.bump = Math.max(0, this.bump - dt * 3);
     collideWalls(this, track);
   }

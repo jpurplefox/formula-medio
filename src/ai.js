@@ -20,6 +20,13 @@ const FOLLOW_K = 0.8; // por cada metro más de distancia, puede ir esto más r�
 const STUCK_TIME = 1.5; // si está casi quieto este tiempo, se lo vuelve a poner en la pista (s)
 const SLOW_CORNER = 45; // curvas donde la trazada pide menos de esto (m/s)...
 const SLOW_PACE = 0.975; // ...se toman, como mucho, a esta fracción de su velocidad
+// acelerando y doblando a la vez, la cola tiene que hacer las dos cosas: a la salida de una curva lenta, donde el
+// motor puede más que las gomas, dosifica el acelerador según cuánto dobla (como mucho, hasta EXIT_THROTTLE); en las
+// rápidas el motor no alcanza a hacer patinar la cola y va a fondo
+const EXIT_THROTTLE = 0.35;
+// y corrige el volante según cuánto gira el auto de más o de menos respecto de lo que quiere (contravolantea si la
+// cola se abre)
+const YAW_FIX = 0.8;
 const MAX_YAW = 1.6; // igual que en car.js: giro máximo a baja velocidad (rad/s)
 
 // Por cada celda de la línea central: el punto de la línea central y la normal hacia la derecha.
@@ -57,7 +64,7 @@ export function pointAt(f, u, side) {
 // Vuelve a poner un auto trabado en la pista, sobre la trazada y un poco más adelante (u: posición en celdas)
 export function rescue(track, line, car, u) {
   const spot = pointAt(lineFrame(track), u + 4 / track.meters, line.offset[u | 0]);
-  Object.assign(car, { x: spot.x, y: spot.y, angle: spot.angle, speed: 0, steer: 0, slip: 0, spin: 0 });
+  Object.assign(car, { x: spot.x, y: spot.y, angle: spot.angle, speed: 0, steer: 0, slip: 0, omega: 0 });
 }
 
 // Grilla de largada detrás de la línea: de a dos, alternando de costado, cada puesto 8 m más atrás
@@ -151,7 +158,8 @@ export class Driver {
     const curv = (2 * Math.sin(Math.atan2(right, fwd))) / dist; // curvatura para llegar al punto (1/m)
     const grip = car.limits.lateral(v);
     const yawMax = Math.min(MAX_YAW, grip / Math.max(v, 1)) * Math.min(1, v / 4) || 0.01;
-    const steer = Math.max(-1, Math.min(1, (v * curv) / yawMax));
+    const wantYaw = v * curv;
+    const steer = Math.max(-1, Math.min(1, (wantYaw + YAW_FIX * (wantYaw - car.omega)) / yawMax));
 
     // pedales: la velocidad de la trazada un poco más adelante, por su ritmo
     const ub = (u + (v * BRAKE_LOOK) / M) % L;
@@ -170,6 +178,10 @@ export class Driver {
       this.stuck = 0;
       this.shift = 0;
     }
-    return { throttle, brake, steer };
+    // (need: qué parte de la tracción usa el motor a fondo; en el pasto, las de atrás patinan enseguida)
+    const lim = car.limits, need = lim.thrust(v) / Math.max(lim.traction(v), 1e-3);
+    const room = Math.sqrt(1 - Math.min(1, Math.abs(steer)) ** 2); // lo que les queda a las de atrás para empujar
+    const dose = Math.min(1, Math.max(EXIT_THROTTLE, room / need)) * (1 - 0.6 * car.grass);
+    return { throttle: throttle ? dose : 0, brake, steer };
   }
 }
