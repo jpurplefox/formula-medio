@@ -10,9 +10,9 @@
 
 import { KERB_W, kerbAmount, stationAt } from './track.js';
 import { RUBBER_DARK } from './rubber.js';
-import { asphaltTexture, grassTexture, macroNoise, wallTexture } from './textures.js';
+import { asphaltTexture, grassTexture, gravelTexture, macroNoise, wallTexture } from './textures.js';
 import {
-  FOG_END, FOG_START, GRASS_BAND, GRASS_TPC, GUIDE_W, KERB_H, LINE_W, MACRO_TPC, MAX_DIST, MODEL_NEAR, NEAR_RISE, PLANE_LEN,
+  FOG_END, FOG_START, GRASS_BAND, GRASS_TPC, GRAVEL_TPC, RUNOFF_LIGHT, GUIDE_W, KERB_H, LINE_W, MACRO_TPC, MAX_DIST, MODEL_NEAR, NEAR_RISE, PLANE_LEN,
   BODY_PIVOT_Z, ROAD_TPC, SHADOW, SHADOW_SHIFT, STRIPE, SUN, WALL_H, WALL_STRIPE, WALL_T, Z_NEAR,
 } from './renderer.js';
 import { sampleField } from './track.js';
@@ -61,7 +61,7 @@ void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
 const TERRAIN_FS = `#version 300 es
 precision highp float;
 precision highp sampler2D;
-uniform sampler2D uField, uStation, uLine, uAsphalt, uGrass, uWall, uMacro, uRubber;
+uniform sampler2D uField, uStation, uLine, uAsphalt, uGrass, uGravel, uWall, uMacro, uRubber;
 uniform vec2 uMap;
 uniform int uLineN;
 uniform vec2 uRubberSize; // largo de la vuelta y de la línea central al último carril (celdas)
@@ -79,7 +79,7 @@ ${DEPTH}
 const float WALL_H = ${glsl(WALL_H)}, WALL_T = ${glsl(WALL_T)}, WALL_STRIPE = ${glsl(WALL_STRIPE)};
 const float KERB_W = ${glsl(KERB_W)}, KERB_H = ${glsl(KERB_H)}, LINE_W = ${glsl(LINE_W)}, STRIPE = ${glsl(STRIPE)};
 const float RUBBER_DARK = ${glsl(RUBBER_DARK)};
-const float ROAD_TPC = ${glsl(ROAD_TPC)}, GRASS_TPC = ${glsl(GRASS_TPC)}, GRASS_BAND = ${glsl(GRASS_BAND)}, MACRO_TPC = ${glsl(MACRO_TPC)};
+const float ROAD_TPC = ${glsl(ROAD_TPC)}, GRAVEL_TPC = ${glsl(GRAVEL_TPC)}, RUNOFF_LIGHT = ${glsl(RUNOFF_LIGHT)}, GRASS_TPC = ${glsl(GRASS_TPC)}, GRASS_BAND = ${glsl(GRASS_BAND)}, MACRO_TPC = ${glsl(MACRO_TPC)};
 const vec3 KERB_RED = vec3(200.0, 30.0, 30.0) / 255.0, KERB_WHITE = vec3(235.0) / 255.0, EDGE_WHITE = vec3(225.0) / 255.0;
 const vec3 LINE_BLACK = vec3(20.0) / 255.0, LINE_WHITE = vec3(245.0) / 255.0, WALL_TOP = vec3(150.0, 150.0, 155.0) / 255.0;
 const vec3 SKY_TOP = vec3(70.0, 130.0, 210.0) / 255.0, MOUNTAIN = vec3(110.0, 135.0, 160.0) / 255.0;
@@ -112,20 +112,29 @@ vec3 zone(float s, float outer, vec3 grass, vec3 kerb, vec3 road, vec3 edge) {
   return road;
 }
 
-// el color del piso (lo mismo que groundColor de renderer.js)
-vec3 ground(vec2 p, float fw, float s, float k, float st, float side, float lit) {
+// el color del piso (lo mismo que groundColor de renderer.js); mat: qué hay en la escapatoria (RUNOFF de track.js)
+vec3 ground(vec2 p, float fw, float s, float k, float st, float side, float lit, float mat) {
   float light = lit * (0.88 + 0.24 * texture(uMacro, p * MACRO_TPC / 64.0).r);
   bool isKerb = k > 0.02;
   float outer = isKerb ? -KERB_W * k : 0.0;
   vec3 grass = vec3(0.0);
   if (s < outer + fw) {
-    float ph = (p.x + p.y) * (0.7071 / GRASS_BAND);
-    float fr = fract(ph), e = min(0.5, fw / GRASS_BAND);
-    float band = mod(floor(ph), 2.0);
-    if (fr < e) band += (1.0 - 2.0 * band) * ((e - fr) / (2.0 * e));
-    else if (fr > 1.0 - e) band += (1.0 - 2.0 * band) * ((fr - 1.0 + e) / (2.0 * e));
-    float g = fw * GRASS_TPC / 128.0;
-    grass = shade(textureGrad(uGrass, p * GRASS_TPC / 128.0, vec2(g, 0.0), vec2(0.0, g)).rgb, light * (0.9 + band * 0.2));
+    // lo de afuera: pasto, leca o asfalto (más claro que el de la pista: no tiene goma)
+    if (mat > 1.5) {
+      float ga = fw * ROAD_TPC / 256.0;
+      grass = shade(textureGrad(uAsphalt, p * ROAD_TPC / 256.0, vec2(ga, 0.0), vec2(0.0, ga)).rgb, light * RUNOFF_LIGHT);
+    } else if (mat > 0.5) {
+      float gg = fw * GRAVEL_TPC / 128.0;
+      grass = shade(textureGrad(uGravel, p * GRAVEL_TPC / 128.0, vec2(gg, 0.0), vec2(0.0, gg)).rgb, light);
+    } else {
+      float ph = (p.x + p.y) * (0.7071 / GRASS_BAND);
+      float fr = fract(ph), e = min(0.5, fw / GRASS_BAND);
+      float band = mod(floor(ph), 2.0);
+      if (fr < e) band += (1.0 - 2.0 * band) * ((e - fr) / (2.0 * e));
+      else if (fr > 1.0 - e) band += (1.0 - 2.0 * band) * ((fr - 1.0 + e) / (2.0 * e));
+      float g = fw * GRASS_TPC / 128.0;
+      grass = shade(textureGrad(uGrass, p * GRASS_TPC / 128.0, vec2(g, 0.0), vec2(0.0, g)).rgb, light * (0.9 + band * 0.2));
+    }
     if (s < outer - fw) return grass;
   }
   float ga = fw * ROAD_TPC / 256.0;
@@ -231,7 +240,14 @@ void main() {
     float kw = KERB_W * k;
     if (k > 0.0 && s < 0.0 && s > -kw) lit *= 1.0 - 0.22 * cos(3.14159265 * (s + kw) / kw);
     float fw = max(0.03, d * uPlane / uView.x);
-    c = ground(p, fw, s, k, st, side, lit);
+    // escapatoria de este lado en este tramo (hasta el muro; más allá, pasto): en la 4.ª componente de la línea
+    // central, izquierda + 4 · derecha
+    float mat = 0.0;
+    if (s < 0.0 && s > -uRunoff && st >= 0.0) {
+      float w = lineData(int(floor(st))).w;
+      mat = side > 0.0 ? floor(w / 4.0) : mod(w, 4.0);
+    }
+    c = ground(p, fw, s, k, st, side, lit, mat);
   }
   outColor = vec4(fog(c, d), 1.0);
   gl_FragDepth = clamp(depthOf(d), 0.0, 1.0);
@@ -521,6 +537,7 @@ export class GLRenderer {
     const repeatTex = (t) => this.texture(new Uint8Array(t.levels[0].buffer, t.levels[0].byteOffset, t.levels[0].byteLength), t.size, t.size, { mip: true });
     this.asphalt = repeatTex(asphaltTexture());
     this.grass = repeatTex(grassTexture());
+    this.gravel = repeatTex(gravelTexture());
     this.wall = repeatTex(wallTexture());
     const macro = macroNoise();
     this.macro = this.texture(Uint8Array.from(macro.data, (v) => Math.round(((v - 0.88) / 0.24) * 255)), macro.size, macro.size, { format: 'R8' });
@@ -626,7 +643,7 @@ export class GLRenderer {
   trackTextures(track) {
     let t = this.trackData.get(track);
     if (!t) {
-      const { W, H, height, sdf, lat, station, kerbLeft, kerbRight } = track;
+      const { W, H, height, sdf, lat, station, kerbLeft, kerbRight, runoffLeft, runoffRight } = track;
       // por celda: altura, distancia al borde, distancia de costado a la línea central y cuánto piano hay (0..1)
       const f = new Float32Array(W * H * 4);
       for (let i = 0; i < W * H; i++) {
@@ -642,12 +659,12 @@ export class GLRenderer {
       t = {
         field: this.texture(f, W, H, { format: 'RGBA16F', clamp: true }),
         station: this.texture(Float32Array.from(station), W, H, { format: 'R32F', nearest: true, clamp: true }),
-        n, rows, kerbLeft, kerbRight, offset: undefined, line: null,
+        n, rows, kerbLeft, kerbRight, runoffLeft, runoffRight, offset: undefined, line: null,
         guide: this.texture(new Uint8Array(LINE_TEX_W * rows * 4), LINE_TEX_W, rows, { nearest: true, clamp: true }),
       };
       this.trackData.set(track, t);
     }
-    // por celda de la línea central: pianos a cada lado y por dónde pasa la trazada (para la guía)
+    // por celda de la línea central: pianos a cada lado, por dónde pasa la trazada (para la guía) y las escapatorias
     const offset = (this.guide && this.guide.offset) || null;
     if (t.offset !== offset) {
       const d = new Float32Array(LINE_TEX_W * t.rows * 4);
@@ -655,6 +672,7 @@ export class GLRenderer {
         d[i * 4] = t.kerbLeft[i];
         d[i * 4 + 1] = t.kerbRight[i];
         d[i * 4 + 2] = offset ? offset[Math.min(i, offset.length - 1)] : 0;
+        d[i * 4 + 3] = (t.runoffLeft?.[i] ?? 0) + 4 * (t.runoffRight?.[i] ?? 0);
       }
       if (t.line) this.gl.deleteTexture(t.line);
       t.line = this.texture(d, LINE_TEX_W, t.rows, { format: 'RGBA32F', nearest: true, clamp: true });
@@ -820,6 +838,7 @@ export class GLRenderer {
     this.bind(2, t.line, tp, 'uLine');
     this.bind(4, this.asphalt, tp, 'uAsphalt');
     this.bind(5, this.grass, tp, 'uGrass');
+    this.bind(8, this.gravel, tp, 'uGravel');
     this.bind(6, this.wall, tp, 'uWall');
     this.bind(7, this.macro, tp, 'uMacro');
     gl.uniform2f(tp.u.uMap, track.W, track.H);

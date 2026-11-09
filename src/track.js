@@ -85,15 +85,17 @@ function buildTrackFromPath(path, W, H, def, elevation, start) {
 
   const curv = curvature(path);
   const { left: kerbLeft, right: kerbRight } = kerbFlags(path, st, curv);
+  const corners = findCorners(path, st, curv, meters);
+  const { left: runoffLeft, right: runoffRight } = runoffSurfaces(corners, st[path.n], meters, def.surfaces);
   const height = computeHeight(elevation, (def.elevationScale ?? 1) / meters, station, length, sdf, -(runoff + 1), W, H);
 
   const trees = placeTrees(dist, tiles, W, H, runoff);
   for (const t of trees) t.z = sampleField(height, W, t.x, t.y);
-  const boards = brakeBoards(path, st, curv, meters, sdf, W, H);
+  const boards = brakeBoards(path, st, corners, meters, sdf, W, H);
   for (const b of boards) b.z = sampleField(height, W, b.x, b.y);
 
   return {
-    W, H, meters, runoff, halfWidth, halfWidths, tiles, road, sdf, station, lat, length, kerbLeft, kerbRight, height,
+    W, H, meters, runoff, halfWidth, halfWidths, tiles, road, sdf, station, lat, length, kerbLeft, kerbRight, runoffLeft, runoffRight, height,
     path: { n: path.n, x: path.x, y: path.y, st }, // línea central: puntos y su posición acumulada
     progress, maxProgress, line, spawn, trees, boards, scale: def.scale ?? 3, name: def.name,
     // el aire (más arriba, menos denso) y la puesta a punto por defecto de los autos ahí (dynamics.js)
@@ -351,13 +353,25 @@ export function kerbAt(track, x, y) {
   return kerbAmount(sampleField(track.lat, track.W, x, y) > 0 ? track.kerbRight : track.kerbLeft, st);
 }
 
-// Qué hay en un punto: 'road' (la pista), 'kerb' (el piano, por fuera del borde) o 'grass'. Las propiedades de
-// cada superficie (agarre, freno) están en SURFACES de car.js; para poner otro material al costado de la pista
-// (grava, asfalto) alcanza con devolverlo acá donde corresponda y agregarlo allá.
+// Qué hay en un punto: 'road' (la pista), 'kerb' (el piano, por fuera del borde) o lo que haya en la escapatoria
+// de ese lado en ese tramo: 'grass', 'gravel' (leca) o 'asphalt' (escapatoria asfaltada). Las propiedades de cada
+// superficie (agarre, freno) están en SURFACES de car.js.
+export const RUNOFF = ['grass', 'gravel', 'asphalt'];
 export function surfaceAt(track, x, y) {
   const edge = sampleField(track.sdf, track.W, x, y);
   if (edge >= 0) return 'road';
-  return edge > -KERB_W * kerbAt(track, x, y) ? 'kerb' : 'grass';
+  const st = stationAt(track, x, y);
+  if (st < 0) return 'grass';
+  const right = sampleField(track.lat, track.W, x, y) > 0;
+  if (edge > -KERB_W * kerbAmount(right ? track.kerbRight : track.kerbLeft, st)) return 'kerb';
+  return RUNOFF[runoffAt(right ? track.runoffRight : track.runoffLeft, st)];
+}
+
+// Qué escapatoria hay en esa posición sobre la línea central (un índice de RUNOFF)
+export function runoffAt(kinds, st) {
+  if (!kinds) return 0;
+  const n = kinds.length;
+  return kinds[((Math.floor(st) % n) + n) % n];
 }
 
 export function kerbAmount(amounts, st) {
@@ -423,14 +437,15 @@ const BOARD_STRAIGHT = 250; // recta mínima antes de la curva (m)
 const BOARD_TURN_IN = 260; // radio (m) a partir del cual consideramos que la curva empezó
 const BOARD_OFFSET = 2; // distancia del cartel al borde de la pista (celdas)
 
-function brakeBoards(path, st, curv, meters, sdf, W, H) {
-  const { n, x, y, wrap } = path;
+// Curvas: tramos seguidos de la línea central con curvatura (del mismo lado) más cerrada que BOARD_TURN_IN.
+// De cada una: dónde empieza y termina (from, to, en celdas de recorrido), para qué lado dobla (sign, + = derecha),
+// su radio mínimo (radius, m) y cuánta recta tiene antes (straight, m, desde el final de la curva anterior)
+function findCorners(path, st, curv, meters) {
+  const { n, wrap } = path;
   const length = st[n];
-  const strong = 1 / (BOARD_RADIUS / meters);
   const turnIn = 1 / (BOARD_TURN_IN / meters);
-  // tramos de curva: puntos seguidos con curvatura (del mismo lado) por encima de turnIn
-  const corners = [];
   const bent = (b) => Math.abs(curv[b]) > turnIn;
+  const corners = [];
   let start = 0;
   while (bent(start) && start < n) start++; // arrancamos en una recta para no partir una curva al medio
   for (let k = 0; k < n; k++) {
@@ -442,16 +457,24 @@ function brakeBoards(path, st, curv, meters, sdf, W, H) {
       peak = Math.max(peak, Math.abs(curv[wrap(start + end)]));
       end++;
     }
-    corners.push({ b, sign, peak, from: st[b], to: st[wrap(start + end - 1)] });
+    corners.push({ b, sign, peak, radius: meters / peak, from: st[b], to: st[wrap(start + end - 1)] });
     k = end - 1;
   }
-  const boards = [];
   corners.forEach((c, i) => {
-    if (c.peak < strong) return;
-    // recta previa: desde el final de la curva anterior que también sea cerrada
     const prev = corners[(i - 1 + corners.length) % corners.length];
-    const straight = (c.from - prev.to + length) % length;
-    if (straight * meters < BOARD_STRAIGHT) return;
+    c.straight = ((c.from - prev.to + length) % length) * meters;
+  });
+  return corners;
+}
+
+function brakeBoards(path, st, corners, meters, sdf, W, H) {
+  const { n, x, y, wrap } = path;
+  const length = st[n];
+  const strong = 1 / (BOARD_RADIUS / meters);
+  const boards = [];
+  corners.forEach((c) => {
+    if (c.peak < strong) return;
+    if (c.straight < BOARD_STRAIGHT) return;
     for (const d of BOARD_DISTANCES) {
       const target = (c.from - d / meters + length) % length;
       // punto de la línea central en esa posición
@@ -473,6 +496,47 @@ function brakeBoards(path, st, curv, meters, sdf, W, H) {
     }
   });
   return boards;
+}
+
+// Escapatorias: qué hay al costado de la pista (un índice de RUNOFF) por cada celda de recorrido y de cada lado.
+// Como en los circuitos de ahora, por fuera de las curvas, que es por donde se sale el que no llega a doblar:
+//   - curvas lentas (horquillas, chicanas): asfalto, desde la frenada hasta la salida, para volver sin perder
+//     tanto y sin romper el auto
+//   - curvas rápidas después de una recta: leca, que frena al que se pasa antes de que llegue al muro
+//   - el resto, pasto
+// surfaces (del circuito, opcional) pisa lo automático: [[desde, hasta, lado, material], ...] con desde y hasta en
+// metros desde la largada, lado 'left', 'right' o 'both' y material 'grass', 'gravel' o 'asphalt'
+const RUNOFF_SLOW = 60; // m: radio por debajo del cual la curva es lenta (escapatoria de asfalto)
+const RUNOFF_FAST = 250; // m: radio hasta el cual una curva rápida lleva leca
+const GRAVEL_STRAIGHT = 100; // m de recta antes para que se llegue rápido y haga falta leca
+const ASPHALT_BEFORE = 80, ASPHALT_AFTER = 60; // m de asfalto antes del comienzo de la curva lenta y después del final
+const GRAVEL_BEFORE = 20, GRAVEL_AFTER = 80; // m de leca antes y después de la curva rápida
+
+function runoffSurfaces(corners, length, meters, surfaces = []) {
+  const L = Math.ceil(length) + 1;
+  const left = new Uint8Array(L), right = new Uint8Array(L);
+  const paint = (side, from, to, kind) => {
+    const k = RUNOFF.indexOf(kind);
+    if (k < 0) return;
+    const a = Math.floor(from / meters), b = Math.ceil(to / meters);
+    for (let u = a; u <= b; u++) {
+      const i = ((u % L) + L) % L;
+      if (side !== 'right') left[i] = k;
+      if (side !== 'left') right[i] = k;
+    }
+  };
+  // la curva a la derecha (sign > 0) se sale por la izquierda; primero la leca, así el asfalto le gana si se pisan
+  const outside = (c) => (c.sign > 0 ? 'left' : 'right');
+  for (const c of corners) {
+    if (c.radius >= RUNOFF_SLOW && c.radius <= RUNOFF_FAST && c.straight >= GRAVEL_STRAIGHT) {
+      paint(outside(c), c.from * meters - GRAVEL_BEFORE, (c.to + (c.to < c.from ? length : 0)) * meters + GRAVEL_AFTER, 'gravel');
+    }
+  }
+  for (const c of corners) {
+    if (c.radius < RUNOFF_SLOW) paint(outside(c), c.from * meters - ASPHALT_BEFORE, (c.to + (c.to < c.from ? length : 0)) * meters + ASPHALT_AFTER, 'asphalt');
+  }
+  for (const [from, to, side, kind] of surfaces) paint(side, from, to + (to < from ? length * meters : 0), kind);
+  return { left, right };
 }
 
 // De marcas 0/1 a cantidad de piano, con puntas en rampa al empezar y al terminar

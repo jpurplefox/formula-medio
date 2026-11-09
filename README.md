@@ -71,7 +71,9 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
    celdas de 2 m. Un circuito sin telemetría sale de una imagen, que se reduce a una grilla (1 celda = `scale` píxeles):
    los píxeles oscuros son pista, se queda con el trazado más grande (descarta números y textos), tapa huecos
    chicos y le saca la línea central. En los dos casos la pista es una cinta del ancho del circuito alrededor de
-   la línea central (puede variar por tramo); alrededor pone pasto (`runoff` celdas) y después un guardrail.
+   la línea central (puede variar por tramo); alrededor pone la escapatoria (`runoff` celdas) y después un guardrail.
+   La escapatoria es de asfalto por fuera de las curvas lentas, de leca por fuera de las rápidas que vienen después
+   de una recta y de pasto en el resto (`surfaces` en `tracks/index.js` lo cambia por tramo).
    Además calcula, por celda:
    - la **distancia con signo al borde** de la pista (para dibujar bordes suaves),
    - el **progreso** a lo largo de la vuelta (para validar vueltas, contramano y las franjas de los pianos),
@@ -131,11 +133,12 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
    crecen con v² y con la densidad del aire (la altura del circuito), dos alerones y un balance mecánico que elige
    cada uno (**puesta a punto**), agarre por eje según la carga, potencia y tracción; y una caja de 8 marchas con
    RPM, corte y luces de cambio.
-   **Superficie por rueda**: cada rueda mira qué pisa (asfalto, piano o pasto; `SURFACES` en `src/car.js` y
-   `surfaceAt` en `src/track.js`). Cada eje agarra según sus dos ruedas (una trasera en el pasto suelta la cola,
-   una delantera quita dirección), cada rueda en el pasto frena y, si frena más de un lado, el auto tira para ese
-   lado; con las dos traseras afuera el motor no empuja más de ~90 km/h. Otro material al borde de la pista (grava,
-   asfalto) es una entrada más en `SURFACES`.
+   **Superficie por rueda**: cada rueda mira qué pisa (asfalto, piano, pasto, leca o escapatoria asfaltada;
+   `SURFACES` en `src/car.js` y `surfaceAt` en `src/track.js`). Cada eje agarra según sus dos ruedas (una trasera
+   en el pasto suelta la cola, una delantera quita dirección), cada rueda en el pasto frena y, si frena más de un
+   lado, el auto tira para ese lado; con las dos traseras en el pasto el motor no empuja más de ~90 km/h. La leca
+   frena más y casi no deja doblar; la escapatoria asfaltada agarra casi como la pista. Para el entrenamiento, las
+   tres cuentan como fuera de la pista (`car.grass`).
    Además: choques y gravedad en las pendientes, y **rebufo**: detrás de otro auto (hasta 45 m
    y dentro de su estela, de 1,6 m de costado) hay menos resistencia del aire, hasta un 30 % pegado a él. Eso da
    unos 13 km/h más al final de una recta de 600 m, gana 0,3 s y sube la velocidad punta hasta el corte de 8.ª.

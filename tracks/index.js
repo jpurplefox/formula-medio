@@ -7,15 +7,19 @@
 //                como la llevan los equipos ahí (poco alerón donde importa la recta, mucho donde hay curvas)
 //   rotate     → (opcional) grados para girar el trazado (la telemetría viene en otra orientación que los dibujos)
 //   widthMeters → ancho de la pista en metros
-//   runoff     → celdas de pasto entre la pista y los muros
+//   runoff     → celdas de escapatoria entre la pista y los muros
 //   elevationScale → (opcional) exagera o suaviza las alturas; 1 = pendientes reales
+//   surfaces   → (opcional, también en los de imagen) qué hay en la escapatoria, pisando lo que sale solo (asfalto
+//                por fuera de las curvas lentas, leca por fuera de las rápidas, pasto en el resto; ver track.js):
+//                [[desde, hasta, lado, material], ...], en metros desde la largada; lado 'left', 'right' o 'both';
+//                material 'grass', 'gravel' (leca) o 'asphalt'
 // Un circuito propio (o uno sin telemetría) sale de una imagen; las coordenadas (start, towards) están en píxeles
 // de la imagen original.
 //   image      → imagen del trazado: línea oscura sobre fondo claro
 //   scale      → cuántos píxeles de la imagen forman una celda del mapa
 //   threshold  → luminancia (0-255) por debajo de la cual un píxel es pista
 //   widen      → celdas extra para ensanchar la pista
-//   runoff     → celdas de pasto entre la pista y los muros
+//   runoff     → celdas de escapatoria entre la pista y los muros
 //   start      → un punto sobre la línea de largada
 //   towards    → un punto hacia donde se corre desde la largada
 //   elevation  → (opcional) perfil de alturas generado con tools/elevation.py

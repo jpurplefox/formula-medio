@@ -33,10 +33,16 @@ export const DEFAULT_PROFILE = {
 //   grip      fracción del agarre de esa rueda
 //   drag      cuánto frena esa rueda (m/s², pasando DRAG_FROM); si frena más de un lado, el auto tira para ese lado
 //   maxSpeed  con las dos traseras ahí, el motor ya no empuja más allá de esta velocidad (m/s)
+//   rough     cuánto traquetea (el volante y la cámara)
+//   out       fuera de la pista (todo lo que está más allá del borde y del piano)
 export const SURFACES = {
-  road: { grip: 1, drag: 0, maxSpeed: Infinity },
-  kerb: { grip: 1, drag: 0, maxSpeed: Infinity },
-  grass: { grip: 0.6, drag: 5, maxSpeed: 25 }, // con las cuatro: 20 m/s² de freno y no pasa de ~90 km/h
+  road: { grip: 1, drag: 0, maxSpeed: Infinity, rough: 0, out: false },
+  kerb: { grip: 1, drag: 0, maxSpeed: Infinity, rough: 0, out: false },
+  grass: { grip: 0.6, drag: 5, maxSpeed: 25, rough: 1, out: true }, // con las cuatro: 20 m/s² de freno y no pasa de ~90 km/h
+  // leca: casi no deja doblar y frena mucho más que el pasto (con las cuatro, 32 m/s²); el motor apenas la saca
+  gravel: { grip: 0.4, drag: 8, maxSpeed: 12, rough: 1.4, out: true },
+  // escapatoria asfaltada: como la pista, un poco más sucia
+  asphalt: { grip: 0.92, drag: 0, maxSpeed: Infinity, rough: 0, out: true },
 };
 const DRAG_FROM = 15; // m/s
 const PULL = 0.006; // giro (rad/s) por cada m/s² que una rueda frena más que la del otro lado
@@ -163,8 +169,11 @@ export class Car {
     this.wheels = ['road', 'road', 'road', 'road']; // qué pisa cada rueda (ver WHEELS)
     this.wheelGrip = [1, 1, 1, 1]; // agarre y freno de cada rueda según lo que pisa, cambiando de a poco
     this.wheelDrag = [0, 0, 0, 0];
-    this.grass = 0; // fracción de las ruedas en el pasto
-    this.onGrass = false; // dos ruedas o más en el pasto: afuera de la pista
+    // fracción de las ruedas fuera de la pista (pasto, leca o escapatoria de asfalto; el nombre es de cuando
+    // afuera había sólo pasto: lo usan el entrenamiento y la red)
+    this.grass = 0;
+    this.onGrass = false; // dos ruedas o más fuera de la pista
+    this.rough = 0; // cuánto traquetea lo que pisan las ruedas (0 en la pista; 1 con las cuatro en el pasto)
     this.onKerb = false;
     this.bump = 0;
     this.slope = 0;
@@ -301,7 +310,8 @@ export class Car {
       this.wheelDrag[i] += (sf.drag + damageDrag(this.damage, i) - this.wheelDrag[i]) * blend;
     });
     const wg = this.wheelGrip;
-    this.grass = this.wheels.filter((w) => w === 'grass').length / 4;
+    this.grass = surf.filter((sf) => sf.out).length / 4;
+    this.rough = surf.reduce((a, sf) => a + sf.rough, 0) / 4;
     this.onGrass = this.grass >= 0.5;
     this.onKerb = this.wheels.includes('kerb');
 
