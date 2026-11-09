@@ -64,7 +64,7 @@ const PASS_HOLD = 2.5; // s que el de atrás tiene que seguir adelante, sin toca
 const CONTACT_GAP = 0.5; // s sin tocarse para que el siguiente contacto sea otro toque
 // castigo, en segundos: por cada segundo con otro auto en la zona de al lado, por cada toque y por cada segundo y
 // rueda en el pasto
-const ZONE_TIME = 0.2, HIT_TIME = 0.6, GRASS_TIME = 0.8;
+const ZONE_TIME = 0.4, HIT_TIME = 2.5, GRASS_TIME = 0.8;
 // la zona: el auto (5,6 × 2 m, src/collision.js) con ZONE_MARGIN m más de cada costado, del mismo largo
 const CAR_L = 5.6, CAR_W = 2, ZONE_MARGIN = 0.5;
 // desventaja de motor del de adelante en las persecuciones, al principio y al final de la fase
