@@ -34,6 +34,7 @@ import { racingLine } from '../src/racingline.js';
 import { trackHeading } from '../src/sensors.js';
 import { sampleField, stationAt } from '../src/track.js';
 import { loadTrack, TRACK_IDS } from './tracks.js';
+import { RubberMap } from '../src/rubber.js';
 import { DIFFICULTIES, rivalSetups } from '../src/teams.js';
 import { damaged, setDamageRandom, zoneAt } from '../src/damage.js';
 
@@ -80,6 +81,9 @@ function race(track, seed, swap) {
     return { car, net, grid: k, driver: net ? new NeuralDriver(policy) : new Driver(pace, k + 1), u: stationAt(track, car.x, car.y), dist: -s.back, cross: [], where: [], lastTouch: -1e9, hits: 0, fault: 0, grass: 0, wheel: 0 };
   });
   const cars = entries.map((e) => e.car);
+  // la goma, como en el juego: arranca con la franja de otra categoría y la carrera la marca (y agarra según cuánta haya)
+  const rubber = new RubberMap(track, line.offset);
+  for (const c of cars) c.rubber = rubber;
   // el semáforo, como en el juego (main.js): la IA de siempre (y las redes que no lo ven) sube hasta sus vueltas y
   // larga con su reacción; las redes que lo ven suben y bajan las vueltas ellas y largan al acelerar
   const total = lightsDuration(randomHold(rand));
@@ -128,6 +132,7 @@ function race(track, seed, swap) {
     const racing = cars.filter((c) => !c.gone); // los que abandonaron y ya sacaron no están más en la pista
     for (const c of racing) c.draft = slipstream(c, racing, track.meters);
     entries.forEach((e, i) => e.car.gone || !started(e) || e.car.update(DT, e.driver.drive(DT, track, line, states[i], states.filter((_, j) => j !== i && !entries[j].car.gone)), track));
+    rubber.update(DT, states);
     const before = cars.map((c) => c.bump);
     collideCars(racing, track, isSolid);
     let leader = 0;

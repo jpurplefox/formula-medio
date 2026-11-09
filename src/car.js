@@ -5,7 +5,8 @@
 // Acá está lo que pasa en cada instante: pedales, marchas, traslado de peso, la cola que se abre, golpes, pasto y
 // daños (damage.js: lo que se rompe en los choques de collision.js).
 
-import { sampleField, surfaceAt } from './track.js';
+import { sampleField, stationAt, surfaceAt } from './track.js';
+import { RubberMap } from './rubber.js';
 import { collideWalls } from './collision.js';
 import { carLimits, DEFAULT_TUNE, GRAVITY, SEA_AIR } from './dynamics.js';
 import { deflate, NO_DAMAGE, steerPull, wheelDrag as damageDrag, wheelGrip as damageGrip } from './damage.js';
@@ -187,6 +188,7 @@ export class Car {
     this.air = SEA_AIR; // densidad del aire del circuito (kg/m³)
     this.damage = NO_DAMAGE; // lo que tiene roto (damage.js)
     this.damageLevel = 'off'; // si los golpes rompen: 'off', 'reduced' o 'real'
+    this.rubber = null; // la goma sobre la pista (RubberMap de rubber.js), si la hay: cambia el agarre de cada rueda
     this.wear = 0; // desgaste de las gomas, 0 (nuevas) a 1 (gastadas)
     this.wearRate = 0; // desgaste por metro andando normal (0 = no se gastan); lo fija el juego según la carrera
   }
@@ -291,13 +293,20 @@ export class Car {
     }
     // qué pisa cada rueda, en su lugar (los pianos están por fuera del límite de pista: pisarlos no es ir al pasto)
     const ca0 = Math.cos(this.angle), sa0 = Math.sin(this.angle);
-    this.wheels = WHEELS.map(([f, r]) => surfaceAt(track, this.x + (ca0 * f - sa0 * r) / M, this.y + (sa0 * f + ca0 * r) / M));
+    const at = WHEELS.map(([f, r]) => [this.x + (ca0 * f - sa0 * r) / M, this.y + (sa0 * f + ca0 * r) / M]);
+    this.wheels = at.map(([x, y]) => surfaceAt(track, x, y));
     const surf = this.wheels.map((w) => SURFACES[w]);
     // la goma no pasa de agarrar a patinar de golpe: entra de a poco en lo que pisa
     const blend = Math.min(1, dt * SURFACE_RATE);
+    // sobre el asfalto, la goma que dejaron los autos (rubber.js) agarra más; fuera de la trazada, algo menos
+    const rubber = (i) => {
+      if (!this.rubber || this.wheels[i] !== 'road') return 1;
+      const st = stationAt(track, at[i][0], at[i][1]);
+      return st < 0 ? 1 : RubberMap.gripAt(this.rubber, st, sampleField(track.lat, track.W, at[i][0], at[i][1]));
+    };
     // (una rueda con la suspensión torcida o pinchada, además, agarra menos y una pinchada frena)
     surf.forEach((sf, i) => {
-      this.wheelGrip[i] += (sf.grip * damageGrip(this.damage, i) - this.wheelGrip[i]) * blend;
+      this.wheelGrip[i] += (sf.grip * rubber(i) * damageGrip(this.damage, i) - this.wheelGrip[i]) * blend;
       this.wheelDrag[i] += (sf.drag + damageDrag(this.damage, i) - this.wheelDrag[i]) * blend;
     });
     const wg = this.wheelGrip;

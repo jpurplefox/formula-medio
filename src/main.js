@@ -405,6 +405,7 @@ function resetGame(track) {
   if (!guides.has(track)) guides.set(track, racingLine(track, limitsOn(carProfile, track)));
   // la goma arranca con la franja tenue de otra categoría sobre la trazada y la carrera la va marcando
   game.rubber = new RubberMap(track, guides.get(track).offset);
+  for (const e of game.entries) e.car.rubber = game.rubber; // y agarra según cuánta haya (car.js)
   if (!aiLines.has(track)) aiLines.set(track, racingLine(track, limitsOn(carProfile, track), { brakeUse: AI_BRAKE_USE }));
   if (!tvCams.has(track)) tvCams.set(track, tvCameras(track));
   hud.stage.classList.remove('replay');
