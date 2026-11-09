@@ -224,6 +224,95 @@ class Voice {
 }
 
 // Todo el sonido del juego: los motores y la música del menú, cada uno con su volumen, y un volumen general.
+// El ruido de las ruedas sobre el costado de la pista, para el auto propio:
+// - el piano: "brrrr", ruido grave que late al ritmo con el que las ruedas pasan los escalones (velocidad / largo
+//   del escalón), más un zumbido a ese mismo ritmo; cuanto más rápido, más agudo y más fuerte;
+// - la franja verde: un siseo áspero, como lija;
+// - la salchicha: un golpe seco al subirse.
+class Rumble {
+  constructor(kit, out) {
+    const ctx = (this.ctx = kit.ctx);
+    this.kit = kit;
+    this.out = out;
+    const noise = ctx.createBufferSource();
+    noise.buffer = kit.noise;
+    noise.loop = true;
+    // piano: ruido filtrado grave, con el volumen latiendo (amplitud entre 0,15 y 1)
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.value = 160;
+    band.Q.value = 0.9;
+    this.beat = ctx.createGain();
+    this.beat.gain.value = 0.58;
+    this.lfo = ctx.createOscillator();
+    this.lfo.type = 'square';
+    this.lfo.frequency.value = 20;
+    const depth = ctx.createGain();
+    depth.gain.value = 0.42;
+    this.lfo.connect(depth).connect(this.beat.gain);
+    // y el zumbido de los escalones
+    this.tone = ctx.createOscillator();
+    this.tone.type = 'sawtooth';
+    this.tone.frequency.value = 20;
+    const toneLow = ctx.createBiquadFilter();
+    toneLow.type = 'lowpass';
+    toneLow.frequency.value = 300;
+    const toneGain = ctx.createGain();
+    toneGain.gain.value = 0.5;
+    this.kerbLevel = ctx.createGain();
+    this.kerbLevel.gain.value = 0;
+    noise.connect(band).connect(this.beat).connect(this.kerbLevel);
+    this.tone.connect(toneLow).connect(toneGain).connect(this.beat);
+    this.kerbLevel.connect(out);
+    this.band = band;
+    // verde: ruido más agudo, parejo
+    const hiss = ctx.createBiquadFilter();
+    hiss.type = 'bandpass';
+    hiss.frequency.value = 1400;
+    hiss.Q.value = 0.6;
+    this.greenLevel = ctx.createGain();
+    this.greenLevel.gain.value = 0;
+    noise.connect(hiss).connect(this.greenLevel).connect(out);
+    noise.start();
+    this.lfo.start();
+    this.tone.start();
+    this.lastJolt = 0;
+  }
+
+  set({ kerb = 0, green = 0, speed = 0, ridge = 1.6, jolt = 0 }) {
+    const t = this.ctx.currentTime, v = Math.abs(speed);
+    const rate = Math.max(4, Math.min(80, v / ridge)); // escalones por segundo
+    this.lfo.frequency.setTargetAtTime(rate, t, 0.03);
+    this.tone.frequency.setTargetAtTime(rate * 2, t, 0.03);
+    this.band.frequency.setTargetAtTime(120 + v * 4, t, 0.05);
+    const fast = Math.min(1, v / 30);
+    this.kerbLevel.gain.setTargetAtTime(kerb * fast * 0.5, t, 0.03);
+    this.greenLevel.gain.setTargetAtTime(green * fast * 0.12, t, 0.05);
+    // golpe de la salchicha: cuando el salto empieza (jolt sube de golpe)
+    if (jolt > this.lastJolt + 0.2) this.thump(jolt);
+    this.lastJolt = jolt;
+  }
+
+  thump(k) {
+    const ctx = this.ctx, t = ctx.currentTime;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(110, t);
+    o.frequency.exponentialRampToValueAtTime(40, t + 0.25);
+    g.gain.setValueAtTime(0.9 * k, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    o.connect(g).connect(this.out);
+    o.start(t);
+    o.stop(t + 0.32);
+    const n = ctx.createBufferSource(), ng = ctx.createGain();
+    n.buffer = this.kit.burst;
+    ng.gain.setValueAtTime(0.5 * k, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    n.connect(ng).connect(this.out);
+    n.start(t);
+  }
+}
+
 export class EngineAudio {
   constructor() {
     this.ctx = null;
@@ -267,6 +356,7 @@ export class EngineAudio {
       this.musicBus.connect(this.master);
       this.music = new MenuMusic(this.ctx, this.musicBus);
       this.kit = new Kit(this.ctx);
+      this.rumble = new Rumble(this.kit, this.engines);
       this.setVolumes({});
       if (this.wantMusic) this.music.start();
     }
@@ -276,6 +366,13 @@ export class EngineAudio {
   // apaga todas las voces de los motores (menú, silencio)
   silence() {
     for (const v of this.voices) v.mute();
+    this.rumble?.set({});
+  }
+
+  // lo que pisan las ruedas del auto propio: { kerb, green (fracción de ruedas, 0..1), speed (m/s), ridge (m entre
+  // escalones del piano), jolt (salto de la salchicha, 0..1) }
+  surface(info) {
+    if (this.ctx) this.rumble.set(info);
   }
 
   // silencio total: motores y música

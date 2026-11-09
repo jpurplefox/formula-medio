@@ -4,6 +4,11 @@
 //
 // Los renderers leen `bytes` (0..255 por casillero, filas × LANES) y `version`, que cambia cada vez que se
 // actualizan los bytes. side (de costado a la línea central) y st (sobre ella) van en celdas, como en el render.
+//
+// La goma también agarra (gripAt, que car.js aplica a cada rueda sobre el asfalto): RUBBER_GRIP más de agarre de
+// la pista limpia a la negra del todo. El auto está calibrado con vueltas de clasificación, con la trazada como al
+// largar (la franja de la otra categoría), así que ahí da 1: fuera de la trazada se agarra un poco menos desde el
+// principio y, a medida que se marca, la trazada agarra cada vez más (y salirse para pasar cuesta más).
 
 export const RUBBER_LANES = 32;
 export const RUBBER_DARK = 0.4; // cuánto oscurece la goma al máximo (0..1)
@@ -16,6 +21,7 @@ const WHEEL_SPREAD_M = 0.35; // medio ancho de la marca de cada rueda (m)
 const PER_M = 0.4, PER_M_LIMIT = 1.6, SATURATION = 25;
 const REFRESH = 0.5; // cada cuánto se recalculan los bytes (s)
 const MAX_ROWS = 4096; // las texturas no pueden ser más largas
+export const RUBBER_GRIP = 0.06; // fuera de la trazada al largar, 2 % menos de agarre; con la trazada negra, 4 % más
 
 export class RubberMap {
   // offset: por dónde pasa la trazada ideal en cada celda de la línea central (racingline.js)
@@ -80,6 +86,17 @@ export class RubberMap {
     }
   }
 
+  // Vuelve a la pista del principio de la carrera, con `amount` de goma ya puesta sobre la trazada (como si se
+  // hubieran corrido unas vueltas; SATURATION es una marca clara). Para entrenar con la pista en cualquier momento
+  // de la carrera sin armar el mapa de nuevo.
+  reset(amount = 0) {
+    const { rubber, base } = this;
+    for (let i = 0; i < rubber.length; i++) rubber[i] = (amount * base[i]) / BASE;
+    this.prev.clear();
+    this.clock = REFRESH;
+    this.refresh();
+  }
+
   refresh() {
     const { rubber, base, bytes } = this;
     for (let i = 0; i < bytes.length; i++) {
@@ -97,5 +114,10 @@ export class RubberMap {
     if (x <= -0.5 || x >= lanes - 0.5) return 0;
     const l = Math.max(0, Math.min(lanes - 2, Math.floor(x))), f = Math.max(0, Math.min(1, x - l));
     return (bytes[row * lanes + l] * (1 - f) + bytes[row * lanes + l + 1] * f) / 255;
+  }
+
+  // agarre de una rueda en ese punto respecto del de la trazada al largar (1)
+  static gripAt(map, st, side) {
+    return 1 + RUBBER_GRIP * (RubberMap.sample(map, st, side) - BASE);
   }
 }

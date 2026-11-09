@@ -101,6 +101,21 @@ export function grassTexture(size = 128) {
   return withMips(size, data);
 }
 
+// Leca: piedritas color arena, con manchas suaves (donde la rastrillaron) y granos claros y oscuros
+export function gravelTexture(size = 128) {
+  const patch = fbm(size, 8, 4, 505);
+  const rand = rng(17);
+  const data = new Uint32Array(size * size);
+  for (let i = 0; i < data.length; i++) {
+    let v = (patch[i] - 0.5) * 26 + (rand() - 0.5) * 34;
+    const r = rand();
+    if (r < 0.12) v += 26; // piedrita al sol
+    else if (r < 0.24) v -= 30; // sombra entre piedras
+    data[i] = rgb(178 + v, 158 + v * 0.95, 122 + v * 0.85);
+  }
+  return withMips(size, data);
+}
+
 // Variación de brillo a gran escala (0.88..1.12), para que la repetición de las texturas no se note
 export function macroNoise(size = 64) {
   const n = fbm(size, 4, 3, 303);

@@ -50,8 +50,12 @@ import { NO_DAMAGE } from '../src/damage.js';
 import { randomSetup, randomTune, randomTyres, TUNE_SPREAD } from './env.js';
 import { getTrack, mod, RaceSim, recordPace, wrap } from './race.js';
 import { LIGHT_FIRST, lightsAt, lightsDuration, randomHold } from '../src/lights.js';
+import { RubberMap } from '../src/rubber.js';
 
 const DT = 1 / 60, SUBSTEPS = 3, DECISIONS = 20; // decisiones por segundo
+// goma ya puesta sobre la trazada al empezar cada episodio: entre nada (recién largada) y esto (rubber.js: 25 es una
+// marca clara; 75, casi negra), así la red corre con la pista en cualquier momento de la carrera
+const RUBBER_LAID = 75;
 const PROGRESS_REWARD = 0.02, WALL_PENALTY = 1;
 const GRASS_LIMIT = 6, STUCK_LIMIT = 6, BACKWARDS_LIMIT = 30, RESCUE_PENALTY = 4, STALL_PENALTY = 1, RETIRE_PENALTY = 10;
 const PACE_FLOOR = 0.75, PACE_PENALTY = 1, FREE_ROAD = 40;
@@ -205,6 +209,12 @@ export class HerdSim extends RaceSim {
       return e;
     });
     this.cars.forEach((e, k) => (e.partner = spots[k].partner === undefined ? null : this.cars[spots[k].partner]));
+    // la goma de la pista (un mapa por circuito, que se vuelve a usar): agarra según cuánta haya y los autos la marcan
+    this.rubberMaps ??= new Map();
+    if (!this.rubberMaps.has(id)) this.rubberMaps.set(id, new RubberMap(track, line.offset));
+    this.rubber = this.rubberMaps.get(id);
+    this.rubber.reset(RUBBER_LAID * r());
+    for (const e of this.cars) e.car.rubber = this.rubber;
     this.agentsList = this.cars;
     this.setLights();
     return this.cars.map((e) => this.observe(e));
@@ -316,6 +326,7 @@ export class HerdSim extends RaceSim {
           }
         }
       });
+      this.rubber.update(DT, cars.map((e) => ({ car: e.car, st: e.u, lat: sampleField(track.lat, track.W, e.car.x, e.car.y) })));
     }
     const dt = DT * SUBSTEPS;
     // la zona de al lado: un auto encimado a lo largo y a menos de ZONE_MARGIN de costado (en el marco de cada uno)

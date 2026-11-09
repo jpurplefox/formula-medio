@@ -1,5 +1,5 @@
 import { TRACKS } from '../tracks/index.js';
-import { loadImage, buildTrack, buildTrackFromLayout, sampleField, stationAt, T } from './track.js';
+import { loadImage, buildTrack, buildTrackFromLayout, sampleField, stationAt, RIDGE, T } from './track.js';
 import { Renderer, rgb } from './renderer.js';
 import { GLRenderer } from './glrenderer.js';
 import { Car, cornerGrip, DEFAULT_PROFILE, keyboardSteer, LAUNCH_WINDOW, isSolid, limitsOn, rearMargin, slipstream, TRACTION_CONTROL, wheelAngle } from './car.js';
@@ -410,6 +410,7 @@ function resetGame(track) {
   if (!guides.has(track)) guides.set(track, racingLine(track, limitsOn(carProfile, track)));
   // la goma arranca con la franja tenue de otra categoría sobre la trazada y la carrera la va marcando
   game.rubber = new RubberMap(track, guides.get(track).offset);
+  for (const e of game.entries) e.car.rubber = game.rubber; // y agarra según cuánta haya (car.js)
   if (!aiLines.has(track)) aiLines.set(track, racingLine(track, limitsOn(carProfile, track), { brakeUse: AI_BRAKE_USE }));
   if (!tvCams.has(track)) tvCams.set(track, tvCameras(track));
   hud.stage.classList.remove('replay');
@@ -798,6 +799,7 @@ async function drawReplay() {
   const moving = cam.mode !== 'tv';
   playEngines(poses.map((p) => ({ ...p, x: p.x * M, y: p.y * M })), cam, M,
     moving ? Math.cos(pose.angle) * pose.speed : 0, moving ? Math.sin(pose.angle) * pose.speed : 0, cam.mode === 'onboard' ? r.target : -1);
+  audio.surface({}); // en la repetición no suenan los pianos
   await renderer.render(track, cam, trackSprites(track), models);
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
 
@@ -902,8 +904,9 @@ function paddles(p, gear, dt) {
   return p;
 }
 
-// cuánto tiembla el volante: en el pasto y en los pianos, más cuanto más rápido (cambia en cada cuadro)
-const buzz = (c) => (c.grass * Math.min(1, Math.abs(c.speed) / 25) + (c.onKerb ? Math.min(1, Math.abs(c.speed) / 35) * 0.5 : 0))
+// cuánto tiembla el volante: en el pasto, en la leca y en los pianos, más cuanto más rápido, y con el salto de la
+// salchicha (cambia en cada cuadro)
+const buzz = (c) => ((c.rough ?? c.grass) * Math.min(1, Math.abs(c.speed) / 25) + (c.onKerb ? Math.min(1, Math.abs(c.speed) / 35) * 0.5 : 0) + (c.jolt ?? 0))
   * BUZZ * (Math.random() * 2 - 1);
 
 // la cabeza del piloto, inclinada por las fuerzas: [hacia el costado, hacia adelante]
@@ -940,19 +943,20 @@ async function draw(time) {
     if (!e.driver || e.car.gone) continue;
     const c = e.car;
     models.push({
-      model: e.model, x: c.x, y: c.y, z: heightAt(c.x, c.y), angle: c.angle, meters: M,
-      pitch: Math.atan(c.slope), roll: e.body?.roll, dive: e.body?.dive,
+      // arriba del piano o de la salchicha, el auto sube y se inclina con las ruedas que se levantan
+      model: e.model, x: c.x, y: c.y, z: heightAt(c.x, c.y) + c.lift, angle: c.angle, meters: M,
+      pitch: Math.atan(c.slope), roll: (e.body?.roll ?? 0) + c.liftRoll, dive: (e.body?.dive ?? 0) + c.liftDive,
       steer: wheelAngle(c.steer, c.speed, c.limits), spin: e.spin, head: e.head, ...tyres(g, e.dist, c.wear), shadow: true,
       wheelTurn: c.steer * STEERING.turn + buzz(c), headTilt: headTilt(e.body), paddle: e.paddles?.pull,
     });
   }
 
   // cámara en la cabina o un poco detrás del auto, a la altura del terreno,
-  // con traqueteo en el pasto, en los pianos y al chocar
+  // con traqueteo en el pasto, en la leca, en los pianos y al chocar
   const shake =
-    car.grass * Math.min(1, Math.abs(car.speed) / 25) * 3 +
+    (car.rough ?? car.grass) * Math.min(1, Math.abs(car.speed) / 25) * 3 +
     (car.onKerb ? Math.min(1, Math.abs(car.speed) / 35) * 1.2 : 0) +
-    car.bump * 4;
+    car.bump * 4 + car.jolt * 5;
   // contra un muro, la cámara de afuera se acerca hasta que deja de estar adentro
   let behind = (cockpitView ? COCKPIT_BACK : CAM_BEHIND) / M;
   while (behind > 0 && isSolid(track, car.x - Math.cos(car.angle) * behind, car.y - Math.sin(car.angle) * behind)) behind -= 0.2;
@@ -963,7 +967,7 @@ async function draw(time) {
     angle: car.angle + car.steer * (cockpitView ? 0.02 : 0.04),
   };
   cam.ground = heightAt(cam.x, cam.y);
-  cam.z = Math.max(cam.ground, heightAt(car.x, car.y)) + (cockpitView ? COCKPIT_EYE : EYE_HEIGHT) / M;
+  cam.z = Math.max(cam.ground, heightAt(car.x, car.y)) + (cockpitView ? COCKPIT_EYE : EYE_HEIGHT) / M + car.lift;
   // inclinamos la vista según la pendiente (en subida se mira más arriba); desde la cabina,
   // el horizonte va más arriba para que la pista se vea por encima del auto
   const shakeY = Math.sin(time * 0.045) * shake * UI_SCALE;
@@ -983,11 +987,11 @@ async function draw(time) {
   // desde la cabina se ve el mismo auto, sin el casco (ahí está la cámara) y sin rolido; la pendiente,
   // en la misma medida en que la cámara la sigue, así la carrocería queda quieta en la pantalla
   models.push({
-    model: g.player.model, x: car.x, y: car.y, z: heightAt(car.x, car.y), angle: car.angle, meters: M,
+    model: g.player.model, x: car.x, y: car.y, z: heightAt(car.x, car.y) + car.lift, angle: car.angle, meters: M,
     pitch: Math.atan(car.slope) * (cockpitView ? 0.6 : 1),
     // la carrocería rola y cabecea sobre la suspensión; desde la cabina no, porque la cámara va pegada a ella
     // (ahí el cabeceo mueve la vista: ver cam.pitch)
-    roll: cockpitView ? 0 : g.player.body?.roll, dive: cockpitView ? 0 : g.player.body?.dive,
+    roll: cockpitView ? 0 : (g.player.body?.roll ?? 0) + car.liftRoll, dive: cockpitView ? 0 : (g.player.body?.dive ?? 0) + car.liftDive,
     steer: wheelAngle(car.steer, car.speed, car.limits), spin: wheelSpin, head: g.player.head, ...tyres(g, g.player.dist, car.wear), shadow: true, hide: cockpitView ? 'helmet' : null,
     // el volante gira con la dirección y muestra la marcha; desde la cabina la pintura de tan cerca brilla menos
     wheelTurn: g.player.wheelTurn + buzz(car), screen: cockpit.screen(car), gloss: cockpitView ? 0.35 : 1,
@@ -995,6 +999,11 @@ async function draw(time) {
   });
   playEngines(g.entries.map((e) => ({ rpm: e.car.rpm, throttle: e.car.throttle, gear: e.car.gear, x: e.car.x * M, y: e.car.y * M, angle: e.car.angle, speed: e.car.speed })),
     cam, M, Math.cos(car.angle) * car.speed, Math.sin(car.angle) * car.speed, cockpitView ? g.entries.indexOf(g.player) : -1);
+  // las ruedas propias sobre el piano, el verde o la salchicha
+  if (settings.sound) {
+    const on = (w) => car.wheels.filter((x) => x === w).length / 4;
+    audio.surface({ kerb: on('kerb') + on('sausage'), green: on('green'), speed: car.speed, ridge: RIDGE * M, jolt: car.jolt });
+  }
   await renderer.render(track, cam, sprites, models);
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
 
