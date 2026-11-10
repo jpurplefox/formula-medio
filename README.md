@@ -17,7 +17,7 @@ Publicado en AWS (S3 + CloudFront) en cada push a `main`: ver [docs/deployment.m
 Antes de largar hay un **menú** (que se acuerda de lo último que elegiste). La pantalla principal muestra el
 modo, el **auto** elegido (el modelo 3D con su decoración) y el **circuito** (su trazado); tocando cada uno se abre su
 pantalla para cambiarlo (con ← → o las flechas, y el auto se puede girar arrastrándolo). La **puesta a punto** y las
-**opciones** (dificultad, vueltas, daños y sonido) van en pantallas aparte; Enter o Esc vuelven a la principal
+**opciones** (dificultad, rivales, vueltas, vista al largar, daños, ayudas y sonido) van en pantallas aparte; Enter o Esc vuelven a la principal
 (`src/menuview.js` dibuja el auto y los trazados):
 - **Modo:** **Carrera** (por defecto, vos y un auto de cada equipo rival; con la grilla completa, 22 autos; con tabla
   de posiciones y repetición al final) o **Contrarreloj**
@@ -223,7 +223,7 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
    `JUEGO=1 DANOS=real GOLPES=1 node rl/race_eval.js models/v5/fase7.json` (cuántos autos rompen algo por carrera
    y qué tan fuertes son los golpes en cada pieza).
 
-Cambios, con la caja manual: **O** o **X** sube, **U** o **Z** baja (la caja, automática o manual, se elige en el menú y no se cambia en carrera). **C** alterna la vista de cabina (por defecto) y la exterior. **G** muestra u oculta la trazada ideal.
+Cambios, con la caja manual: **O** o **X** sube, **U** o **Z** baja (la caja, automática o manual, se elige en el menú y no se cambia en carrera). **C** alterna la vista de cabina y la exterior (cada carrera larga con la que elegiste en Opciones, cabina si no elegiste ninguna). **G** muestra u oculta la trazada ideal.
 Las teclas se reconocen por la letra y por su posición, así funcionan con cualquier distribución de teclado.
 
 ## Sonido
