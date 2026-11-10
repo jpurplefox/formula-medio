@@ -32,6 +32,8 @@
 //               velocidad y el mismo giro, chocan: 1 - t / RISK_HORIZON (1 ya se tocan, 0 no chocan), en el
 //               primero si el que pega es el propio auto (lo alcanza o se le tira encima) y en el segundo si es el
 //               otro. Al final, por lo mismo
+//   pista lejos cuánto dobla la pista de 550 m a 1 km, como la de más cerca pero acumulando el giro de punto a punto:
+//               así una horquilla de más de 180° no se lee como una curva para el otro lado. Al final, por lo mismo
 //
 // Todo va más o menos entre -1 y 1. Las distancias de la pista se miden en metros, así sirve en cualquier
 // circuito sin importar el tamaño de sus celdas.
@@ -76,7 +78,9 @@ export const TYRE_INPUT_START = START_INPUT_START + START_VALUES;
 export const RISK_VALUES = 3; // por rival: zona de al lado, choque que pega el propio auto, choque que pega el otro
 export const RISK_INPUT_START = TYRE_INPUT_START + TYRE_VALUES;
 export const RISK_INPUT_SIZE = ALL_OPPONENTS * RISK_VALUES;
-export const OBS_SIZE = RISK_INPUT_START + RISK_INPUT_SIZE;
+export const FAR_AHEAD = [550, 660, 780, 900, 1000]; // m
+export const FAR_INPUT_START = RISK_INPUT_START + RISK_INPUT_SIZE;
+export const OBS_SIZE = FAR_INPUT_START + FAR_AHEAD.length;
 export const RISK_HORIZON = 5; // s
 const RISK_STEP = 0.1; // s entre cada punto de la predicción
 const RISK_POINTS = Math.round(RISK_HORIZON / RISK_STEP);
@@ -268,6 +272,14 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
     const [hit, striker] = crash(mine, predict(o, meters, otherPath));
     put(hit && striker ? hit : 0);
     put(hit && !striker ? hit : 0);
+  }
+
+  // la pista lejos: el giro acumulado desde el último punto de cerca, de tramo en tramo
+  let from = LOOK_AHEAD.at(-1), turn = wrapAngle(trackHeading(track, u + from / meters) - car.angle);
+  for (const d of FAR_AHEAD) {
+    turn += wrapAngle(trackHeading(track, u + d / meters) - trackHeading(track, u + from / meters));
+    from = d;
+    put(turn / Math.PI);
   }
   return out;
 }
