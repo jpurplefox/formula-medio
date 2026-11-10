@@ -221,6 +221,22 @@ export function keyboardSteer(now, want, speed, dt) {
   return now + Math.max(-rate * dt, Math.min(rate * dt, want - now));
 }
 
+// Freno con teclado (todo o nada) mientras se dobla: como hace un piloto al entrar a una curva, cuanto más volante, más
+// suelta el freno (hasta KEY_TRAIL con el volante a fondo), así a las gomas les queda agarre para doblar; el freno sigue
+// teniendo prioridad. Lo suelta y lo vuelve a pisar de a poco (KEY_TRAIL_RATE), no de golpe con cada toque de volante.
+// Despacio no suelta nada (maniobrando o en marcha atrás, que también va con el freno).
+// now: cómo está el freno (0..1); pressed: si la tecla está apretada; steer: el volante (-1..1); speed: m/s.
+export const KEY_TRAIL = 0.45; // cuánto freno suelta con el volante a fondo (queda el 55 %)
+const KEY_TRAIL_RATE = 3; // 1/s: de freno a fondo a lo que corresponde en ~0,15 s
+const KEY_TRAIL_SPEED = [5, 15]; // m/s: por debajo de la primera no suelta; desde la segunda, todo
+export function keyboardBrake(now, pressed, steer, speed, dt) {
+  if (!pressed) return 0;
+  const [lo, hi] = KEY_TRAIL_SPEED, fade = Math.max(0, Math.min(1, (speed - lo) / (hi - lo)));
+  const want = 1 - KEY_TRAIL * fade * Math.min(1, Math.abs(steer));
+  if (now === 0) return want; // recién apretado: frena enseguida, sin demora
+  return now + Math.max(-KEY_TRAIL_RATE * dt, Math.min(KEY_TRAIL_RATE * dt, want - now));
+}
+
 // El ángulo de las ruedas delanteras para dibujarlas (aun a fondo se ve que doblan un poco)
 export function wheelAngle(steer, speed, limits) {
   return steer * Math.max(MIN_WHEEL_ANGLE, steerLock(speed, limits));
