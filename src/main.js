@@ -2,7 +2,7 @@ import { TRACKS } from '../tracks/index.js';
 import { loadImage, buildTrack, buildTrackFromLayout, sampleField, stationAt, RIDGE, T } from './track.js';
 import { Renderer, rgb } from './renderer.js';
 import { GLRenderer } from './glrenderer.js';
-import { Car, cornerGrip, DEFAULT_PROFILE, FUEL_PER_KM, keyboardSteer, LAUNCH_WINDOW, isSolid, limitsOn, rearMargin, slipstream, TEMP_HIGH, TEMP_LOW, TRACTION_CONTROL, wheelAngle } from './car.js';
+import { Car, cornerGrip, DEFAULT_PROFILE, FUEL_PER_KM, keyboardSteer, LAUNCH_WINDOW, isSolid, limitsOn, rearMargin, RIVAL_AIDS, slipstream, TEMP_HIGH, TEMP_LOW, TRACTION_CONTROL, wheelAngle } from './car.js';
 import { racingLine } from './racingline.js';
 import { boardTexture, treeTexture } from './sprites.js';
 import { carModel, STEERING, TCAM, WHEEL_R } from './carmodel.js';
@@ -354,13 +354,6 @@ let carProfile = DEFAULT_PROFILE;
 // Los rivales manejan con la red entrenada (rl/CURRICULO.md); con ?ia=models/fase7.json, con otra, y con ?ia=clasica,
 // con la IA de siempre (ai.js), que es también la que queda si la red no carga
 const CURRENT_NET = 'models/v20/fase18.json';
-// los rivales llevan control de tracción bajo: la red del juego aprendió con la física de antes (el auto giraba al
-// instante) y sin él, con las gomas de ahora, acelerando en las curvas lentas la cola se le va (medido con
-// rl/race_eval.js); hasta reentrenarla con estas gomas
-const RIVAL_TC = TRACTION_CONTROL.low;
-// y ABS: la red aprendió con un pedal de freno que a fondo pedía justo lo que aguantaban las gomas; ahora a fondo las
-// bloquea (hay que soltarlo a medida que baja la velocidad), y hasta que lo aprenda frena con ABS
-const RIVAL_ABS = true;
 const IA_PARAM = new URLSearchParams(location.search).get('ia') || CURRENT_NET;
 const NEURAL_URL = IA_PARAM === 'clasica' ? null : IA_PARAM;
 let neuralPolicy = null;
@@ -382,7 +375,7 @@ function resetGame(track) {
   const mine = teamCar(team, 0);
   const player = { name: 'Vos', team: team.name, code: 'VOS', number: mine.number, color: team.color, car, driver: null, race: newRace(track, car), model: modelFor(mine, 2), dist: 0, gridBack: spawn.back };
   const rivals = others.map((o, i) => {
-    const t = o.team, s = slots[grid[i]], c = Object.assign(new Car(s.x, s.y, s.angle, carProfile), { tc: RIVAL_TC, abs: RIVAL_ABS }).placeOn(track);
+    const t = o.team, s = slots[grid[i]], c = Object.assign(new Car(s.x, s.y, s.angle, carProfile), RIVAL_AIDS).placeOn(track);
     // con la red, la dificultad es el auto: más o menos agarre y potencia
     if (neuralPolicy) c.setup = setups[i];
     return {

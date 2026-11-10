@@ -5,7 +5,7 @@
 
 import { readFileSync } from 'node:fs';
 import { Driver, gridSlots } from '../src/ai.js';
-import { Car, DEFAULT_PROFILE, limitsOn } from '../src/car.js';
+import { Car, DEFAULT_PROFILE, limitsOn, RIVAL_AIDS } from '../src/car.js';
 import { Policy, NeuralDriver } from '../src/policy.js';
 import { racingLine } from '../src/racingline.js';
 import { sampleField, stationAt } from '../src/track.js';
@@ -18,7 +18,7 @@ const DT = 1 / 60, LAPS = 3, MAX_TIME = 400;
 
 function run(track, drive) {
   const slot = gridSlots(track, 1)[0];
-  const car = new Car(slot.x, slot.y, slot.angle, profile);
+  const car = Object.assign(new Car(slot.x, slot.y, slot.angle, profile), RIVAL_AIDS); // con las ayudas del juego
   car.launch();
   car.throttle = 1;
   let prev = stationAt(track, car.x, car.y), laps = [], last = null, grass = 0, hits = 0;

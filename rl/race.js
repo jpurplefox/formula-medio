@@ -42,7 +42,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Driver } from '../src/ai.js';
-import { Car, DEFAULT_PROFILE, isSolid, limitsOn, SAME_SETUP, slipstream } from '../src/car.js';
+import { Car, DEFAULT_PROFILE, isSolid, limitsOn, RIVAL_AIDS, SAME_SETUP, slipstream } from '../src/car.js';
 import { collideCars } from '../src/collision.js';
 import { NeuralDriver, Policy } from '../src/policy.js';
 import { racingLine } from '../src/racingline.js';
@@ -207,7 +207,7 @@ export class RaceSim {
     const h = trackHeading(track, u);
     const { x, y } = pointOnCenter(track, u);
     const s = side / track.meters;
-    const car = new Car(x - Math.sin(h) * s, y + Math.cos(h) * s, h, profile);
+    const car = Object.assign(new Car(x - Math.sin(h) * s, y + Math.cos(h) * s, h, profile), RIVAL_AIDS); // con las ayudas del juego
     car.speed = speed;
     while (car.gear < car.gears && car.rpmAt(speed, car.gear) > profile.upshiftRpm) car.gear++;
     car.rpm = Math.max(4000, car.rpmAt(speed, car.gear));

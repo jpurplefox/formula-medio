@@ -24,12 +24,15 @@
 //   semáforo    en la grilla: cuántas luces rojas hay prendidas, cuánto hace que se prendió la última y si ya se
 //               apagaron (src/lights.js), para llevar el motor a las vueltas de largar. En carrera, apagadas. Al
 //               final, por lo mismo
+//   gomas y peso la temperatura y el desgaste de cada goma (DI, DD, TI, TD), la nafta que lleva encima y el reparto
+//               de frenos de la puesta a punto: el agarre de las gomas frías, pasadas o gastadas se nota en el de cada
+//               eje recién cuando ya se perdió; con esto lo ve venir. Al final, por lo mismo
 //
 // Todo va más o menos entre -1 y 1. Las distancias de la pista se miden en metros, así sirve en cualquier
 // circuito sin importar el tamaño de sus celdas.
 
-import { SETUP_KEYS } from './car.js';
-import { carLimits, DEFAULT_TUNE, SEA_AIR } from './dynamics.js';
+import { SETUP_KEYS, TEMP_HIGH, TEMP_LOW } from './car.js';
+import { BRAKE_TUNE_MAX, carLimits, DEFAULT_TUNE, SEA_AIR } from './dynamics.js';
 import { NO_DAMAGE } from './damage.js';
 import { LIGHTS_OUT } from './lights.js';
 import { halfWidthAt, sampleField, stationAt } from './track.js';
@@ -62,7 +65,11 @@ export const START_VALUES = 3;
 // antes del semáforo tienen las dos primeras)
 export const ACTIONS = 4;
 export const START_INPUT_START = OPPONENT_INPUT_START + OPPONENT_INPUT_SIZE;
-export const OBS_SIZE = START_INPUT_START + START_VALUES;
+export const TYRE_VALUES = 10; // temperatura y desgaste de cada goma, nafta y reparto de frenos
+export const TYRE_INPUT_START = START_INPUT_START + START_VALUES;
+export const OBS_SIZE = TYRE_INPUT_START + TYRE_VALUES;
+const TEMP_MID = (TEMP_LOW + TEMP_HIGH) / 2, TEMP_SCALE = 20; // °C: el medio de la ventana es 0, ±20 °C es ±1
+const FUEL_SCALE = 50; // kg
 const DAMAGE_LEVEL = { off: 0, reduced: 0.5, real: 1 };
 const SLOW = 25, FAST = 70; // m/s: una curva lenta (90 km/h) y una rápida (250 km/h)
 
@@ -225,6 +232,12 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
   put(lights.lit / 5);
   put(lights.since / 3);
   put(lights.out ? 1 : 0);
+
+  // gomas y peso: temperatura y desgaste de cada goma, nafta y reparto de frenos (+: más adelante)
+  for (const t of car.tyreTemp ?? [TEMP_MID, TEMP_MID, TEMP_MID, TEMP_MID]) put((t - TEMP_MID) / TEMP_SCALE);
+  for (const w of car.tyreWear ?? [0, 0, 0, 0]) put(w);
+  put((car.fuel ?? 0) / FUEL_SCALE);
+  put((car.tune?.brake ?? 0) / BRAKE_TUNE_MAX);
   return out;
 }
 
