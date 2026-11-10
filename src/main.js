@@ -2,7 +2,7 @@ import { TRACKS } from '../tracks/index.js';
 import { loadImage, buildTrack, buildTrackFromLayout, sampleField, stationAt, RIDGE, T } from './track.js';
 import { Renderer, rgb } from './renderer.js';
 import { GLRenderer } from './glrenderer.js';
-import { Car, cornerGrip, DEFAULT_PROFILE, FUEL_PER_KM, keyboardSteer, LAUNCH_WINDOW, isSolid, limitsOn, rearMargin, RIVAL_AIDS, slipstream, TEMP_HIGH, TEMP_LOW, TRACTION_CONTROL, wheelAngle } from './car.js';
+import { Car, cornerGrip, DEFAULT_PROFILE, FUEL_PER_KM, keyboardBrake, keyboardSteer, LAUNCH_WINDOW, isSolid, limitsOn, rearMargin, RIVAL_AIDS, slipstream, TEMP_HIGH, TEMP_LOW, TRACTION_CONTROL, wheelAngle } from './car.js';
 import { racingLine } from './racingline.js';
 import { boardTexture, treeTexture } from './sprites.js';
 import { carModel, STEERING, TCAM, WHEEL_R } from './carmodel.js';
@@ -286,6 +286,7 @@ addEventListener('blur', () => {
 });
 
 let keySteer = 0; // el volante con teclado, que va subiendo de a poco (keyboardSteer en car.js)
+let keyBrake = 0; // el freno con teclado, que se afloja un poco al doblar (keyboardBrake en car.js)
 function readInput(dt, speed) {
   // flechas, WASD o IJKL, más el joystick: lo que se pise más fuerte de los dos
   const left = keys.has('ArrowLeft') || keys.has('KeyA') || keys.has('KeyJ');
@@ -293,9 +294,10 @@ function readInput(dt, speed) {
   const up = keys.has('ArrowUp') || keys.has('KeyW') || keys.has('KeyI');
   const down = keys.has('ArrowDown') || keys.has('KeyS') || keys.has('KeyK') || keys.has('Space');
   keySteer = keyboardSteer(keySteer, (right ? 1 : 0) - (left ? 1 : 0), speed, dt);
+  keyBrake = keyboardBrake(keyBrake, down, keySteer, speed, dt);
   return {
     throttle: Math.max(up ? 1 : 0, pad.throttle),
-    brake: Math.max(down ? 1 : 0, pad.brake),
+    brake: Math.max(keyBrake, pad.brake),
     steer: Math.max(-1, Math.min(1, keySteer + pad.steer)),
   };
 }
