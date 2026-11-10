@@ -2,18 +2,18 @@
 // Los pesos vienen de rl/export.py: capas lineales con tanh entre ellas.
 
 import { rescue } from './ai.js';
-import { DAMAGE_VALUES, LIMIT_VALUES, OBS_SIZE, observe, OPPONENT_INPUT_SIZE, SETUP_START, SETUP_VALUES, START_VALUES, WHEEL_VALUES } from './sensors.js';
+import { DAMAGE_VALUES, LIMIT_VALUES, OBS_SIZE, observe, OPPONENT_INPUT_SIZE, SETUP_START, SETUP_VALUES, START_INPUT_START, START_VALUES, TYRE_VALUES, WHEEL_VALUES } from './sensors.js';
 import { stationAt } from './track.js';
 
 export class Policy {
   // opponents: si aprendió a mirar a los demás autos (etapa 2); si no, se le pasan en cero, como al entrenar
   constructor({ obs_size, layers, opponents = false }) {
-    // las redes de antes del semáforo, de los pedales de los rivales, de los daños, de los límites (puesta a punto y aire) y del
+    // las redes de antes de las gomas y la nafta, del semáforo, de los pedales de los rivales, de los daños, de los límites (puesta a punto y aire) y del
     // agarre por rueda leen sólo lo de adelante (van al final); las de antes del desgaste y la variación de autos,
     // además, no reciben esos valores: se les sacan
     this.size = obs_size;
     const reads = [OBS_SIZE];
-    for (const n of [START_VALUES, OPPONENT_INPUT_SIZE, DAMAGE_VALUES, LIMIT_VALUES, WHEEL_VALUES]) reads.push(reads.at(-1) - n);
+    for (const n of [TYRE_VALUES, START_VALUES, OPPONENT_INPUT_SIZE, DAMAGE_VALUES, LIMIT_VALUES, WHEEL_VALUES]) reads.push(reads.at(-1) - n);
     this.legacy = obs_size === reads.at(-1) - SETUP_VALUES;
     if (!reads.includes(obs_size) && !this.legacy) {
       throw new Error(`La red espera ${obs_size} valores y los sensores dan ${OBS_SIZE}`);
@@ -21,7 +21,7 @@ export class Policy {
     this.opponents = opponents;
     // si ve el semáforo y sube y baja las rpm ella (dos salidas más): si no, larga con las vueltas y la reacción de la IA
     // de siempre
-    this.lights = obs_size === OBS_SIZE && layers.at(-1).out >= 4;
+    this.lights = obs_size >= START_INPUT_START + START_VALUES && layers.at(-1).out >= 4;
     this.layers = layers.map((l) => {
       const w = floats(l.w);
       return { w: Array.from({ length: l.out }, (_, i) => w.subarray(i * l.in, (i + 1) * l.in)), b: floats(l.b) };

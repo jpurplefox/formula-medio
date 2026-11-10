@@ -110,6 +110,9 @@ const LOCK_SLIP = 0.45;
 // las de atrás pueden empujar sin dejar de sostener la curva. tc es qué parte del círculo de fricción de la cola
 // puede usarse entre doblar y empujar (0 = sin control); si la cola ya está deslizando, corta casi todo
 export const TRACTION_CONTROL = { off: 0, low: 0.97, high: 0.85 };
+// las ayudas con las que corren siempre los rivales del juego (y con las que se entrena la red): ABS y control de
+// tracción bajo
+export const RIVAL_AIDS = Object.freeze({ abs: true, tc: TRACTION_CONTROL.low });
 // ABS (ayuda, sobre todo para el teclado, que frena todo o nada): si se pide frenar más de lo que aguantan las gomas,
 // suelta freno hasta ABS_USE de ese límite: las ruedas no se bloquean y queda algo de agarre para doblar
 const ABS_USE = 0.95;

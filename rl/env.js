@@ -16,8 +16,8 @@
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Car, DEFAULT_PROFILE, FUEL_PER_KM, limitsOn, SETUP_KEYS } from '../src/car.js';
-import { airDensity, WING_MAX, WING_MIN } from '../src/dynamics.js';
+import { Car, DEFAULT_PROFILE, FUEL_PER_KM, limitsOn, RIVAL_AIDS, SETUP_KEYS } from '../src/car.js';
+import { airDensity, BRAKE_TUNE_MAX, WING_MAX, WING_MIN } from '../src/dynamics.js';
 import { racingLine } from '../src/racingline.js';
 import { halfWidthAt } from '../src/track.js';
 import { OBS_SIZE, observe, stationAt, trackHeading } from '../src/sensors.js';
@@ -73,16 +73,18 @@ export function randomSetup(rand, spread) {
   return Object.fromEntries(SETUP_KEYS.map((k) => [k, k === 'wear' ? 1 + (2 * rand() - 1) * 0.3 : 1 - down + (down + up) * rand()]));
 }
 
-// Puesta a punto al azar para la red que aprende: alerones hasta TUNE_SPREAD puntos más o menos que los del circuito
-// y balance de -TUNE_SPREAD a TUNE_SPREAD; y, una de cada AIR_CHANCE veces, el aire de otra altura (hasta la de
-// México). Así aprende a manejar autos con más o menos apoyo, más o menos punta y subvirantes o sobrevirantes.
+// Puesta a punto al azar para la red que aprende: alerones hasta TUNE_SPREAD puntos más o menos que los del circuito,
+// balance de -TUNE_SPREAD a TUNE_SPREAD, reparto de frenos hasta TUNE_SPREAD puntos más adelante o atrás y, una de cada
+// AIR_CHANCE veces, el aire de otra altura (hasta la de México). Así aprende a manejar autos con más o menos apoyo, más
+// o menos punta, subvirantes o sobrevirantes y que frenan más con un eje o con el otro.
 // Con spread 0, la del circuito y su aire.
 export const TUNE_SPREAD = 3;
 const AIR_CHANCE = 1 / 3, MAX_ALTITUDE = 2300;
 export function randomTune(car, rand, track, spread = TUNE_SPREAD) {
   if (spread) {
     const t = track.tune, wing = (x) => Math.max(WING_MIN, Math.min(WING_MAX, x + Math.round((2 * rand() - 1) * spread)));
-    car.ownTune = { front: wing(t.front), rear: wing(t.rear), balance: Math.round((2 * rand() - 1) * spread) };
+    const brake = Math.max(-BRAKE_TUNE_MAX, Math.min(BRAKE_TUNE_MAX, (t.brake ?? 0) + Math.round((2 * rand() - 1) * spread)));
+    car.ownTune = { front: wing(t.front), rear: wing(t.rear), balance: Math.round((2 * rand() - 1) * spread), brake };
     car.ownAir = rand() < AIR_CHANCE ? airDensity(rand() * MAX_ALTITUDE) : null;
   }
   car.placeOn(track);
@@ -125,6 +127,7 @@ export class RaceEnv {
     const h = trackHeading(track, u);
     const { x, y } = pointOnCenter(track, u);
     const car = new Car(x - Math.sin(h) * side, y + Math.cos(h) * side, h + (this.rand() - 0.5) * (rough ? 1.6 : 0.2), profile);
+    Object.assign(car, RIVAL_AIDS); // con las ayudas del juego
     const standing = this.rand() < STANDING_START;
     car.speed = standing ? 0 : this.rand() * (rough ? 0.4 : 0.8) * line.speed[Math.floor(u) % line.speed.length];
     if (standing) car.launch();
