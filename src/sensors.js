@@ -4,7 +4,8 @@
 //   auto        velocidad, deslizamiento, giro, volante, pedales, marcha, rpm, agarre de cada eje, rebufo
 //   su auto     cómo es respecto del auto medido (motor, punta, agarre, frenos, desgaste) y cómo están las gomas
 //   posición    de qué lado de la pista va, hacia dónde apunta respecto de la pista, si pisa pasto o piano
-//   pista       cuánto dobla la pista más adelante (a 20, 40… 450 m): lo que un piloto sabe de memoria
+//   pista       cuánto dobla la pista más adelante (a 20, 40… 450 m): lo que un piloto sabe de memoria. El primer punto,
+//               respecto del auto; cada uno de los demás, respecto del anterior (cuánto dobla ese tramo)
 //   rayos       distancia hasta el borde de la pista en 19 direcciones, de -90° a +90° (más juntos al frente)
 //   rivales     los 6 más cercanos (hasta 120 m): posición y velocidad relativas y hacia dónde apuntan.
 //               Los lugares sin rival quedan en cero (en la primera etapa, solo en pista, siempre)
@@ -32,8 +33,8 @@
 //               velocidad y el mismo giro, chocan: 1 - t / RISK_HORIZON (1 ya se tocan, 0 no chocan), en el
 //               primero si el que pega es el propio auto (lo alcanza o se le tira encima) y en el segundo si es el
 //               otro. Al final, por lo mismo
-//   pista lejos cuánto dobla la pista de 550 m a 1 km, como la de más cerca pero acumulando el giro de punto a punto:
-//               así una horquilla de más de 180° no se lee como una curva para el otro lado. Al final, por lo mismo
+//   pista lejos los tramos que siguen hasta 1 km, cada uno más largo que el anterior, igual que los de más cerca:
+//               cuánto dobla cada tramo. Al final, por lo mismo
 //
 // Todo va más o menos entre -1 y 1. Las distancias de la pista se miden en metros, así sirve en cualquier
 // circuito sin importar el tamaño de sus celdas.
@@ -65,6 +66,7 @@ const MORE_OPPONENTS = 2; // el 7.º y el 8.º, al final
 const RIVAL_VALUES = 7; // acelerador, freno, volante, motor, agarre, daño y lado de la pista de cada rival
 export const ALL_OPPONENTS = OPPONENTS + MORE_OPPONENTS;
 export const OPPONENT_INPUT_SIZE = MORE_OPPONENTS * OPPONENT_VALUES + ALL_OPPONENTS * RIVAL_VALUES;
+export const AHEAD_START = CAR_VALUES + SETUP_VALUES + POSITION_VALUES; // dónde empiezan los puntos de LOOK_AHEAD
 export const OPPONENT_START = CAR_VALUES + SETUP_VALUES + POSITION_VALUES + LOOK_AHEAD.length + RAY_ANGLES.length;
 export const OPPONENT_SIZE = OPPONENTS * OPPONENT_VALUES; // dónde empiezan los rivales y cuántos valores son
 export const OPPONENT_INPUT_START = OPPONENT_START + OPPONENT_SIZE + WHEEL_VALUES + LIMIT_VALUES + DAMAGE_VALUES;
@@ -78,7 +80,7 @@ export const TYRE_INPUT_START = START_INPUT_START + START_VALUES;
 export const RISK_VALUES = 3; // por rival: zona de al lado, choque que pega el propio auto, choque que pega el otro
 export const RISK_INPUT_START = TYRE_INPUT_START + TYRE_VALUES;
 export const RISK_INPUT_SIZE = ALL_OPPONENTS * RISK_VALUES;
-export const FAR_AHEAD = [550, 660, 780, 900, 1000]; // m
+export const FAR_AHEAD = [560, 690, 840, 1010]; // m: tramos de 110, 130, 150 y 170 m, siguiendo a los de LOOK_AHEAD
 export const FAR_INPUT_START = RISK_INPUT_START + RISK_INPUT_SIZE;
 export const OBS_SIZE = FAR_INPUT_START + FAR_AHEAD.length;
 export const RISK_HORIZON = 5; // s
@@ -179,8 +181,13 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
   put(car.grass ?? (car.onGrass ? 1 : 0)); // fracción de las ruedas en el pasto
   put(car.onKerb ? 1 : 0);
 
-  // la pista más adelante: cuánto cambia su rumbo respecto del auto
-  for (const d of LOOK_AHEAD) put(wrapAngle(trackHeading(track, u + d / meters) - car.angle) / Math.PI);
+  // la pista más adelante: cuánto dobla cada tramo (el primero, respecto del auto)
+  let heading = car.angle;
+  for (const d of LOOK_AHEAD) {
+    const h = trackHeading(track, u + d / meters);
+    put(wrapAngle(h - heading) / Math.PI);
+    heading = h;
+  }
 
   // rayos hasta el borde
   for (const a of RAY_ANGLES) put(ray(track, car.x, car.y, car.angle + a) / RAY_MAX);
@@ -274,12 +281,11 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
     put(hit && !striker ? hit : 0);
   }
 
-  // la pista lejos: el giro acumulado desde el último punto de cerca, de tramo en tramo
-  let from = LOOK_AHEAD.at(-1), turn = wrapAngle(trackHeading(track, u + from / meters) - car.angle);
+  // la pista lejos: cuánto dobla cada tramo, siguiendo desde el último punto de cerca
   for (const d of FAR_AHEAD) {
-    turn += wrapAngle(trackHeading(track, u + d / meters) - trackHeading(track, u + from / meters));
-    from = d;
-    put(turn / Math.PI);
+    const h = trackHeading(track, u + d / meters);
+    put(wrapAngle(h - heading) / Math.PI);
+    heading = h;
   }
   return out;
 }
@@ -332,6 +338,18 @@ function crash(a, b) {
     return [1 - (k * RISK_STEP) / RISK_HORIZON, towardB >= towardA];
   }
   return [0, false];
+}
+
+// Para las redes de antes de los tramos (v21 y anteriores), que leían cada punto de LOOK_AHEAD respecto del auto: el
+// giro de cada tramo sumado hasta ese punto, como lo veían ellas (devuelve una copia)
+export function aheadFromCar(obs, out = new Float32Array(obs.length)) {
+  out.set(obs);
+  let turn = 0;
+  for (let k = 0; k < LOOK_AHEAD.length; k++) {
+    turn += obs[AHEAD_START + k] * Math.PI;
+    out[AHEAD_START + k] = wrapAngle(turn) / Math.PI;
+  }
+  return out;
 }
 
 // Los límites del auto respecto del de referencia, más o menos entre -1 y 1 (se calculan una vez por límites)

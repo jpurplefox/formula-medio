@@ -2,13 +2,13 @@
 // Los pesos vienen de rl/export.py: capas lineales con tanh entre ellas.
 
 import { rescue } from './ai.js';
-import { DAMAGE_VALUES, LIMIT_VALUES, OBS_SIZE, observe, OPPONENT_INPUT_SIZE, SETUP_START, SETUP_VALUES, FAR_AHEAD, RISK_INPUT_SIZE, START_INPUT_START, START_VALUES, TYRE_VALUES, WHEEL_VALUES } from './sensors.js';
+import { aheadFromCar, DAMAGE_VALUES, LIMIT_VALUES, OBS_SIZE, observe, OPPONENT_INPUT_SIZE, SETUP_START, SETUP_VALUES, FAR_AHEAD, RISK_INPUT_SIZE, START_INPUT_START, START_VALUES, TYRE_VALUES, WHEEL_VALUES } from './sensors.js';
 import { stationAt } from './track.js';
 
 export class Policy {
   // opponents: si aprendió a mirar a los demás autos (etapa 2); si no, se le pasan en cero, como al entrenar
   constructor({ obs_size, layers, opponents = false }) {
-    // las redes de antes de la pista lejos, del riesgo con cada rival, de las gomas y la nafta, del semáforo, de los pedales de los rivales, de los daños, de los límites (puesta a punto y aire) y del
+    // las redes de antes de los tramos de pista, del riesgo con cada rival, de las gomas y la nafta, del semáforo, de los pedales de los rivales, de los daños, de los límites (puesta a punto y aire) y del
     // agarre por rueda leen sólo lo de adelante (van al final); las de antes del desgaste y la variación de autos,
     // además, no reciben esos valores: se les sacan
     this.size = obs_size;
@@ -19,6 +19,9 @@ export class Policy {
       throw new Error(`La red espera ${obs_size} valores y los sensores dan ${OBS_SIZE}`);
     }
     this.opponents = opponents;
+    // las de antes de los tramos de pista (todas las que no leen el vector entero) veían cada punto respecto del auto
+    this.fromCar = obs_size < OBS_SIZE;
+    this.scratch = new Float32Array(OBS_SIZE);
     // si ve el semáforo y sube y baja las rpm ella (dos salidas más): si no, larga con las vueltas y la reacción de la IA
     // de siempre
     this.lights = obs_size >= START_INPUT_START + START_VALUES && layers.at(-1).out >= 4;
@@ -34,6 +37,7 @@ export class Policy {
 
   // obs → [volante, pedal] y, en las redes que ven el semáforo, [subir rpm, bajar rpm]: todos entre -1 y 1
   act(obs) {
+    if (this.fromCar) obs = aheadFromCar(obs, this.scratch);
     let x = obs.subarray(0, this.legacy ? this.size + SETUP_VALUES : this.size);
     if (this.legacy) {
       const y = new Float32Array(this.size);
