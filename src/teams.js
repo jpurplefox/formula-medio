@@ -2,7 +2,7 @@
 
 // color: carrocería; accent: franja y detalles de la decoración; helmet: casco; drivers: sus dos pilotos (nombre,
 // sigla para la tabla y número), inventados a partir de la grilla de 2026. Como en la F1, el primero lleva la cámara
-// de arriba, la "T", negra y el segundo, amarilla; si elegís ese equipo, manejás el auto del piloto que elijas.
+// de arriba, la "T", negra y el segundo, amarilla (como en la grilla de 2026 de verdad); si elegís ese equipo, manejás el auto del piloto que elijas.
 export const TEAMS = [
   { id: 'hierrari', name: 'Hierrari', code: 'HIE', color: '#d40000', accent: '#ffe600', helmet: '#ffe600',
     drivers: [['Carlos Le Clic', 'LEC', '16'], ['Luis Jamónton', 'JAM', '44']] },
@@ -11,9 +11,9 @@ export const TEAMS = [
   { id: 'redtoro', name: 'Red Toro', code: 'RTO', color: '#1b2550', accent: '#e8002d', helmet: '#ffc906',
     drivers: [['Max Verstapón', 'VER', '3'], ['Isaac Hachar', 'HAC', '6']] },
   { id: 'mclarron', name: 'McLarrón', code: 'MCL', color: '#ff8000', accent: '#2a73d6', helmet: '#47c7fc',
-    drivers: [['Lando Nórdico', 'NOR', '1'], ['Óscar Pistacho', 'PIS', '81']] },
+    drivers: [['Óscar Pistacho', 'PIS', '81'], ['Lando Nórdico', 'NOR', '1']] },
   { id: 'austin', name: 'Austin Martini', code: 'AUS', color: '#00594f', accent: '#cedc00', helmet: '#cedc00',
-    drivers: [['Fernando Alondra', 'ALO', '14'], ['Lance Trol', 'TRO', '18']] },
+    drivers: [['Lance Trol', 'TRO', '18'], ['Fernando Alondra', 'ALO', '14']] },
   { id: 'allpain', name: 'Allpain', code: 'ALL', color: '#0078c1', accent: '#f363b9', helmet: '#f363b9',
     drivers: [['Pedro Gaseosa', 'GAS', '10'], ['Franco Colapuntos', 'COL', '43']] },
   { id: 'willyams', name: 'Willyams', code: 'WIL', color: '#0b2463', accent: '#ffffff', helmet: '#ffffff',
@@ -23,7 +23,7 @@ export const TEAMS = [
   { id: 'haash', name: 'Haash', code: 'HAA', color: '#e9e9e9', accent: '#d50000', helmet: '#d50000',
     drivers: [['Esteban Ocono', 'OCO', '31'], ['Oliver Bermudas', 'BER', '87']] },
   { id: 'alfatorito', name: 'AlfaTorito', code: 'ALF', color: '#f2f2f2', accent: '#1634cc', helmet: '#e8e8e8',
-    drivers: [['Liam Leyson', 'LEY', '30'], ['Arvid Blablá', 'BLA', '41']] },
+    drivers: [['Arvid Blablá', 'BLA', '41'], ['Liam Leyson', 'LEY', '30']] },
   { id: 'cadillaque', name: 'Cadillaque', code: 'CAD', color: '#141414', accent: '#c9a54a', helmet: '#f2f2f2',
     drivers: [['Checo Pereza', 'PER', '11'], ['Valtteri Botas', 'BOT', '77']] },
 ];
