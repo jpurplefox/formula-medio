@@ -8,7 +8,7 @@
 import { edgeInfo, sampleField, stationAt } from './track.js';
 import { RubberMap } from './rubber.js';
 import { collideWalls } from './collision.js';
-import { carLimits, DEFAULT_TUNE, GRAVITY, SEA_AIR, tyreCurve } from './dynamics.js';
+import { brakeBias, carLimits, CG_HEIGHT, DEFAULT_TUNE, GRAVITY, SEA_AIR, TRACK_WIDTH, tyreCurve, weightShift, WHEELBASE } from './dynamics.js';
 import { applyHit, deflate, NO_DAMAGE, steerPull, wheelDrag as damageDrag, wheelGrip as damageGrip } from './damage.js';
 
 // Auto por defecto, por si no se carga uno (como cars/f1-2025.json)
@@ -19,15 +19,15 @@ export const DEFAULT_PROFILE = {
   gearKmhPerRpm: [0.00954, 0.01137, 0.01354, 0.01613, 0.01896, 0.02184, 0.02501, 0.02828],
   mass: 810,
   frontShare: 0.445,
-  mu: 2.2,
+  mu: 1.9,
   loadExp: 0.85,
-  brakeMu: 0.95,
-  tractionMu: 0.95,
-  balanceRange: 0.06,
-  power: 621600,
+  brakeMu: 1.1,
+  tractionMu: 1.15,
+  rollRange: 0.3,
+  power: 620400,
   engineBrake: 2.6,
   rolling: 0.15,
-  aero: { clMin: 3.511, clMax: 5.091, frontWing: 0.4, ldFront: 8, ldRear: 1.896, cdBody: 1.092 },
+  aero: { clMin: 4.85, clMax: 7.032, frontWing: 0.4, ldFront: 8, ldRear: 2.278, cdBody: 1.058 },
 };
 
 // Superficies (surfaceAt de track.js dice cuál hay debajo de cada rueda):
@@ -68,13 +68,27 @@ export const WHEELS = [[1.65, -0.8], [1.65, 0.8], [-1.7, -0.79], [-1.7, 0.79]];
 const REVERSE_MAX = 8;
 const REVERSE_ACCEL = 5;
 const MAX_YAW = 1.6; // rad/s: giro máximo a baja velocidad
-const WHEELBASE = 3.35; // m, entre los ejes (como en carmodel.js)
 const MAX_WHEEL_ANGLE = 0.35; // rad: lo más que doblan las ruedas delanteras, a paso de hombre
 const MIN_WHEEL_ANGLE = 0.05; // rad: aun a fondo se ve que doblan un poco
-// rebufo: detrás de otro auto el aire llega frenado y hay menos resistencia
-const DRAFT_DIST = 45; // m: hasta dónde se siente
-const DRAFT_WIDTH = 1.6; // m de costado: el ancho de la estela
-const DRAFT_DRAG = 0.3; // fracción de la resistencia del aire que se ahorra pegado al de adelante
+// La estela: detrás de otro auto el aire llega frenado y revuelto. Hay menos resistencia (rebufo: más punta en la
+// recta) pero también menos carga aerodinámica (aire sucio), sobre todo adelante: en las curvas rápidas el que sigue
+// de cerca subvira, y frenando se le bloquean antes las ruedas.
+const DRAFT_DIST = 120; // m: hasta dónde se siente (cae con el cuadrado: a 20 m queda el 70 %; a 45 m, el 40 %)
+const DRAFT_WIDTH = 2.5; // m de costado: el ancho de la estela
+const DRAFT_DRAG = 0.35; // fracción de la resistencia del aire que se ahorra pegado al de adelante
+// y la carga de cada eje que se pierde pegado al de adelante; cae mucho más rápido con la distancia que el rebufo
+// (con la estela a la DIRTY_FADE): a 10 m se pierde ~30 % de la carga (33 % adelante, 26 % atrás), a 20 m ~15 % y a
+// 40 m ~3 %. Es lo que se publicó de los F1 de 2023 en adelante (más de 30 % siguiendo de cerca; el objetivo del
+// reglamento de 2022 era 18 % a 10 m y 4 % a 20 m, y los autos anteriores perdían 45 % y 35 %)
+const DIRTY_FRONT = 0.6, DIRTY_REAR = 0.48, DIRTY_FADE = 3.5;
+// La carga aerodinámica también cambia con cómo va el auto: frenando la trompa baja y el piso carga más adelante y
+// menos atrás (PITCH_AERO por cada g de frenada; acelerando, al revés), y de costado el aire no entra derecho al
+// piso ni a los alerones (pasados YAW_AERO_FREE rad de deriva del auto, YAW_AERO por rad, hasta YAW_AERO_MAX)
+const PITCH_AERO = 0.008, PITCH_MAX = 0.05;
+const YAW_AERO = 1, YAW_AERO_FREE = 0.1, YAW_AERO_MAX = 0.5;
+// nafta: cada kilo pesa (dynamics.js); el motor a fondo gasta los 100 kg/h del reglamento
+export const FUEL_FLOW = 100 / 3600; // kg/s
+export const FUEL_PER_KM = 0.37; // kg: lo que se carga por cada km de carrera
 // Gomas de costado (modelo de bicicleta: cada eje como una sola rueda). El auto tiene velocidad hacia adelante
 // (speed), de costado (slip) y de giro (omega); cada eje empuja de costado según su deriva (tyreCurve de
 // dynamics.js), hasta lo que agarra (dynamics.js más el traslado de peso, lo que pisa y lo que gasta en frenar o
@@ -96,20 +110,39 @@ const LOCK_SLIP = 0.45;
 // las de atrás pueden empujar sin dejar de sostener la curva. tc es qué parte del círculo de fricción de la cola
 // puede usarse entre doblar y empujar (0 = sin control); si la cola ya está deslizando, corta casi todo
 export const TRACTION_CONTROL = { off: 0, low: 0.97, high: 0.85 };
+// ABS (ayuda, sobre todo para el teclado, que frena todo o nada): si se pide frenar más de lo que aguantan las gomas,
+// suelta freno hasta ABS_USE de ese límite: las ruedas no se bloquean y queda algo de agarre para doblar
+const ABS_USE = 0.95;
 const TC_FLOOR = 0.1; // aun con la cola al límite, deja empujar esta parte de la tracción (para no quedarse clavado)
 const WHEEL_SIDE = 0.8; // m: distancia de cada rueda al centro, de costado (para el tirón de una rueda en el pasto)
 // traslado de peso: al frenar el peso se pasa adelante y al acelerar, atrás; cada eje agarra según la carga que
 // tiene y lo que le queda después de frenar o traccionar (círculo de fricción). En una curva sin pedales da lo que
 // dice dynamics.js; frenando fuerte la cola queda liviana y se abre, y a fondo en una curva lenta también.
-const CG_H = 0.25; // m: altura del centro de gravedad
-const MAX_SHIFT = 0.07; // lo más que se pasa de un eje al otro (fracción del peso)
-const LOAD_EXP = 0.8; // el doble de carga da 2^0,8 = 1,74 veces el agarre: al pasarse el peso se pierde agarre
-const BRAKE_USE = 0.7; // frenando a fondo, qué parte del agarre de las gomas se va en frenar
-const BRAKE_BIAS = 0.57; // parte de la frenada que hacen las de adelante (los equipos la corren adelante: así, frenando
-// en curva, la cola no se queda sin agarre de costado)
-const LONG_GRIP = 1.25; // las gomas agarran más para empujar o frenar que de costado: empujando a fondo en recta
-// usan 3/4 de su agarre (la tracción de dynamics.js), y lo que queda alcanza para doblar con cuidado
-const TRANSFER_RATE = 10; // 1/s: el peso tarda un instante en pasarse (lo frena la suspensión)
+// (la altura del centro de gravedad, el reparto de la frenada y cuánto agarra la goma a lo largo están en
+// dynamics.js)
+const TRANSFER_RATE = 20; // 1/s: el peso tarda un instante en pasarse (lo frena la suspensión)
+// Bloqueos y patinamiento: si a un eje se le pide frenar o empujar más de lo que agarra en ese momento, sus ruedas
+// se bloquean (o patinan): arrastrándose frenan o empujan sólo LONG_SLIDE de lo que agarraban, casi no sostienen de
+// costado (SLIDING_SIDE: con las de adelante bloqueadas el auto sigue derecho; con las de atrás, la cola se va) y
+// se calientan y se gastan mucho (un plano). Vuelven a agarrar cuando lo pedido baja de LONG_RELEASE del agarre
+const LONG_SLIDE = 0.75, SLIDING_SIDE = 0.15, LONG_RELEASE = 0.9;
+// Temperatura de las gomas (°C, una por rueda). Se calientan con lo que deslizan (doblando, frenando, empujando, y
+// mucho bloqueadas o patinando) y con rodar cargadas; el aire y el asfalto las enfrían, más a más velocidad. Agarran
+// todo entre TEMP_LOW y TEMP_HIGH; más frías (la largada: salen de las mantas a TYRE_START) o más calientes
+// (deslizando de más), menos. Las recalentadas además se gastan más rápido.
+export const TYRE_START = 80, TEMP_LOW = 85, TEMP_HIGH = 105;
+const TRACK_TEMP = 35;
+const COLD_LOSS = 0.14, COLD_SPAN = 50; // a COLD_SPAN grados por debajo de TEMP_LOW agarra COLD_LOSS menos
+const HOT_LOSS = 0.2, HOT_SPAN = 40;
+const HEAT = 0.17; // °C por cada m²/s³ de deslizamiento de un eje (fuerza por kilo de auto × velocidad de deslizamiento)
+const HEAT_SPEED = 30; // m/s: más rápido, la goma pasa menos tiempo en el piso y se queda con menos de ese calor
+const ROLL_HEAT = 0.015; // °C por metro rodado con la carga del auto quieto
+const COOL = 0.004, COOL_SPEED = 0.0009; // 1/s y 1/m: enfriamiento hacia TRACK_TEMP
+const LONG_SLIP = 0.02; // frenando o empujando sin bloquear, la goma desliza esta parte de la velocidad
+const SPIN_SPEED = 6; // m/s que patina de más una rueda que perdió tracción
+const HOT_WEAR = 2; // una goma HOT_SPAN grados pasada se gasta esto más
+const LOCK_WEAR = 25; // y una bloqueada, estas veces más (el plano)
+export const tempGrip = (t) => 1 - (t < TEMP_LOW ? COLD_LOSS * Math.min(1, (TEMP_LOW - t) / COLD_SPAN) ** 1.5 : t > TEMP_HIGH ? HOT_LOSS * Math.min(1, (t - TEMP_HIGH) / HOT_SPAN) ** 1.5 : 0);
 // el pie no llega a fondo de golpe: con teclado (todo o nada) el acelerador tarda un instante en abrirse, así
 // pisar en plena curva no suelta la cola de un saque (con joystick casi no se nota: va siguiendo al gatillo)
 const THROTTLE_RISE = 3; // 1/s: de nada a fondo en 1/3 s
@@ -125,11 +158,13 @@ const LAUNCH_TIME = 1.6; // cuánto dura el efecto de la largada (s)
 const REV_RATE = 6500; // cuánto suben las rpm por segundo en punto muerto, a fondo (más lento cerca del corte)
 const REV_DROP = 7000; // y cuánto bajan sin acelerar
 const REV_BASE = 8000, REV_SPAN = 4000, REV_FOLLOW = 40000; // la red en la grilla (revBy): vueltas sin pedir nada y cuánto suma o resta cada salida a fondo
-// desgaste de las gomas: se gastan al andar, más cuanto más se exige su agarre (doblando, frenando, acelerando,
-// deslizando); gastadas del todo agarran y frenan WEAR_GRIP menos
-const WEAR_GRIP = 0.08;
+// desgaste de las gomas (uno por rueda): se gastan al andar, más cuanto más se exige su agarre (doblando, frenando,
+// acelerando, deslizando) y más las que más trabajan (las de afuera, las que patinan); gastadas del todo agarran y
+// frenan WEAR_GRIP menos, y al final (pasado WEAR_CLIFF_FROM) se caen de golpe otro WEAR_CLIFF
+const WEAR_GRIP = 0.08, WEAR_CLIFF = 0.06, WEAR_CLIFF_FROM = 0.85;
+export const wearGrip = (w) => 1 - WEAR_GRIP * w - WEAR_CLIFF * Math.max(0, (w - WEAR_CLIFF_FROM) / (1 - WEAR_CLIFF_FROM)) ** 2;
 const WEAR_BASE = 0.3; // parte del desgaste que es sólo por andar, aunque sea derecho y suave
-const WEAR_USE = 1.33; // la otra parte se escala para que una vuelta normal promedie 1 (medido con rl/wear.js)
+const WEAR_USE = 1.9; // la otra parte se escala para que una vuelta normal promedie 1 (medido con rl/wear.js)
 
 // Variación entre autos: multiplicadores sobre el auto (1 = igual). La red los recibe como entradas.
 //   power     empuje del motor
@@ -188,17 +223,17 @@ export function wheelAngle(steer, speed, limits) {
   return steer * Math.max(MIN_WHEEL_ANGLE, steerLock(speed, limits));
 }
 
-// Rebufo de car (0..1) por los autos que tiene adelante: más cuanto más cerca y más alineado con la estela.
+// La estela de los autos que car tiene adelante (0..1): más cuanto más cerca y más alineado.
 // meters: metros por celda del circuito.
 export function slipstream(car, cars, meters) {
   const fx = Math.cos(car.angle), fy = Math.sin(car.angle);
   let best = 0;
   for (const o of cars) {
-    if (o === car || Math.cos(o.angle - car.angle) < 0.9) continue; // la estela va para donde va el otro
+    if (o === car || o.gone || Math.cos(o.angle - car.angle) < 0.9) continue; // la estela va para donde va el otro
     const dx = (o.x - car.x) * meters, dy = (o.y - car.y) * meters;
     const ahead = dx * fx + dy * fy, side = Math.abs(-dx * fy + dy * fx);
     if (ahead < 3 || ahead > DRAFT_DIST || side > DRAFT_WIDTH) continue;
-    best = Math.max(best, (1 - ahead / DRAFT_DIST) * (1 - side / DRAFT_WIDTH));
+    best = Math.max(best, (1 - ahead / DRAFT_DIST) ** 2 * (1 - side / DRAFT_WIDTH));
   }
   return best;
 }
@@ -231,7 +266,15 @@ export class Car {
     this.profile = profile;
     this.speed = 0;
     this.steer = 0; // -1..1 suavizado, para animar el auto
-    this.draft = 0; // rebufo, 0..1 (lo calcula el juego con slipstream antes de cada update)
+    this.draft = 0; // la estela del de adelante, 0..1 (la calcula el juego con slipstream antes de cada update)
+    this.fuel = 0; // kg de nafta encima
+    this.fuelFlow = FUEL_FLOW; // kg/s que gasta a fondo (0: no gasta)
+    this.tyreTemp = [TYRE_START, TYRE_START, TYRE_START, TYRE_START]; // °C, por rueda (ver WHEELS)
+    this.tyreWear = [0, 0, 0, 0]; // desgaste de cada goma, 0 (nueva) a 1 (gastada)
+    this.locked = [false, false]; // ruedas bloqueadas, adelante y atrás
+    this.wheelspin = false; // las de atrás patinando
+    this.cornering = 0; // parte del agarre de costado de la cola que se usó en el paso anterior (para el control de tracción)
+    this.traction = 0; // lo más que pueden empujar las de atrás en este momento (m/s²)
     this.wheels = ['road', 'road', 'road', 'road']; // qué pisa cada rueda (ver WHEELS)
     this.wheelGrip = [1, 1, 1, 1]; // agarre y freno de cada rueda según lo que pisa, cambiando de a poco
     this.wheelDrag = [0, 0, 0, 0];
@@ -262,8 +305,11 @@ export class Car {
     this.rpm = IDLE_RPM;
     this.manual = false;
     this.tc = 0; // control de tracción (TRACTION_CONTROL): 0 = sin control
-    this.tcCap = Infinity; // lo más que puede empujar el motor según el control de tracción (m/s², del paso anterior)
     this.tcCut = false; // si en este paso el control de tracción cortó motor
+    this.abs = false; // ABS: los frenos sueltan antes de que una rueda se bloquee
+    this.absCut = false; // si en este paso el ABS soltó freno
+    this.brakeCap = 0; // lo más que pueden frenar las gomas en este momento (m/s²)
+    this.pedalLimit = 1; // el pedal de freno (0..1) con el que se llega a ese límite
     this.setup = SAME_SETUP;
     this.tune = DEFAULT_TUNE; // puesta a punto (dynamics.js): la del circuito, salvo que tenga una propia (ownTune)
     this.ownTune = null;
@@ -272,8 +318,16 @@ export class Car {
     this.damage = NO_DAMAGE; // lo que tiene roto (damage.js)
     this.damageLevel = 'off'; // si los golpes rompen: 'off', 'reduced' o 'real'
     this.rubber = null; // la goma sobre la pista (RubberMap de rubber.js), si la hay: cambia el agarre de cada rueda
-    this.wear = 0; // desgaste de las gomas, 0 (nuevas) a 1 (gastadas)
     this.wearRate = 0; // desgaste por metro andando normal (0 = no se gastan); lo fija el juego según la carrera
+  }
+
+  // desgaste de las gomas, 0 (nuevas) a 1 (gastadas): el promedio de las cuatro (al fijarlo, las cuatro iguales)
+  get wear() {
+    const w = this.tyreWear;
+    return (w[0] + w[1] + w[2] + w[3]) / 4;
+  }
+  set wear(x) {
+    this.tyreWear = [x, x, x, x];
   }
 
   get gears() {
@@ -283,10 +337,10 @@ export class Car {
   // Lo que puede hacer el auto (dynamics.js) con su puesta a punto, su variación, el aire y sus daños: se
   // recalcula cuando cambia alguno (se reemplazan, no se modifican)
   get limits() {
-    const c = this._limits;
-    if (c && c.profile === this.profile && c.setup === this.setup && c.tune === this.tune && c.air === this.air && c.damage === this.damage) return c.lim;
-    const lim = carLimits(this.profile, this.tune, this.air, this.setup, this.damage);
-    this._limits = { profile: this.profile, setup: this.setup, tune: this.tune, air: this.air, damage: this.damage, lim };
+    const c = this._limits, fuel = Math.round(this.fuel); // la nafta, de a kilo
+    if (c && c.profile === this.profile && c.setup === this.setup && c.tune === this.tune && c.air === this.air && c.damage === this.damage && c.fuel === fuel) return c.lim;
+    const lim = carLimits(this.profile, this.tune, this.air, this.setup, this.damage, fuel);
+    this._limits = { profile: this.profile, setup: this.setup, tune: this.tune, air: this.air, damage: this.damage, fuel, lim };
     return lim;
   }
 
@@ -401,7 +455,6 @@ export class Car {
     this.rough = surf.reduce((a, sf) => a + sf.rough, 0) / 4;
     this.onGrass = this.grass >= 0.5;
     this.onKerb = this.wheels.includes('kerb');
-    this.surfaceWear = surf.reduce((a, sf) => a + (sf.wear ?? 1), 0) / 4;
     // cuánto levantan al auto el piano y la salchicha debajo de cada rueda
     const L = (this.wheelLift = under.map((u) => u.lift));
     this.lift = (L[0] + L[1] + L[2] + L[3]) / 4;
@@ -441,10 +494,49 @@ export class Car {
     this.launchTime = Math.max(0, this.launchTime - dt);
     this.rpm += (Math.min(rpm, p.maxRpm) - this.rpm) * Math.min(1, dt * 20);
 
-    // sin pedales frenan el aire, la rodadura y el freno motor (en el rebufo, menos aire)
-    const lim = this.limits, setup = this.setup, tyres = 1 - WEAR_GRIP * this.wear;
-    const losses = lim.coast(v) - this.draft * DRAFT_DRAG * lim.drag(v);
+    const lim = this.limits, setup = this.setup, FS = lim.frontShare;
+    // el aire: en la estela de otro hay menos resistencia y menos carga; de costado, menos carga; frenando, la carga
+    // se corre adelante
+    const beta = v > 10 ? Math.abs(Math.atan2(this.slip, v)) : 0;
+    const askew = 1 - Math.min(YAW_AERO_MAX, YAW_AERO * Math.max(0, beta - YAW_AERO_FREE));
+    const pitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, (-this.aLon / GRAVITY) * PITCH_AERO));
+    const lateral = Math.abs(this.omega) * v;
+    const dirty = this.draft ** DIRTY_FADE;
+    const k = [(1 - DIRTY_FRONT * dirty) * askew * (1 + pitch), (1 - DIRTY_REAR * dirty) * askew * (1 - pitch)];
+    const airDrag = lim.drag(v) * (1 - this.draft * DRAFT_DRAG);
+    // sin pedales frenan el aire, la rodadura y el freno motor
+    const losses = lim.coast(v) - lim.drag(v) + airDrag;
+
+    // Las gomas. Agarre de cada eje (dynamics.js: carga aerodinámica, alerones, balance; con daño de un lado,
+    // depende de para dónde dobla): doblando al límite y en recta (para frenar y empujar)
+    const side = Math.abs(this.omega) > 0.05 ? Math.sign(this.omega * Math.sign(this.speed || 1)) : 0;
+    const [axleF, axleR] = lim.axles(v, side, k);
+    const [longF, longR] = lim.straight(v, k);
+    const grip = lim.lateral(v); // el del auto entero con aire limpio: lo que aguanta el eje que menos agarra
+    // carga sobre las gomas (por kg): el peso más la carga aerodinámica
+    const load = GRAVITY * lim.load(v, k);
+    // en una curva la rueda de afuera lleva más carga (outer: su parte de la del eje): pesa más lo que pisa, su
+    // temperatura y su desgaste, y es la que más se calienta y se gasta. o: el lado de afuera (0 izquierda)
+    const o = side > 0 ? 0 : 1;
+    const outer = side ? 0.5 + 0.5 * Math.min(1, (2 * lateral * CG_HEIGHT) / (TRACK_WIDTH * load)) : 0.5;
+    const tyre = (i) => tempGrip(this.tyreTemp[i]) * wearGrip(this.tyreWear[i]);
+    const pair = (f, i) => outer * f(i + o) + (1 - outer) * f(i + 1 - o);
+    const tyreF = pair(tyre, 0), tyreR = pair(tyre, 2);
+    const frontSurf = pair((i) => wg[i], 0), rearSurf = pair((i) => wg[i], 2);
+    // traslado de peso: qué parte pasa adelante (frenando) o atrás (acelerando), y cuánto agarra cada eje con esa
+    // carga (cada kilo de más agarra un poco menos)
+    const shift = weightShift(this.aLon, load);
+    const frontLoad = ((FS + shift) / FS) ** lim.loadExp;
+    const rearLoad = ((1 - FS - shift) / (1 - FS)) ** lim.loadExp;
+    // lo más que puede frenar cada eje y empujar el trasero en este momento (m/s² de todo el auto)
+    const loadF = longF * FS * frontLoad, loadR = longR * (1 - FS) * rearLoad;
+    const capF = lim.longBrake * loadF * frontSurf * tyreF, capR = lim.longBrake * loadR * rearSurf * tyreR;
+    const traction = (this.traction = lim.longDrive * loadR * rearSurf * tyreR);
+
     let drive = 0, braking = 0; // lo que empujan y frenan las gomas (m/s²), para el balance
+    let useF = 0, useR = 0; // parte del agarre de cada eje que se va en frenar o empujar
+    let lockF = false, lockR = false, spin = false;
+    let forceF = 0, forceR = 0; // lo que frenan las de adelante y lo que frenan o empujan las de atrás (m/s²)
     if (this.speed < 0 || (brk && !thr && this.speed <= 0.5)) {
       // marcha atrás: el freno empuja para atrás; el acelerador primero frena
       if (thr) this.speed += lim.accel(v) * thr * dt;
@@ -453,20 +545,55 @@ export class Car {
         this.speed = Math.max(-REVERSE_MAX, this.speed - REVERSE_ACCEL * brk * dt);
       } else this.speed = Math.min(0, this.speed + losses * dt);
     } else {
-      // a fondo, todo el empuje del motor (hasta lo que da la tracción); a medias, una parte. Cerca de la
-      // velocidad punta el aire se come todo el empuje (en el rebufo, menos aire: más punta)
-      // en la largada, si se ahogó o patina, llega menos aceleración al piso
-      const launch = this.launchTime > 0 ? this.launchFactor : 1;
-      const full = this.speed < Math.max(surf[2].maxSpeed, surf[3].maxSpeed) ? lim.thrust(v) * power * launch : 0;
+      // a fondo, todo lo que empuja el motor (cerca de la velocidad punta el aire se lo come todo); a medias, una
+      // parte. El motor puede más que las gomas hasta bien entrada la 4ª: sin control de tracción hay que dosificar
+      const full = this.speed < Math.max(surf[2].maxSpeed, surf[3].maxSpeed) ? lim.engine(v) * power : 0;
       // acelerando, el motor no frena: el pie levanta el freno motor (con el pie a fondo, todo)
       drive = thr * (full + lim.coast(v) - lim.drag(v) - lim.rolling);
-      // el control de tracción corta lo que la cola no puede empujar sin soltarse
-      this.tcCut = this.tc > 0 && drive > this.tcCap;
-      if (this.tcCut) drive = this.tcCap;
-      // frenada: lo que agarran las gomas (más a más velocidad, por la carga aerodinámica) más el aire
-      braking = brk * Math.max(0, lim.brake(v) * tyres + lim.drag(v) + lim.rolling - losses);
+      // en la largada, si se ahogó o patina, llega menos aceleración al piso
+      if (this.launchTime > 0) drive = Math.min(drive, this.launchFactor * lim.traction(v, k));
+      // el control de tracción corta lo que la cola no puede empujar sin soltarse: de su agarre, lo que no usó para
+      // doblar en el paso anterior
+      const tcCap = Math.max(TC_FLOOR, Math.sqrt(Math.max(0, this.tc ** 2 - this.cornering ** 2))) * traction;
+      this.tcCut = this.tc > 0 && drive > tcCap;
+      if (this.tcCut) drive = tcCap;
+      // frenada: el pedal manda la fuerza de los frenos, de nada a lim.brakeMax (lo que aguantan las gomas a la
+      // velocidad punta), repartida entre los ejes. Lo que aguantan las gomas en cada momento (brakeCap) depende de la
+      // carga (menos a menos velocidad, en el aire sucio de otro o mientras el peso no pasó adelante), de lo que pisan
+      // y de cómo están: pedir más que eso las bloquea. pedalLimit: el pedal que llega justo a ese límite
+      const bias = brakeBias(loadF, loadR, lim.brakeFwd);
+      const extra = lim.drag(v) + lim.rolling - losses;
+      this.brakeCap = Math.min(capF / bias, capR / (1 - bias));
+      this.pedalLimit = Math.min(1, Math.max(0, this.brakeCap / Math.max(lim.brakeMax + extra, 1e-6)));
+      braking = brk * Math.max(0, lim.brakeMax + extra);
+      // ABS: suelta freno (de los dos ejes) para que ninguno pase de ABS_USE de su agarre
+      this.absCut = this.abs && braking > ABS_USE * this.brakeCap;
+      if (this.absCut) braking = ABS_USE * this.brakeCap;
+      let brakeF = braking * bias;
+      let rear = drive - (braking - brakeF); // lo que hacen las de atrás: empujar (+) o frenar (-)
+      const over = (use, was) => use > 1 || (was && use > LONG_RELEASE);
+      useF = brakeF / Math.max(capF, 1e-6);
+      lockF = brakeF > 0 && over(useF, this.locked[0]);
+      if (lockF) brakeF = LONG_SLIDE * capF;
+      if (rear < 0) {
+        useR = -rear / Math.max(capR, 1e-6);
+        lockR = over(useR, this.locked[1]);
+        if (lockR) rear = -LONG_SLIDE * capR;
+      } else {
+        useR = rear / Math.max(traction, 1e-6);
+        spin = rear > 0 && over(useR, this.wheelspin);
+        if (spin) rear = LONG_SLIDE * traction;
+      }
+      forceF = brakeF;
+      forceR = Math.abs(rear);
+      braking = brakeF + Math.max(0, -rear);
+      drive = Math.max(0, rear);
       this.speed = Math.max(0, this.speed + (drive - losses - braking) * dt);
     }
+    if (!braking) this.absCut = false;
+    this.locked = [lockF, lockR];
+    this.wheelspin = spin;
+    if (this.fuel > 0) this.fuel = Math.max(0, this.fuel - this.fuelFlow * thr * dt);
     // el peso se pasa según lo que empujan o frenan las gomas, con un poco de demora
     this.aLon += (drive - braking - this.aLon) * Math.min(1, dt * TRANSFER_RATE);
 
@@ -485,32 +612,12 @@ export class Car {
     }
 
     const sp = Math.abs(this.speed);
-    // agarre lateral de cada eje con el auto en régimen (dynamics.js: carga aerodinámica, alerones, balance; con
-    // daño de un lado, depende de para dónde dobla)
-    const side = Math.abs(this.omega) > 0.05 ? Math.sign(this.omega * Math.sign(this.speed || 1)) : 0;
-    const [axleF, axleR] = lim.axles(sp, side);
-    const grip = Math.min(axleF, axleR) * tyres; // el del auto entero: lo que aguanta el eje que menos agarra
-    // carga sobre las gomas (por kg): el peso más la carga aerodinámica
-    const load = GRAVITY * lim.load(sp);
-    // cada eje agarra según lo que pisan sus dos ruedas
-    const frontSurf = (wg[0] + wg[1]) / 2, rearSurf = (wg[2] + wg[3]) / 2;
-    // balance: qué parte del peso pasa adelante (frenando) o atrás (acelerando), y cuánto agarra cada eje
-    // para doblar con esa carga y lo que le queda después de frenar o empujar
-    const FS = lim.frontShare;
-    const shift = Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT, (-this.aLon * CG_H) / (WHEELBASE * load)));
-    const usage = (x) => Math.sqrt(1 - Math.min(1, x) ** 2);
-    const frontLoad = ((FS + shift) / FS) ** LOAD_EXP;
-    const rearLoad = ((1 - FS - shift) / (1 - FS)) ** LOAD_EXP;
-    // frenando, cada eje gasta en frenar su parte de la frenada (BRAKE_BIAS) sobre lo que agarra; el empuje del
-    // motor va todo a las de atrás
-    const braked = braking > 0 ? brk * BRAKE_USE : 0;
-    const gripFront = FS * frontLoad, gripRear = (1 - FS) * rearLoad, gripBoth = gripFront + gripRear;
-    const brakeF = (braked * BRAKE_BIAS * gripBoth) / gripFront, brakeR = (braked * (1 - BRAKE_BIAS) * gripBoth) / gripRear;
-    const front = axleF * tyres * frontSurf * frontLoad * usage(brakeF);
-    // lo que pueden empujar las traseras sobre lo que pisan (m/s² de todo el auto)
-    const traction = axleR * tyres * rearSurf * (1 - FS) * LONG_GRIP;
-    const rearSteady = axleR * tyres * rearSurf; // lo que agarra la cola sin frenar ni empujar
-    const rear = rearSteady * rearLoad * usage(brakeR + drive / traction / rearLoad);
+    // lo que agarra de costado cada eje (m/s² por kilo sobre el eje): con su carga, lo que pisa, cómo están sus gomas
+    // y lo que le queda después de frenar o empujar (círculo de fricción); bloqueado o patinando, casi nada
+    const left = (use, sliding) => (sliding ? SLIDING_SIDE : Math.sqrt(1 - Math.min(1, use) ** 2));
+    const front = axleF * tyreF * frontSurf * frontLoad * left(useF, lockF);
+    const rearSteady = axleR * tyreR * rearSurf * rearLoad; // lo que agarra la cola sin frenar ni empujar
+    const rear = rearSteady * left(useR, lockR || spin);
     this.grip = [front / grip, rear / grip]; // para mostrarlo o probarlo: 1 es lo que agarra en régimen
 
     // volante: con una suspensión de adelante torcida, la dirección tira para ese lado
@@ -529,21 +636,25 @@ export class Car {
     // marcha de la goma), pero sin pasarse de lo que frenaría del todo ese deslizamiento en un paso (k: cuánto
     // cambia la velocidad de costado del eje por cada m/s² que empuja ahí, contando el giro que provoca)
     const h = dt / SUBSTEPS;
-    const axle = (across, along, most, k) => {
+    const axle = (across, along, most, kk) => {
       const f = -most * tyreCurve(across / (PEAK_SLIP * Math.max(Math.abs(along), SLIP_SPEED)), SLIDE);
-      const cap = (SETTLE * Math.abs(across)) / (h * k);
+      const cap = (SETTLE * Math.abs(across)) / (h * kk);
       return Math.max(-cap, Math.min(cap, f));
     };
     const kF = 1 + (A * A) / YAW_K2, kR = 1 + (B * B) / YAW_K2;
-    let lastR = 0, lastSlipR = 0;
+    let lastR = 0, lastSlipR = 0, heatF = 0, heatR = 0;
     for (let i = 0; i < SUBSTEPS; i++) {
       // velocidad de costado de cada eje: la del auto más la que le da el giro (adelante suma, atrás resta);
       // la delantera, medida según para dónde apuntan las ruedas
       const sideF = this.slip + A * this.omega, sideR = this.slip - B * this.omega;
-      const fF = axle(sideF * cd - this.speed * sd, this.speed * cd + sideF * sd, gripF, kF);
+      const acrossF = sideF * cd - this.speed * sd;
+      const fF = axle(acrossF, this.speed * cd + sideF * sd, gripF, kF);
       const fR = axle(sideR, this.speed, gripR, kR);
       lastR = fR;
       lastSlipR = sideR / (PEAK_SLIP * Math.max(Math.abs(this.speed), SLIP_SPEED));
+      // lo que se calientan: la fuerza de costado por la velocidad a la que la goma desliza de costado
+      heatF += Math.abs(fF * acrossF);
+      heatR += Math.abs(fR * sideR);
       // lo que empujan las gomas, en el marco del auto (las delanteras dobladas también frenan un poco), y el giro
       // del auto: la velocidad gira al revés en su marco (lo que era de costado pasa a ser de marcha y al revés)
       const ax = -fF * sd, ay = fF * cd + fR, vx = this.speed;
@@ -555,19 +666,33 @@ export class Car {
       this.x += ((ca * this.speed - sa * this.slip) * h) / M;
       this.y += ((sa * this.speed + ca * this.slip) * h) / M;
     }
-    // control de tracción, para el paso siguiente: qué parte del agarre de la cola (sin empujar) se va en doblar, y
-    // cuánto le queda para empujar; con la cola pasada del pico (deslizando), casi nada
-    if (this.tc > 0) {
-      const rearAll = (1 - FS) * rearSteady * rearLoad * usage(brakeR) * REAR_MARGIN;
-      const cornering = Math.abs(lastSlipR) > 1 ? 1 : Math.min(1, Math.abs(lastR) / Math.max(rearAll, 1e-6));
-      const push = Math.max(TC_FLOOR, Math.sqrt(Math.max(0, this.tc ** 2 - cornering ** 2)));
-      this.tcCap = push * traction * rearLoad;
+    // para el control de tracción del paso siguiente: qué parte del agarre de la cola (sin empujar) se fue en doblar;
+    // con la cola pasada del pico (deslizando), toda
+    this.cornering = Math.abs(lastSlipR) > 1 ? 1 : Math.min(1, Math.abs(lastR) / Math.max((1 - FS) * rearSteady * REAR_MARGIN, 1e-6));
+
+    // temperatura: cada eje se calienta con lo que desliza de costado (más la rueda de afuera) y a lo largo (frenando
+    // o empujando: poco si agarra, mucho bloqueado o patinando), y cada rueda con lo que rueda cargada
+    const slideF = lockF ? v : LONG_SLIP * v, slideR = lockR ? v : LONG_SLIP * v + (spin ? SPIN_SPEED : 0);
+    const axleLoad = lim.loads(v, k), cool = COOL + COOL_SPEED * sp;
+    const share = (i) => (i % 2 === o ? outer : 1 - outer);
+    const keep = HEAT_SPEED / (HEAT_SPEED + sp);
+    const work = [0, 1, 2, 3].map((i) => keep * (i < 2 ? (heatF / SUBSTEPS) * share(i) + (forceF * slideF) / 2 : (heatR / SUBSTEPS) * share(i) + (forceR * slideR) / 2));
+    const temp = this.tyreTemp;
+    for (let i = 0; i < 4; i++) {
+      temp[i] += (HEAT * work[i] + ROLL_HEAT * sp * axleLoad[i >> 1] * 2 * share(i) - cool * (temp[i] - TRACK_TEMP)) * dt;
     }
-    // desgaste: cuánto se exige el agarre (doblar + empujar o frenar, sobre lo que agarran) y el deslizamiento
-    const whole = grip * (frontSurf + rearSurf) / 2;
+    // desgaste: cuánto se exige el agarre (doblar + empujar o frenar, sobre lo que agarran) y el deslizamiento; de
+    // las cuatro, se gasta más la que más trabaja, la que pisa algo abrasivo, la recalentada y la bloqueada
     if (this.wearRate) {
+      const whole = (grip * (frontSurf + rearSurf)) / 2;
       const use = (sp * Math.abs(this.omega) + Math.abs(this.aLon)) / whole + Math.abs(this.slip) / 5;
-      this.wear = Math.min(1, this.wear + this.wearRate * setup.wear * (this.surfaceWear ?? 1) * (WEAR_BASE + WEAR_USE * (1 - WEAR_BASE) * use) * sp * dt);
+      const base = this.wearRate * setup.wear * (WEAR_BASE + WEAR_USE * (1 - WEAR_BASE) * use) * sp * dt;
+      const mean = (work[0] + work[1] + work[2] + work[3]) / 4, wear = this.tyreWear;
+      for (let i = 0; i < 4; i++) {
+        const hot = 1 + HOT_WEAR * Math.max(0, (temp[i] - TEMP_HIGH) / HOT_SPAN);
+        const flat = this.locked[i >> 1] ? this.wearRate * LOCK_WEAR * sp * dt : 0;
+        wear[i] = Math.min(1, wear[i] + base * (surf[i].wear ?? 1) * (mean > 1e-6 ? 0.5 + (0.5 * work[i]) / mean : 1) * hot + flat);
+      }
     }
 
     // choques contra los muros

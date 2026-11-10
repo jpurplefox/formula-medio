@@ -25,7 +25,10 @@
 
 import { readFileSync } from 'node:fs';
 import { Driver, gridSlots } from '../src/ai.js';
-import { Car, isSolid, LAUNCH_WINDOW, limitsOn, slipstream } from '../src/car.js';
+import { Car, FUEL_PER_KM, isSolid, LAUNCH_WINDOW, limitsOn, slipstream, TRACTION_CONTROL } from '../src/car.js';
+
+const NET_TC = TRACTION_CONTROL[process.env.TC ?? 'low']; // TC=off|low|high: control de tracción de los autos de la red
+const NET_ABS = process.env.ABS !== '0'; // ABS=0: sin ABS
 import { LIGHTS_OUT, lightsAt, lightsDuration, randomHold } from '../src/lights.js';
 import { randomSetup, rng } from './env.js';
 import { collideCars, logHits } from '../src/collision.js';
@@ -75,6 +78,8 @@ function race(track, seed, swap) {
     if (SPREAD) car.setup = setups[k];
     if (LEVEL && net) car.setup = LEVEL_SETUPS[k < PLAYER ? k : k - 1];
     car.wearRate = 1 / (LAPS * track.length * track.meters);
+    car.fuel = FUEL_PER_KM * LAPS * (track.length * track.meters) / 1000; // la nafta, como en el juego
+    if (net) Object.assign(car, { tc: NET_TC, abs: NET_ABS }); // y las redes, con las ayudas que llevan en el juego
     car.damageLevel = DAMAGE;
     const pace = PACES[0] + ((PACES[1] - PACES[0]) * ai) / (CARS / 2 - 1);
     if (!net) ai++;

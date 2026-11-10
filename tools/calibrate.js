@@ -126,7 +126,7 @@ const score = (car, cs) => cs.reduce((a, c) => {
 // adherencia (mu) va entre lo que da una goma slick: si no, el ajuste cambia carga aerodinámica por agarre mecánico
 // para ganar en las chicanas, que en el juego quedaron más abiertas que las de verdad.
 const KNOBS = [
-  ['mu', 1.6, 2.2], ['power', 450000, 800000], ['tractionMu', 0.5, 1.8],
+  ['mu', 1.6, 1.9], ['power', 450000, 800000], ['tractionMu', 0.9, 1.15],
   ['aero.clMin', 1, 8], ['aero.cdBody', 0.4, 1.6], ['aero.ldRear', 1, 8],
 ];
 // Cuánto más apoyo da todo el alerón que el mínimo: lo que se sabe de la F1 (de la puesta de Monza a la de Mónaco,
