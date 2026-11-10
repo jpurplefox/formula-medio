@@ -4,8 +4,20 @@
     {
       "name": "racing-game",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["serve.py", "8123"],
+      "runtimeArgs": [
+        "serve.py",
+        "8123"
+      ],
       "port": 8123
+    },
+    {
+      "name": "site",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "tools/site.sh && python3 -m http.server -d site 8124"
+      ],
+      "port": 8124
     }
   ]
 }
