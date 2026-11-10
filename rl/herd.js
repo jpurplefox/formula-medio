@@ -44,7 +44,7 @@
 import { gridSlots } from '../src/ai.js';
 import { isSolid, slipstream } from '../src/car.js';
 import { collideCars } from '../src/collision.js';
-import { ACTIONS, stationAt } from '../src/sensors.js';
+import { ACTIONS, inZone, stationAt } from '../src/sensors.js';
 import { halfWidthAt, sampleField } from '../src/track.js';
 import { NO_DAMAGE } from '../src/damage.js';
 import { randomSetup, randomTune, randomTyres, TUNE_SPREAD } from './env.js';
@@ -65,8 +65,6 @@ const CONTACT_GAP = 0.5; // s sin tocarse para que el siguiente contacto sea otr
 // castigo, en segundos: por cada segundo con otro auto en la zona de al lado, por cada toque y por cada segundo y
 // rueda en el pasto
 const ZONE_TIME = 0.4, HIT_TIME = 2.5, GRASS_TIME = 0.8;
-// la zona: el auto (5,6 × 2 m, src/collision.js) con ZONE_MARGIN m más de cada costado, del mismo largo
-const CAR_L = 5.6, CAR_W = 2, ZONE_MARGIN = 0.5;
 // desventaja de motor del de adelante en las persecuciones, al principio y al final de la fase
 const CHASE_HANDICAP = [0.2, 0.08];
 // vueltas de cada escenario y margen de tiempo (la vuelta de la trazada × SLACK, más unos segundos)
@@ -329,11 +327,11 @@ export class HerdSim extends RaceSim {
       this.rubber.update(DT, cars.map((e) => ({ car: e.car, st: e.u, lat: sampleField(track.lat, track.W, e.car.x, e.car.y) })));
     }
     const dt = DT * SUBSTEPS;
-    // la zona de al lado: un auto encimado a lo largo y a menos de ZONE_MARGIN de costado (en el marco de cada uno)
+    // la zona de al lado (inZone, src/sensors.js: la misma que ve la red)
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
         const [ahead, side] = this.rel(cars[i], cars[j]);
-        if (Math.abs(ahead) < CAR_L && Math.abs(side) < CAR_W + ZONE_MARGIN) {
+        if (inZone(ahead, side)) {
           for (const k of [i, j]) {
             cars[k].zone += dt;
             penalty[k] += ZONE_TIME * dt;
