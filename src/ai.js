@@ -24,9 +24,13 @@ const SLOW_PACE = 0.975; // ...se toman, como mucho, a esta fracción de su velo
 // motor puede más que las gomas, dosifica el acelerador según cuánto dobla (como mucho, hasta EXIT_THROTTLE); en las
 // rápidas el motor no alcanza a hacer patinar la cola y va a fondo
 const EXIT_THROTTLE = 0.35;
+const THROTTLE_USE = 0.9; // y en recta, hasta esta parte de lo que aguantan las de atrás
 // y corrige el volante según cuánto gira el auto de más o de menos respecto de lo que quiere (contravolantea si la
 // cola se abre)
 const YAW_FIX = 0.8;
+const BRAKE_FULL = 2; // m/s
+const CHORD_MAX = 1; // m: lo más que corrige el corte de la curva
+const BRAKE_USE = 0.93; // parte de lo que aguantan las gomas que usa para frenar
 const MAX_YAW = 1.6; // igual que en car.js: giro máximo a baja velocidad (rad/s)
 
 // Por cada celda de la línea central: el punto de la línea central y la normal hacia la derecha.
@@ -87,6 +91,7 @@ export class Driver {
     this.shift = 0; // cuánto se corrió de la trazada para pasar a alguien (m)
     this.stuck = 0;
     this.time = 0;
+    this.curv = 0; // curvatura que viene siguiendo (1/m, suavizada; + a la derecha)
   }
 
   // Decide los pedales y el volante. me/others: { car, st, lat } con st y lat en celdas.
@@ -149,13 +154,17 @@ export class Driver {
     // volante: persigue un punto de su trazada más adelante (pure pursuit)
     const look = (LOOK_BASE + v * LOOK_TIME) / M;
     const ua = (u + look) % L;
-    const sideAhead = Math.max(-half, Math.min(half, line.offset[ua | 0] * M + wobble + this.shift)) / M;
+    // (apuntar a un punto más adelante corta la curva por adentro, lo que la cuerda se separa del arco: mira²·curvatura/8;
+    // se corre el punto eso mismo hacia afuera, para no meter las ruedas de adentro en el pasto)
+    const chord = Math.max(-CHORD_MAX, Math.min(CHORD_MAX, ((look * M) ** 2 * this.curv) / 8));
+    const sideAhead = Math.max(-half, Math.min(half, line.offset[ua | 0] * M + wobble + this.shift - chord)) / M;
     const target = pointAt(f, ua, sideAhead);
     const dx = target.x - car.x, dy = target.y - car.y;
     const ca = Math.cos(car.angle), sa = Math.sin(car.angle);
     const fwd = dx * ca + dy * sa, right = -dx * sa + dy * ca;
     const dist = Math.hypot(dx, dy) * M || 1;
     const curv = (2 * Math.sin(Math.atan2(right, fwd))) / dist; // curvatura para llegar al punto (1/m)
+    this.curv += (curv - this.curv) * Math.min(1, dt * 5);
     const grip = car.limits.lateral(v);
     const yawMax = Math.min(MAX_YAW, grip / Math.max(v, 1)) * Math.min(1, v / 4) || 0.01;
     const wantYaw = v * curv;
@@ -167,9 +176,11 @@ export class Driver {
     const lineV = line.speed[ub | 0];
     const wantV = Math.min(lineV * (lineV < SLOW_CORNER ? Math.min(pace, SLOW_PACE) : pace), cap);
     let throttle = v < wantV - 0.3;
-    let brake = v > wantV + 0.8;
+    // el freno, progresivo: a fondo si le sobran BRAKE_FULL m/s (pisar y soltar de golpe desacomoda el auto)
+    // (y sin pasar del pedal que bloquea las ruedas: a menos velocidad hay menos carga y hay que pisar menos)
+    let brake = Math.max(0, Math.min(1, (v - wantV - 0.3) / BRAKE_FULL)) * BRAKE_USE * car.pedalLimit;
     // arrancando, a fondo aunque la trazada sea lenta
-    if (v < 3 && wantV > 3) { throttle = true; brake = false; }
+    if (v < 3 && wantV > 3) { throttle = true; brake = 0; }
 
     // si se quedó trabado (contra un muro o un auto), vuelve a la pista sobre la trazada
     this.stuck = v < 1.5 ? this.stuck + dt : 0;
@@ -178,10 +189,11 @@ export class Driver {
       this.stuck = 0;
       this.shift = 0;
     }
-    // (need: qué parte de la tracción usa el motor a fondo; en el pasto, las de atrás patinan enseguida)
-    const lim = car.limits, need = lim.thrust(v) / Math.max(lim.traction(v), 1e-3);
+    // (need: cuántas veces más empuja el motor a fondo de lo que aguantan las de atrás en ese momento: en las marchas
+    // bajas, varias; en el pasto, más todavía)
+    const lim = car.limits, need = (lim.engine(v) + lim.coast(v) - lim.drag(v) - lim.rolling) / Math.max(car.traction || lim.traction(v), 1e-3);
     const room = Math.sqrt(1 - Math.min(1, Math.abs(steer)) ** 2); // lo que les queda a las de atrás para empujar
-    const dose = Math.min(1, Math.max(EXIT_THROTTLE, room / need)) * (1 - 0.6 * car.grass);
+    const dose = Math.min(1, (THROTTLE_USE * Math.max(EXIT_THROTTLE, room)) / need);
     return { throttle: throttle ? dose : 0, brake, steer };
   }
 }

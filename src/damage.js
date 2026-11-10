@@ -60,7 +60,6 @@ const REAR_WING_SHARE = 0.35; // y del trasero
 const REAR_WING_DRAG = 0.25; // de la resistencia de la carrocería, lo que es del alerón trasero
 const FLOOR_LOSS = 0.4; // apoyo del piso que se pierde con un pontón destrozado
 const COOLING_LOSS = 0.08; // y potencia
-export const OUTER_SHARE = 0.65; // en una curva, la parte de la carga de cada eje en la rueda de afuera
 const BENT_GRIP = 0.3; // una rueda con la suspensión casi rota agarra esto menos
 const BENT_PULL = 0.06; // y tuerce la dirección (en unidades de volante)
 const FLAT_GRIP = 0.55; // una goma desinflada agarra esto menos

@@ -8,6 +8,7 @@ import { curvature, halfWidthAt } from './track.js';
 const MARGIN = 1.3; // distancia mínima de la trazada al borde de la pista (m): medio auto y un poco más
 const GRIP_USE = 0.94; // fracción del agarre lateral que usa la trazada (un poco de margen)
 const BRAKE_USE = 0.85; // fracción de la frenada máxima, para que los puntos de frenada sean alcanzables
+const BRAKE_TURNING = 0.3; // doblando al límite todavía se puede frenar esta parte (soltando el freno al entrar)
 const BEND_RADIUS = 400; // radio (m) por debajo del cual la pista está doblando
 const CORNER_RADIUS = 250; // radio mínimo (m) para que una curva se tome abriendo y cerrando (las más suaves, a fondo y sin vueltas)
 const ENTRY = 25; // cuánto antes de que empiece la curva se llega bien abierto (m)
@@ -96,7 +97,9 @@ export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE
   for (let pass = 0; pass < 2; pass++) {
     for (let i = 2 * n - 1; i >= 0; i--) {
       const b = wrap(i), next = v[wrap(b + 1)];
-      const decel = (limits.brake(next) + limits.drag(next)) * brakeUse;
+      // doblando, a las gomas les queda menos para frenar (círculo de fricción): hay que frenar antes de la curva
+      const turning = Math.min(1, (next * next * curv[b]) / (limits.lateral(next) * gripUse));
+      const decel = (limits.brake(next) * Math.max(BRAKE_TURNING, Math.sqrt(1 - turning * turning)) + limits.drag(next)) * brakeUse;
       v[b] = Math.min(v[b], Math.sqrt(next * next + 2 * decel * ds[b]));
     }
     for (let i = 0; i < 2 * n; i++) {

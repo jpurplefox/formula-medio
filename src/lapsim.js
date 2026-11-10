@@ -47,8 +47,24 @@ export function cornerSpeed(lim, c, gripUse = 1) {
   return lo;
 }
 
+// Los límites del auto en una tabla por velocidad (cada TABLE_STEP m/s, interpolando): calcularlos cuesta (traslado
+// de peso, que se resuelve en varias vueltas) y el simulador los pide miles de veces por vuelta
+const TABLE_STEP = 1;
+export function tabulate(lim) {
+  const n = Math.ceil(lim.topSpeed / TABLE_STEP) + 2;
+  const table = (f) => {
+    const y = Float64Array.from({ length: n }, (_, i) => f(i * TABLE_STEP));
+    return (v) => {
+      const x = Math.min(n - 1.001, Math.max(0, v / TABLE_STEP)), i = Math.floor(x);
+      return y[i] + (y[i + 1] - y[i]) * (x - i);
+    };
+  };
+  return { topSpeed: lim.topSpeed, lateral: table((v) => lim.lateral(v)), brake: table((v) => lim.brake(v)), drag: table((v) => lim.drag(v)), thrust: table((v) => lim.thrust(v)), traction: table((v) => lim.traction(v)) };
+}
+
 // Velocidad en cada punto (m/s) y tiempo de vuelta (s)
-export function lapSim(path, lim) {
+export function lapSim(path, limits) {
+  const lim = tabulate(limits);
   const { n, ds, k } = path, wrap = (i) => (i + n) % n;
   const v = Float64Array.from(k, (c) => cornerSpeed(lim, c));
   // parte del agarre que queda para frenar o acelerar después de doblar

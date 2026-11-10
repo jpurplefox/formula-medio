@@ -16,7 +16,7 @@
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Car, DEFAULT_PROFILE, limitsOn, SETUP_KEYS } from '../src/car.js';
+import { Car, DEFAULT_PROFILE, FUEL_PER_KM, limitsOn, SETUP_KEYS } from '../src/car.js';
 import { airDensity, WING_MAX, WING_MIN } from '../src/dynamics.js';
 import { racingLine } from '../src/racingline.js';
 import { halfWidthAt } from '../src/track.js';
@@ -88,10 +88,14 @@ export function randomTune(car, rand, track, spread = TUNE_SPREAD) {
   car.placeOn(track);
 }
 
-// Gomas al azar: carreras de 3 a 20 vueltas (desgaste por metro) y en cualquier momento de la carrera
+// Gomas al azar: carreras de 3 a 20 vueltas (desgaste por metro) y en cualquier momento de la carrera; frías como
+// recién salidas de boxes, en su punto o algo pasadas (las cuatro parecidas); y con nafta para 0 a 20 vueltas
 export function randomTyres(car, rand, track) {
   car.wearRate = 1 / ((3 + 17 * rand()) * track.length * track.meters);
   car.wear = 0.9 * rand();
+  const temp = 60 + 55 * rand();
+  car.tyreTemp = car.tyreTemp.map(() => temp + 10 * (rand() - 0.5));
+  car.fuel = FUEL_PER_KM * 20 * rand() * (track.length * track.meters) / 1000;
 }
 
 export class RaceEnv {

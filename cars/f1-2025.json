@@ -15,20 +15,20 @@
  ],
  "mass": 810,
  "frontShare": 0.445,
- "mu": 2.2,
+ "mu": 1.9,
  "loadExp": 0.85,
- "brakeMu": 0.95,
- "tractionMu": 0.9476,
- "balanceRange": 0.06,
- "power": 621600,
+ "brakeMu": 1.1,
+ "tractionMu": 1.15,
+ "rollRange": 0.3,
+ "power": 620400,
  "engineBrake": 2.6,
  "rolling": 0.15,
  "aero": {
-  "clMin": 3.511,
-  "clMax": 5.091,
+  "clMin": 4.85,
+  "clMax": 7.032,
   "frontWing": 0.4,
   "ldFront": 8,
-  "ldRear": 1.896,
-  "cdBody": 1.092
+  "ldRear": 2.278,
+  "cdBody": 1.058
  }
 }
