@@ -39,7 +39,8 @@ const HEAD_DIVE = 5;
 const CAR_PROFILE = 'cars/f1-2025.json'; // ajustado con tools/calibrate.js
 const SHIFT_LIGHTS = 15;
 const REPLAY_DELAY = 6; // segundos de resultado antes de que empiece la repetición
-const SETTINGS_KEY = 'raycast-racer-settings';
+const SETTINGS_KEY = 'formula-medio-settings';
+const OLD_SETTINGS_KEY = 'raycast-racer-settings'; // de cuando el juego se llamaba Raycast Racer
 
 // lo que se elige en el menú (se recuerda en el navegador): modo (carrera o contrarreloj), equipo y piloto (driver: 0
 // el primero, 1 el segundo), dificultad,
@@ -55,7 +56,7 @@ const MODES = [
 // v: versión de lo guardado; antes de la 2 los rivales venían en 21 y se pasan a los 10 nuevos (uno por equipo)
 const SETTINGS_VERSION = 2;
 try {
-  const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {};
+  const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? localStorage.getItem(OLD_SETTINGS_KEY)) || {};
   if (!(saved.v >= SETTINGS_VERSION) || !RIVAL_OPTIONS.includes(saved.rivals)) delete saved.rivals;
   Object.assign(settings, saved, { sound: false, v: SETTINGS_VERSION });
 } catch {

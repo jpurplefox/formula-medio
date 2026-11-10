@@ -1,4 +1,4 @@
-# Raycast Racer
+# Fórmula ½
 
 Juego de carreras para el navegador con un motor de render "a la antigua" (un rayo por columna de pantalla).
 Los circuitos de F1 se arman con el **trazado real**, sacado de la telemetría (forma, largo de vuelta y alturas).

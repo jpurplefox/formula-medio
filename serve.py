@@ -30,5 +30,5 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
 http.server.ThreadingHTTPServer.request_queue_size = 64
 
 port = int(sys.argv[1]) if len(sys.argv) > 1 else 8123
-print(f"Raycast Racer en http://localhost:{port}")
+print(f"Fórmula ½ en http://localhost:{port}")
 http.server.ThreadingHTTPServer(("", port), NoCacheHandler).serve_forever()
