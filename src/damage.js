@@ -16,9 +16,9 @@
 // El objeto de daños no se modifica: cada golpe arma uno nuevo (así car.limits sabe cuándo recalcular).
 
 export const DAMAGE_LEVELS = [
-  { id: 'off', name: 'No', hint: 'Los choques no le hacen nada al auto' },
-  { id: 'reduced', name: 'Reducidos', hint: 'Los choques dañan el auto y lo hacen más lento, pero siempre podés terminar la carrera' },
-  { id: 'real', name: 'Reales', hint: 'Un choque fuerte puede pinchar una goma o romper una rueda y dejarte afuera de la carrera' },
+  { id: 'off', name: 'No' }, // Los choques no le hacen nada al auto
+  { id: 'reduced', name: 'Reducidos' }, // Los choques dañan el auto y lo hacen más lento, pero siempre podés terminar la carrera
+  { id: 'real', name: 'Reales' }, // Un choque fuerte puede pinchar una goma o romper una rueda y dejarte afuera de la carrera
 ];
 
 export const NO_DAMAGE = Object.freeze({

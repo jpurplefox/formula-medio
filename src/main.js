@@ -1434,22 +1434,22 @@ for (const b of menu.querySelectorAll('[data-step]')) b.addEventListener('click'
 
 // ---- opciones ----
 const GEARBOXES = [
-  { value: 'auto', label: 'Automática', hint: 'Los cambios se pasan solos' },
-  { value: 'manual', label: 'Manual', hint: 'Subís con O o X y bajás con U o Z (en el joystick, RB sube y LB baja)' },
+  { value: 'auto', label: 'Automática' }, // Los cambios se pasan solos
+  { value: 'manual', label: 'Manual' }, // Subís con O o X y bajás con U o Z (en el joystick, RB sube y LB baja)
 ];
 const TRACTIONS = [
-  { value: 'high', label: 'Alto', hint: 'Corta motor antes de que la cola se suelte: para manejar con teclado' },
-  { value: 'low', label: 'Bajo', hint: 'Deja usar casi todo el agarre de la cola: más rápido, pero hay que dosificar un poco' },
-  { value: 'off', label: 'Apagado', hint: 'Como los F1 de verdad: acelerando a fondo en una curva lenta, la cola se va' },
+  { value: 'high', label: 'Alto' }, // Corta motor antes de que la cola se suelte: para manejar con teclado
+  { value: 'low', label: 'Bajo' }, // Deja usar casi todo el agarre de la cola: más rápido, pero hay que dosificar un poco
+  { value: 'off', label: 'Apagado' }, // Como los F1 de verdad: acelerando a fondo en una curva lenta, la cola se va
 ];
 const ABS_OPTIONS = [
-  { value: true, label: 'Sí', hint: 'Los frenos sueltan antes de que las ruedas se bloqueen: para manejar con teclado, que frena todo o nada' },
-  { value: false, label: 'No', hint: 'Como los F1 de verdad: el pedal a fondo sólo sirve a alta velocidad; a medida que el auto frena hay que ir soltándolo o las ruedas se bloquean' },
+  { value: true, label: 'Sí' }, // Los frenos sueltan antes de que las ruedas se bloqueen: para manejar con teclado, que frena todo o nada
+  { value: false, label: 'No' }, // Como los F1 de verdad: el pedal a fondo sólo sirve a alta velocidad; a medida que el auto frena hay que ir soltándolo o las ruedas se bloquean
 ];
 const TRACTION = () => TRACTIONS.find((t) => t.value === settings.traction) || TRACTIONS[0];
 const VIEWS = [
-  { value: 'cockpit', label: 'Cabina', hint: 'Desde los ojos del piloto, con el volante y la trompa adelante' },
-  { value: 'chase', label: 'Exterior', hint: 'Desde atrás y arriba del auto: se ve mejor dónde está la pista' },
+  { value: 'cockpit', label: 'Cabina' }, // Desde los ojos del piloto, con el volante y la trompa adelante
+  { value: 'chase', label: 'Exterior' }, // Desde atrás y arriba del auto: se ve mejor dónde está la pista
 ];
 const VIEW = () => VIEWS.find((v) => v.value === settings.view) || VIEWS[0];
 function renderOptions() {
@@ -1457,15 +1457,10 @@ function renderOptions() {
   choices($('menu-rivals'), RIVAL_OPTIONS.map((n) => ({ value: n, label: String(n) })), 'rivals');
   choices($('menu-laps'), LAP_OPTIONS.map((n) => ({ value: n, label: String(n) })), 'laps');
   choices($('menu-view'), VIEWS, 'view');
-  $('menu-view-hint').textContent = `${VIEW().hint}. Cada carrera arranca con esta; en carrera, C la cambia`;
   choices($('menu-damage'), DAMAGE_LEVELS.map((l) => ({ value: l.id, label: l.name })), 'damage');
-  $('menu-damage-hint').textContent = DAMAGE().hint;
   choices($('menu-gearbox'), GEARBOXES, 'gearbox');
-  $('menu-gearbox-hint').textContent = GEARBOXES.find((b) => b.value === settings.gearbox).hint;
   choices($('menu-traction'), TRACTIONS, 'traction');
-  $('menu-traction-hint').textContent = TRACTION().hint;
   choices($('menu-abs'), ABS_OPTIONS, 'abs');
-  $('menu-abs-hint').textContent = ABS_OPTIONS.find((a) => a.value === !!settings.abs).hint;
   choices($('menu-sound'), [{ value: true, label: 'Sí' }, { value: false, label: 'No' }], 'sound', applySound);
   for (const [id, key] of VOLUME_SLIDERS) $(id).value = Math.round(settings[key] * 100);
 }
