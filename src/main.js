@@ -44,9 +44,9 @@ const OLD_SETTINGS_KEY = 'raycast-racer-settings'; // de cuando el juego se llam
 
 // lo que se elige en el menú (se recuerda en el navegador): modo (carrera o contrarreloj), equipo y piloto (driver: 0
 // el primero, 1 el segundo), dificultad,
-// circuito, vueltas, cantidad de rivales, daños (damage.js), volúmenes y tu puesta a punto en cada circuito donde la cambiaste (tunes).
+// circuito, vueltas, cantidad de rivales, vista con la que se larga (view: cabina o exterior), daños (damage.js), volúmenes y tu puesta a punto en cada circuito donde la cambiaste (tunes).
 // El sonido arranca siempre apagado (se prende con N o desde el menú) y eso no se recuerda.
-const settings = { mode: 'race', team: 'hierrari', driver: 0, difficulty: 'dificil', track: TRACKS[0].id, laps: 3, rivals: DEFAULT_RIVALS, damage: 'real', gearbox: 'auto', traction: 'high', abs: true, sound: false, volMaster: 0.8, volEngines: 1, volMusic: 0.6, tunes: {} };
+const settings = { mode: 'race', team: 'hierrari', driver: 0, difficulty: 'dificil', track: TRACKS[0].id, laps: 3, rivals: DEFAULT_RIVALS, view: 'cockpit', damage: 'real', gearbox: 'auto', traction: 'high', abs: true, sound: false, volMaster: 0.8, volEngines: 1, volMusic: 0.6, tunes: {} };
 // ?prueba: las teclas 1 a 9 rompen piezas de tu auto y 0 lo arregla, para probar cómo maneja con daños
 const DAMAGE_TEST = new URLSearchParams(location.search).has('prueba');
 const MODES = [
@@ -125,7 +125,7 @@ let lastDraw = 0;
 const treeTex = treeTexture();
 const boardTex = new Map([200, 150, 100, 50].map((d) => [d, boardTexture(d)]));
 const cockpit = new Cockpit();
-let cockpitView = true; // C alterna cabina / exterior
+let cockpitView = true; // C alterna cabina / exterior; cada carrera larga con la vista elegida en el menú
 let showGuide = true; // G muestra u oculta la trazada ideal
 const guides = new WeakMap(); // trazada ideal de cada circuito, se calcula una vez
 const AI_BRAKE_USE = 0.93; // los rivales frenan más al límite que la trazada que ves (que usa el 85%)
@@ -365,6 +365,7 @@ const NEURAL_URL = IA_PARAM === 'clasica' ? null : IA_PARAM;
 let neuralPolicy = null;
 
 function resetGame(track) {
+  cockpitView = settings.view !== 'chase';
   const prev = game || lastGame;
   const prevBest = prev && prev.track === track ? prev.best : null;
   const prevGhost = prev && prev.track === track ? prev.ghost : null;
@@ -1303,7 +1304,7 @@ function renderMain() {
   $('tile-tune').textContent = tuneSummary();
   const rivals = `${settings.rivals} ${settings.rivals === 1 ? 'rival' : 'rivales'}`;
   $('tile-options').textContent = (settings.mode === 'trial' ? [] : [rivals, DIFFICULTY().name.toLowerCase()])
-    .concat([`daños ${DAMAGE().name.toLowerCase()}`, `caja ${GEARBOXES.find((b) => b.value === settings.gearbox).label.toLowerCase()}`, `control de tracción ${TRACTION().label.toLowerCase()}`, settings.abs ? 'ABS' : 'sin ABS']).join(' · ');
+    .concat([`vista ${VIEW().label.toLowerCase()}`, `daños ${DAMAGE().name.toLowerCase()}`, `caja ${GEARBOXES.find((b) => b.value === settings.gearbox).label.toLowerCase()}`, `control de tracción ${TRACTION().label.toLowerCase()}`, settings.abs ? 'ABS' : 'sin ABS']).join(' · ');
 }
 
 // ---- el auto ----
@@ -1446,10 +1447,17 @@ const ABS_OPTIONS = [
   { value: false, label: 'No', hint: 'Como los F1 de verdad: el pedal a fondo sólo sirve a alta velocidad; a medida que el auto frena hay que ir soltándolo o las ruedas se bloquean' },
 ];
 const TRACTION = () => TRACTIONS.find((t) => t.value === settings.traction) || TRACTIONS[0];
+const VIEWS = [
+  { value: 'cockpit', label: 'Cabina', hint: 'Desde los ojos del piloto, con el volante y la trompa adelante' },
+  { value: 'chase', label: 'Exterior', hint: 'Desde atrás y arriba del auto: se ve mejor dónde está la pista' },
+];
+const VIEW = () => VIEWS.find((v) => v.value === settings.view) || VIEWS[0];
 function renderOptions() {
   choices($('menu-diff'), DIFFICULTIES.map((d) => ({ value: d.id, label: d.name })), 'difficulty');
   choices($('menu-rivals'), RIVAL_OPTIONS.map((n) => ({ value: n, label: String(n) })), 'rivals');
   choices($('menu-laps'), LAP_OPTIONS.map((n) => ({ value: n, label: String(n) })), 'laps');
+  choices($('menu-view'), VIEWS, 'view');
+  $('menu-view-hint').textContent = `${VIEW().hint}. En carrera, C cambia de vista`;
   choices($('menu-damage'), DAMAGE_LEVELS.map((l) => ({ value: l.id, label: l.name })), 'damage');
   $('menu-damage-hint').textContent = DAMAGE().hint;
   choices($('menu-gearbox'), GEARBOXES, 'gearbox');
