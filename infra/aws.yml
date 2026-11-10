@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: '2010-09-09'
+# Lo que necesita Fórmula ½ en AWS, todo de una vez (docs/deployment.md):
+# - un bucket S3 privado con los archivos del juego;
+# - una distribución de CloudFront delante, que es la única que puede leer el bucket (Origin Access Control);
+# - un rol que GitHub Actions asume con OIDC para publicar desde main (sin claves de AWS guardadas en GitHub).
+Description: Formula 1/2 - sitio estatico (S3 + CloudFront) y rol de deploy para GitHub Actions
+
+Parameters:
+  BucketName:
+    Type: String
+    Default: formula-medio
+    Description: Nombre del bucket (unico en todo S3)
+  GitHubRepo:
+    Type: String
+    Default: jpurplefox/formula-medio
+    Description: Repo (owner/nombre) que puede publicar
+  GitHubOIDCProviderArn:
+    Type: String
+    Default: ''
+    Description: >-
+      ARN del proveedor OIDC de GitHub si la cuenta ya lo tiene (por ejemplo, el de sleepmon). Vacio lo crea.
+      Una cuenta puede tener uno solo por URL, así que si ya existe hay que pasarlo.
+
+Conditions:
+  CreateOIDCProvider: !Equals [!Ref GitHubOIDCProviderArn, '']
+
+Resources:
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Ref BucketName
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Formula 1/2
+        DefaultRootObject: index.html
+        HttpVersion: http2and3
+        # todas las regiones: con PriceClass_100 no hay puntos en Sudamérica
+        PriceClass: PriceClass_All
+        Origins:
+          - Id: s3
+            DomainName: !GetAtt Bucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt OriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: s3
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          # Managed-CachingOptimized: comprime con gzip y brotli (la red de los rivales, 1,2 MB de JSON, baja mucho)
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          Compress: true
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: SoloCloudFront
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${Bucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}'
+
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateOIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      ThumbprintList: [6938fd4d98bab03faadb97b34396831e3780aea1]
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${BucketName}-deploy'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If [CreateOIDCProvider, !Ref GitHubOIDCProvider, !Ref GitHubOIDCProviderArn]
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                # sólo lo que corre en main de este repo
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubRepo}:ref:refs/heads/main'
+      Policies:
+        - PolicyName: publicar
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt Bucket.Arn
+              - Effect: Allow
+                Action: [s3:PutObject, s3:DeleteObject]
+                Resource: !Sub '${Bucket.Arn}/*'
+              - Effect: Allow
+                Action: cloudfront:CreateInvalidation
+                Resource: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}'
+
+Outputs:
+  SiteUrl:
+    Description: Donde queda el juego
+    Value: !Sub 'https://${Distribution.DomainName}'
+  DistributionId:
+    Description: Para el secret CLOUDFRONT_DISTRIBUTION_ID
+    Value: !Ref Distribution
+  DeployRoleArn:
+    Description: Para el secret AWS_ROLE_ARN
+    Value: !GetAtt DeployRole.Arn

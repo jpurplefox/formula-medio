@@ -1,0 +1,46 @@
+# Publica el juego en AWS (S3 + CloudFront) en cada push a main. La infraestructura está en infra/aws.yml y los pasos
+# de una sola vez, en docs/deployment.md. No hay build: se suben los archivos tal cual.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write # para asumir el rol de AWS con OIDC
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: sa-east-1
+  S3_BUCKET: formula-medio
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # sólo lo que el juego carga en el navegador (rl/, tools/ y serve.py quedan afuera)
+      - name: Armar el sitio
+        run: tools/site.sh site
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Los archivos no llevan un hash en el nombre, así que el navegador tiene que preguntar siempre si cambiaron
+      # (no-cache: si no cambiaron, la respuesta es un 304 vacío); así nadie queda con un main.js nuevo y un teams.js
+      # viejo. Los .webp van aparte con su tipo, porque no todas las versiones de la CLI lo conocen.
+      - name: Subir a S3
+        run: |
+          aws s3 sync site/ "s3://$S3_BUCKET/" --delete --cache-control no-cache --exclude "*.webp"
+          aws s3 sync site/ "s3://$S3_BUCKET/" --delete --cache-control no-cache --exclude "*" --include "*.webp" --content-type image/webp
+
+      - name: Invalidar CloudFront
+        run: aws cloudfront create-invalidation --distribution-id "${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}" --paths "/*"

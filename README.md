@@ -12,20 +12,24 @@ python3 serve.py
 Abrir http://localhost:8123. Hace falta un servidor local porque el juego lee los píxeles de la imagen.
 `serve.py` le pide al navegador que no cachee, así cada recarga usa la última versión.
 
+Publicado en AWS (S3 + CloudFront) en cada push a `main`: ver [docs/deployment.md](docs/deployment.md).
+
 Antes de largar hay un **menú** (que se acuerda de lo último que elegiste). La pantalla principal muestra el
 modo, el **auto** elegido (el modelo 3D con su decoración) y el **circuito** (su trazado); tocando cada uno se abre su
 pantalla para cambiarlo (con ← → o las flechas, y el auto se puede girar arrastrándolo). La **puesta a punto** y las
 **opciones** (dificultad, vueltas, daños y sonido) van en pantallas aparte; Enter o Esc vuelven a la principal
 (`src/menuview.js` dibuja el auto y los trazados):
-- **Modo:** **Carrera** (22 autos, 2 por equipo, con tabla de posiciones y repetición al final) o **Contrarreloj**
+- **Modo:** **Carrera** (por defecto, vos y un auto de cada equipo rival; con la grilla completa, 22 autos; con tabla
+  de posiciones y repetición al final) o **Contrarreloj**
   (solo en pista, vueltas sin límite y un **fantasma** semitransparente que repite tu mejor vuelta, para ver
   dónde ganás o perdés tiempo). En carrera no hay fantasma.
 - **Equipo:** Hierrari, Merchoedes, Red Toro, McLarrón, Austin Martini, Allpain, Willyams, Audiós, Haash,
   AlfaTorito o Cadillaque, cada uno con sus colores (carrocería, detalles de la decoración y casco) y sus dos
   pilotos, inventados a partir de la grilla de 2026, con sus números (Jorge Rústico y Kimi Antojo en Merchoedes,
-  Carlos Le Clic y Luis Jamónton en Hierrari, Max Verstapón, Lando Nórdico, Franco Colapasto…; `src/teams.js`). Como en la F1, la cámara de arriba (la "T") es negra en el primer auto de cada equipo y
-  amarilla en el segundo. Vos manejás el primero de tu equipo; los 21 rivales son los dos autos de cada uno de
-  los otros equipos y tu compañero. Los equipos que mejor vienen en el campeonato (`STANDINGS` en `src/teams.js`,
+  Carlos Le Clic y Luis Jamónton en Hierrari, Max Verstapón, Lando Nórdico, Franco Colapuntos…; `src/teams.js`). Como en la F1, la cámara de arriba (la "T") es negra en el primer auto de cada equipo y
+  amarilla en el segundo, como en la grilla de 2026. Al elegir el auto elegís también cuál de los dos pilotos sos. Por
+  defecto corrés contra 10 rivales, el primer piloto de cada uno de los otros equipos; con 21, la grilla completa: los
+  dos autos de cada uno de los otros equipos y tu compañero. Los equipos que mejor vienen en el campeonato (`STANDINGS` en `src/teams.js`,
   hoy Merchoedes primero) suelen largar adelante (con algo de azar, como en una clasificación) y tienen los mejores
   autos dentro de la dificultad elegida. La tabla muestra la sigla de cada piloto y el resultado, su nombre.
 - **Dificultad:** Fácil, Normal, Difícil o Experto. Con la red entrenada (la de por defecto) cambia el agarre y la
