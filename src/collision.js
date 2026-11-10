@@ -19,8 +19,8 @@
 import { sampleField } from './track.js';
 import { applyHit, ZONES } from './damage.js';
 
-const HALF_L = 2.8; // medio largo del auto, de punta a punta de los alerones (m)
-const HALF_W = 1.0; // medio ancho, con las ruedas (m)
+export const HALF_L = 2.8; // medio largo del auto, de punta a punta de los alerones (m)
+export const HALF_W = 1.0; // medio ancho, con las ruedas (m)
 const INERTIA = ((2 * HALF_L) ** 2 + (2 * HALF_W) ** 2) / 12; // momento de inercia por unidad de masa (m²)
 const CAR_BOUNCE = 0.25; // rebote entre autos (0 = se quedan pegados, 1 = rebote perfecto)
 const CAR_FRICTION = 0.35; // rozamiento entre carrocerías
