@@ -2,7 +2,7 @@
 
 // color: carrocería; accent: franja y detalles de la decoración; helmet: casco; drivers: sus dos pilotos (nombre,
 // sigla para la tabla y número), inventados a partir de la grilla de 2026. Como en la F1, el primero lleva la cámara
-// de arriba, la "T", negra y el segundo, amarilla; si elegís ese equipo, vos manejás el auto del primero.
+// de arriba, la "T", negra y el segundo, amarilla; si elegís ese equipo, manejás el auto del piloto que elijas.
 export const TEAMS = [
   { id: 'hierrari', name: 'Hierrari', code: 'HIE', color: '#d40000', accent: '#ffe600', helmet: '#ffe600',
     drivers: [['Carlos Le Clic', 'LEC', '16'], ['Luis Jamónton', 'JAM', '44']] },
@@ -15,7 +15,7 @@ export const TEAMS = [
   { id: 'austin', name: 'Austin Martini', code: 'AUS', color: '#00594f', accent: '#cedc00', helmet: '#cedc00',
     drivers: [['Fernando Alondra', 'ALO', '14'], ['Lance Trol', 'TRO', '18']] },
   { id: 'allpain', name: 'Allpain', code: 'ALL', color: '#0078c1', accent: '#f363b9', helmet: '#f363b9',
-    drivers: [['Pedro Gaseosa', 'GAS', '10'], ['Franco Colapasto', 'COL', '43']] },
+    drivers: [['Pedro Gaseosa', 'GAS', '10'], ['Franco Colapuntos', 'COL', '43']] },
   { id: 'willyams', name: 'Willyams', code: 'WIL', color: '#0b2463', accent: '#ffffff', helmet: '#ffffff',
     drivers: [['Alex Albóndiga', 'ALB', '23'], ['Carlos Santo', 'SAN', '55']] },
   { id: 'audios', name: 'Audiós', code: 'AUD', color: '#a3a8ae', accent: '#ff2d2d', helmet: '#d6dadf',
@@ -62,17 +62,21 @@ export const LAP_OPTIONS = [1, 3, 5, 10];
 export const STANDINGS = ['merchoedes', 'hierrari', 'mclarron', 'redtoro', 'allpain', 'haash', 'alfatorito', 'audios',
   'willyams', 'austin', 'cadillaque'];
 
-// Cuántos rivales se pueden elegir en el menú (con todos, la grilla completa)
-export const RIVAL_OPTIONS = [1, 3, 7, 11, 21];
+// Cuántos rivales se pueden elegir en el menú: con 10 (lo que viene elegido), uno de cada equipo rival; con todos, la
+// grilla completa
+export const RIVAL_OPTIONS = [1, 3, 7, 10, 21];
+export const DEFAULT_RIVALS = TEAMS.length - 1;
 
-// Los autos de la carrera: 2 por equipo. Vos manejás el primero de tu equipo; los rivales son los otros 21 (tu
-// compañero incluido), ordenados por el campeonato. Con menos (count), se toman repartidos de punta a punta de esa
-// lista, así sigue habiendo autos rápidos y lentos (con uno solo, el del mejor equipo).
+// Los autos de la carrera: 2 por equipo. Vos manejás el de tu piloto (slot) en tu equipo; los rivales son los otros
+// 21 (tu compañero incluido), ordenados por el campeonato. Con uno por equipo rival (DEFAULT_RIVALS), el primer piloto
+// de cada uno de los otros equipos. Con otra cantidad (count), se toman repartidos de punta a punta de la lista
+// completa, así sigue habiendo autos rápidos y lentos (con uno solo, el del mejor equipo).
 // Cada auto: { team, slot (0 o 1), number }
-export function rivalCars(team, count = Infinity) {
+export function rivalCars(team, count = Infinity, slot = 0) {
   const rank = (t) => STANDINGS.indexOf(t.id);
-  const all = [...TEAMS].sort((a, b) => rank(a) - rank(b))
-    .flatMap((t) => (t === team ? [car(t, 1)] : [car(t, 0), car(t, 1)]));
+  const ranked = [...TEAMS].sort((a, b) => rank(a) - rank(b));
+  if (count === DEFAULT_RIVALS) return ranked.filter((t) => t !== team).map((t) => car(t, 0));
+  const all = ranked.flatMap((t) => (t === team ? [car(t, 1 - slot)] : [car(t, 0), car(t, 1)]));
   if (count >= all.length) return all;
   return Array.from({ length: count }, (_, i) => all[count > 1 ? Math.round((i * (all.length - 1)) / (count - 1)) : 0]);
 }
