@@ -10,7 +10,7 @@ import { Driver, gridSlots, lineFrame, pointAt } from './ai.js';
 import { collideCars } from './collision.js';
 import { Cockpit } from './cockpit.js';
 import { CAMERA_MODES, CAMERA_NAMES, Recorder, replayCamera, tvCameras } from './replay.js';
-import { DIFFICULTIES, LAP_OPTIONS, RIVAL_OPTIONS, TEAMS, car as teamCar, gridOrder, rivalCars, rivalPaces, rivalSetups } from './teams.js';
+import { DEFAULT_RIVALS, DIFFICULTIES, LAP_OPTIONS, RIVAL_OPTIONS, TEAMS, car as teamCar, gridOrder, rivalCars, rivalPaces, rivalSetups } from './teams.js';
 import { EngineAudio } from './audio.js';
 import { NeuralDriver, Policy } from './policy.js';
 import { LIGHTS_OUT, lightsAt, lightsDuration, randomHold } from './lights.js';
@@ -39,20 +39,26 @@ const HEAD_DIVE = 5;
 const CAR_PROFILE = 'cars/f1-2025.json'; // ajustado con tools/calibrate.js
 const SHIFT_LIGHTS = 15;
 const REPLAY_DELAY = 6; // segundos de resultado antes de que empiece la repetición
-const SETTINGS_KEY = 'raycast-racer-settings';
+const SETTINGS_KEY = 'formula-medio-settings';
+const OLD_SETTINGS_KEY = 'raycast-racer-settings'; // de cuando el juego se llamaba Raycast Racer
 
-// lo que se elige en el menú (se recuerda en el navegador): modo (carrera o contrarreloj), equipo, dificultad,
+// lo que se elige en el menú (se recuerda en el navegador): modo (carrera o contrarreloj), equipo y piloto (driver: 0
+// el primero, 1 el segundo), dificultad,
 // circuito, vueltas, cantidad de rivales, daños (damage.js), volúmenes y tu puesta a punto en cada circuito donde la cambiaste (tunes).
 // El sonido arranca siempre apagado (se prende con N o desde el menú) y eso no se recuerda.
-const settings = { mode: 'race', team: 'hierrari', difficulty: 'dificil', track: TRACKS[0].id, laps: 3, rivals: 21, damage: 'real', gearbox: 'auto', traction: 'high', abs: true, sound: false, volMaster: 0.8, volEngines: 1, volMusic: 0.6, tunes: {} };
+const settings = { mode: 'race', team: 'hierrari', driver: 0, difficulty: 'dificil', track: TRACKS[0].id, laps: 3, rivals: DEFAULT_RIVALS, damage: 'real', gearbox: 'auto', traction: 'high', abs: true, sound: false, volMaster: 0.8, volEngines: 1, volMusic: 0.6, tunes: {} };
 // ?prueba: las teclas 1 a 9 rompen piezas de tu auto y 0 lo arregla, para probar cómo maneja con daños
 const DAMAGE_TEST = new URLSearchParams(location.search).has('prueba');
 const MODES = [
   { value: 'race', label: 'Carrera' },
   { value: 'trial', label: 'Contrarreloj' },
 ];
+// v: versión de lo guardado; antes de la 2 los rivales venían en 21 y se pasan a los 10 nuevos (uno por equipo)
+const SETTINGS_VERSION = 2;
 try {
-  Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}, { sound: false });
+  const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? localStorage.getItem(OLD_SETTINGS_KEY)) || {};
+  if (!(saved.v >= SETTINGS_VERSION) || !RIVAL_OPTIONS.includes(saved.rivals)) delete saved.rivals;
+  Object.assign(settings, saved, { sound: false, v: SETTINGS_VERSION });
 } catch {
   // sin almacenamiento: quedan los valores por defecto
 }
@@ -366,13 +372,13 @@ function resetGame(track) {
   const difficulty = DIFFICULTIES.find((d) => d.id === settings.difficulty) || DIFFICULTIES[2];
   const trial = settings.mode === 'trial';
   // en contrarreloj no hay rivales
-  const others = trial ? [] : rivalCars(team, settings.rivals);
+  const others = trial ? [] : rivalCars(team, settings.rivals, settings.driver);
   const paces = rivalPaces(difficulty, others.length), setups = rivalSetups(difficulty, others.length);
   // grilla: los rivales adelante (los mejores autos tienden a largar primero) y vos al final
   const slots = gridSlots(track, others.length + 1), grid = gridOrder(others.length);
   const spawn = slots[others.length];
   const car = Object.assign(new Car(spawn.x, spawn.y, spawn.angle, carProfile), { manual: settings.gearbox === 'manual', tc: TRACTION_CONTROL[settings.traction] ?? 0, abs: !!settings.abs, ownTune: settings.tunes[settings.track] ?? null }).placeOn(track);
-  const mine = teamCar(team, 0);
+  const mine = teamCar(team, settings.driver);
   const player = { name: 'Vos', team: team.name, code: 'VOS', number: mine.number, color: team.color, car, driver: null, race: newRace(track, car), model: modelFor(mine, 2), dist: 0, gridBack: spawn.back };
   const rivals = others.map((o, i) => {
     const t = o.team, s = slots[grid[i]], c = Object.assign(new Car(s.x, s.y, s.angle, carProfile), RIVAL_AIDS).placeOn(track);
@@ -1285,7 +1291,7 @@ function renderMenu() {
 function renderMain() {
   const team = teamById(settings.team);
   $('card-team').innerHTML = `<i class="swatch" style="background:${team.color}"></i>${team.name}`;
-  $('card-drivers').textContent = team.drivers[0][0];
+  $('card-drivers').textContent = team.drivers[settings.driver][0];
   drawCarPreview($('car-thumb'), team, { yaw: 0.75, pitch: 0.3, zoom: 1.12 });
   const def = trackDef();
   $('card-track').textContent = def?.name ?? '';
@@ -1302,7 +1308,7 @@ function renderMain() {
 
 // ---- el auto ----
 let carView = { yaw: 0.75, pitch: 0.28 }; // desde dónde se mira el auto grande (se gira arrastrándolo)
-const carPreviewModel = (team) => modelFor({ team, slot: 0, number: team.drivers[0][2] });
+const carPreviewModel = (team) => modelFor(teamCar(team, settings.driver));
 function drawCarPreview(canvas, team, view) {
   drawCar(canvas, carPreviewModel(team), view);
 }
@@ -1314,7 +1320,7 @@ function renderCars() {
     html: `<span class="car" style="--c:${t.color};--a:${t.accent};--h:${t.helmet}"><i></i></span>${t.name}`,
   })), 'team');
   $('car-name').innerHTML = `<i class="swatch" style="background:${team.color}"></i>${team.name}`;
-  $('car-drivers').textContent = team.drivers.map(([name, , n]) => `#${n} ${name}`).join(' · ');
+  choices($('menu-drivers'), team.drivers.map(([name, , n], slot) => ({ value: slot, label: `#${n} ${name}` })), 'driver');
 }
 
 // El auto grande gira solo, despacio, como en una vitrina; arrastrándolo se lo gira a mano (y un poco para arriba o

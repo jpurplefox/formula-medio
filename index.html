@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Raycast Racer</title>
+  <title>Fórmula ½</title>
   <style>
     :root { color-scheme: dark; }
     * { box-sizing: border-box; }
@@ -76,7 +76,7 @@
     .screen.on { display: grid; }
     @keyframes screen-in { from { opacity: 0; transform: translateY(6px); } }
     #menu h1 { margin: 0; font-size: clamp(26px, 4vw, 40px); letter-spacing: 0.04em; font-style: italic; }
-    #menu h1 span { color: #d40000; }
+    #menu h1 span { color: #d40000; font-size: 1.35em; line-height: 0; }
     #menu h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: #9aa4b2; font-weight: normal; }
     #menu .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     #menu .top:has(.back) { justify-content: flex-start; gap: 16px; }
@@ -205,7 +205,7 @@
     <div class="menu-box">
       <div class="screen" data-screen="main">
         <div class="top">
-          <h1>Raycast <span>Racer</span></h1>
+          <h1>Fórmula <span>½</span></h1>
           <button id="sound-toggle" type="button" title="N prende o apaga el sonido"></button>
         </div>
         <div id="menu-mode" class="seg"></div>
@@ -237,7 +237,8 @@
           <button class="arrow prev" type="button" data-step="-1" aria-label="Anterior">‹</button>
           <button class="arrow next" type="button" data-step="1" aria-label="Siguiente">›</button>
         </div>
-        <div class="about"><b id="car-name"></b><span id="car-drivers"></span></div>
+        <div class="about"><b id="car-name"></b></div>
+        <div id="menu-drivers" class="seg"></div>
         <div id="menu-teams" class="teams"></div>
         <button class="done" type="button" data-go="main">Listo</button>
         <p class="hint center">← → para cambiar · arrastrá el auto para girarlo · Enter o Esc vuelve</p>
