@@ -10,10 +10,13 @@ Parameters:
     Type: String
     Default: formula-medio
     Description: Nombre del bucket (unico en todo S3)
-  GitHubRepo:
+  GitHubSubjectPrefix:
     Type: String
-    Default: jpurplefox/formula-medio
-    Description: Repo (owner/nombre) que puede publicar
+    Default: repo:jpurplefox@9813325/formula-medio@1453280176
+    Description: >-
+      Como se presenta el repo que puede publicar (el sub del token de GitHub sin la rama). Los repos nuevos usan el
+      formato con IDs, que no cambia si el repo se renombra; sale de
+      gh api repos/OWNER/REPO/actions/oidc/customization/sub (sub_claim_prefix)
   GitHubOIDCProviderArn:
     Type: String
     Default: ''
@@ -113,7 +116,7 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
                 # sólo lo que corre en main de este repo
-                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubRepo}:ref:refs/heads/main'
+                token.actions.githubusercontent.com:sub: !Sub '${GitHubSubjectPrefix}:ref:refs/heads/main'
       Policies:
         - PolicyName: publicar
           PolicyDocument:

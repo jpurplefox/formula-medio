@@ -25,6 +25,9 @@ S3_BUCKET: formula-medio
 
 ## Una sola vez: la infraestructura
 
+Los comandos van con `--profile personal`: en esta máquina el perfil `default` es la cuenta del trabajo. Antes de
+crear nada, `aws sts get-caller-identity --profile personal` tiene que decir la cuenta `437954864254`.
+
 Todo está en `infra/aws.yml` (CloudFormation): el bucket privado, la distribución de CloudFront (la única que puede
 leer el bucket, con Origin Access Control, gzip/brotli y todas las regiones, incluida Sudamérica) y el rol de deploy.
 
@@ -32,7 +35,7 @@ leer el bucket, con Origin Access Control, gzip/brotli y todas las regiones, inc
    tener uno solo, así que si existe hay que pasarle su ARN a la plantilla:
 
    ```bash
-   aws iam list-open-id-connect-providers
+   aws iam list-open-id-connect-providers --profile personal
    ```
 
    Si aparece uno que termina en `token.actions.githubusercontent.com`, ese es el ARN.
@@ -40,7 +43,7 @@ leer el bucket, con Origin Access Control, gzip/brotli y todas las regiones, inc
 2. **Crear todo** (tarda unos minutos, sobre todo CloudFront). Con el proveedor que ya existe:
 
    ```bash
-   aws cloudformation deploy --region sa-east-1 --stack-name formula-medio \
+   aws cloudformation deploy --profile personal --region sa-east-1 --stack-name formula-medio \
      --template-file infra/aws.yml --capabilities CAPABILITY_NAMED_IAM \
      --parameter-overrides GitHubOIDCProviderArn=arn:aws:iam::<cuenta>:oidc-provider/token.actions.githubusercontent.com
    ```
@@ -53,7 +56,7 @@ leer el bucket, con Origin Access Control, gzip/brotli y todas las regiones, inc
 3. **Ver lo que salió**:
 
    ```bash
-   aws cloudformation describe-stacks --region sa-east-1 --stack-name formula-medio \
+   aws cloudformation describe-stacks --profile personal --region sa-east-1 --stack-name formula-medio \
      --query "Stacks[0].Outputs" --output table
    ```
 
@@ -72,7 +75,11 @@ En el repo, Settings → Secrets and variables → Actions:
 Después, el primer deploy: un push a `main`, o Actions → Deploy → Run workflow.
 
 El rol sólo lo puede asumir un workflow que corre en `main` de `jpurplefox/formula-medio` (lo de otras ramas o forks
-no puede publicar).
+no puede publicar). GitHub identifica al repo con sus IDs (`repo:jpurplefox@9813325/formula-medio@1453280176`, el
+formato de los repos nuevos, que no cambia si se renombra); si el repo cambia, el valor nuevo sale de
+`gh api repos/<dueño>/<repo>/actions/oidc/customization/sub` (`sub_claim_prefix`) y va en el parámetro
+`GitHubSubjectPrefix` de la plantilla. Si el deploy falla con *Not authorized to perform sts:AssumeRoleWithWebIdentity*,
+casi seguro es esto.
 
 ## Opcional
 
