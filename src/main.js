@@ -1304,7 +1304,7 @@ function renderMain() {
   $('tile-tune').textContent = tuneSummary();
   const rivals = `${settings.rivals} ${settings.rivals === 1 ? 'rival' : 'rivales'}`;
   $('tile-options').textContent = (settings.mode === 'trial' ? [] : [rivals, DIFFICULTY().name.toLowerCase()])
-    .concat([`vista ${VIEW().label.toLowerCase()}`, `daños ${DAMAGE().name.toLowerCase()}`, `caja ${GEARBOXES.find((b) => b.value === settings.gearbox).label.toLowerCase()}`, `control de tracción ${TRACTION().label.toLowerCase()}`, settings.abs ? 'ABS' : 'sin ABS']).join(' · ');
+    .concat([`cámara ${VIEW().label.toLowerCase()}`, `daños ${DAMAGE().name.toLowerCase()}`, `caja ${GEARBOXES.find((b) => b.value === settings.gearbox).label.toLowerCase()}`, `control de tracción ${TRACTION().label.toLowerCase()}`, settings.abs ? 'ABS' : 'sin ABS']).join(' · ');
 }
 
 // ---- el auto ----
@@ -1457,7 +1457,7 @@ function renderOptions() {
   choices($('menu-rivals'), RIVAL_OPTIONS.map((n) => ({ value: n, label: String(n) })), 'rivals');
   choices($('menu-laps'), LAP_OPTIONS.map((n) => ({ value: n, label: String(n) })), 'laps');
   choices($('menu-view'), VIEWS, 'view');
-  $('menu-view-hint').textContent = `${VIEW().hint}. En carrera, C cambia de vista`;
+  $('menu-view-hint').textContent = `${VIEW().hint}. Cada carrera arranca con esta; en carrera, C la cambia`;
   choices($('menu-damage'), DAMAGE_LEVELS.map((l) => ({ value: l.id, label: l.name })), 'damage');
   $('menu-damage-hint').textContent = DAMAGE().hint;
   choices($('menu-gearbox'), GEARBOXES, 'gearbox');
