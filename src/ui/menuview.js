@@ -1,24 +1,24 @@
-// Vistas del menú: el auto elegido, con su decoración, y el trazado de un circuito.
+// Menu views: the chosen car, with its livery, and a track's layout.
 
 import { GLRenderer } from '../render/glrenderer.js';
 import { SHADOW } from '../render/renderer.js';
 
-// ---------- el auto ----------
-// El mismo modelo que se ve en la carrera (carmodel.js), dibujado con la placa de video y el mismo programa que en
-// el juego (glrenderer.js: luz suave, reflejos y texturas filtradas) en un canvas aparte, y copiado al del menú
-// sobre su sombra. Sin WebGL, se pinta en 2D cara por cara, de atrás hacia adelante, con luz plana.
+// ---------- the car ----------
+// The same model seen in the race (carmodel.js), drawn on the GPU with the same program as in the
+// game (glrenderer.js: soft light, reflections and filtered textures) on a separate canvas, and copied onto the menu's
+// over its shadow. Without WebGL, it is painted in 2D face by face, back to front, with flat light.
 
-const SUN = norm([0.35, 0.55, 0.75]); // hacia dónde está la luz, en el espacio de la cámara (derecha, arriba, hacia vos)
-const DIST = 14; // distancia de la cámara al auto (m): cuanto más cerca, más se nota la perspectiva
+const SUN = norm([0.35, 0.55, 0.75]); // where the light is, in camera space (right, up, toward you)
+const DIST = 14; // camera distance to the car (m): the closer, the more noticeable the perspective
 
 function norm([x, y, z]) {
   const l = Math.hypot(x, y, z) || 1;
   return [x / l, y / l, z / l];
 }
 
-// view: { yaw, pitch } (rad): desde dónde se mira, girando alrededor del auto (yaw 0 = de costado, del lado
-// derecho; positivo = hacia la trompa) y desde qué altura (pitch 0 = a ras del piso)
-let viewer; // el GLRenderer de las vistas (uno solo para todas), null si no hay WebGL
+// view: { yaw, pitch } (rad): where it is viewed from, orbiting around the car (yaw 0 = from the side, the right
+// side; positive = toward the nose) and from what height (pitch 0 = at ground level)
+let viewer; // the views' GLRenderer (a single one for all), null if there is no WebGL
 export function drawCar(canvas, model, { yaw = 0.6, pitch = 0.32, zoom = 1 } = {}) {
   const dpr = Math.min(2, devicePixelRatio || 1);
   const w = Math.round(canvas.clientWidth * dpr),
@@ -28,19 +28,19 @@ export function drawCar(canvas, model, { yaw = 0.6, pitch = 0.32, zoom = 1 } = {
   const g = canvas.getContext('2d');
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, w, h);
-  // el auto (5,8 m de largo) ocupa casi todo el ancho
+  // the car (5.8 m long) fills almost the whole width
   const k = Math.min(w / 7, h / 3.1) * zoom;
 
   if (viewer === undefined) viewer = GLRenderer.create(document.createElement('canvas'), 1, 1, { modelsOnly: true });
   if (viewer) {
-    // el visor gira el auto en vez de la cámara: yaw 0 de acá (de costado) es el auto cruzado, -90°
+    // the viewer rotates the car instead of the camera: yaw 0 here (from the side) is the car crosswise, -90°
     const project = viewer.showcase(model, { yaw: -yaw - Math.PI / 2, pitch, dist: DIST, P: k * DIST }, w, h);
     shadow(g, project, k);
     g.drawImage(viewer.canvas, 0, 0);
     return;
   }
 
-  // ejes de la cámara: e (del auto hacia la cámara), r (derecha de la pantalla) y u (arriba)
+  // camera axes: e (from the car toward the camera), r (screen right) and u (up)
   const cp = Math.cos(pitch),
     sp = Math.sin(pitch),
     cy = Math.cos(yaw),
@@ -51,7 +51,7 @@ export function drawCar(canvas, model, { yaw = 0.6, pitch = 0.32, zoom = 1 } = {
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   const cx = w / 2,
     cz = h * 0.5,
-    Z0 = 0.45; // Z0: altura del auto que queda en el centro (m)
+    Z0 = 0.45; // Z0: car height that ends up in the center (m)
   const project = ([x, y, z]) => {
     const p = [x, y, z - Z0];
     const d = dot(p, e),
@@ -61,7 +61,7 @@ export function drawCar(canvas, model, { yaw = 0.6, pitch = 0.32, zoom = 1 } = {
 
   shadow(g, project, k);
 
-  // las caras que miran hacia la cámara, de la más lejana a la más cercana
+  // the faces facing the camera, from the farthest to the nearest
   const faces = [];
   for (const part of model) {
     const pts = part.verts.map(project);
@@ -76,7 +76,7 @@ export function drawCar(canvas, model, { yaw = 0.6, pitch = 0.32, zoom = 1 } = {
   faces.sort((a, b) => a.depth - b.depth);
 
   const patterns = new Map();
-  const pad = 0.6 * dpr; // cada cara se agranda un poco, así no quedan rayitas entre una y otra
+  const pad = 0.6 * dpr; // each face is enlarged a bit, so no thin lines are left between them
   for (const { f, ps } of faces) {
     let mx = 0,
       my = 0;
@@ -94,7 +94,7 @@ export function drawCar(canvas, model, { yaw = 0.6, pitch = 0.32, zoom = 1 } = {
       g[i ? 'lineTo' : 'moveTo'](x + (dx / l) * pad, y + (dy / l) * pad);
     });
     g.closePath();
-    // luz: difusa y un brillo, según hacia dónde mira la cara (en el espacio de la cámara)
+    // light: diffuse plus a highlight, depending on where the face points (in camera space)
     const n = [dot(f.n, r), dot(f.n, u), dot(f.n, e)];
     const diffuse = Math.max(0, dot(n, SUN));
     const light = 0.42 + 0.68 * diffuse;
@@ -123,7 +123,7 @@ export function drawCar(canvas, model, { yaw = 0.6, pitch = 0.32, zoom = 1 } = {
   }
 }
 
-// sombra en el piso: la planta del auto (la misma sombra que en el juego), agrandada y borrosa
+// shadow on the ground: the car's footprint (the same shadow as in the game), enlarged and blurred
 function shadow(g, project, k) {
   g.save();
   g.filter = `blur(${Math.round(k * 0.14)}px)`;
@@ -135,8 +135,8 @@ function shadow(g, project, k) {
   g.restore();
 }
 
-// la transformación (como DOMMatrix) que lleva las coordenadas de textura uv a la pantalla, sacada de los tres
-// primeros puntos de la cara (que no estén en línea)
+// the transform (as a DOMMatrix) that takes texture coordinates uv to the screen, derived from the first three
+// points of the face (that are not collinear)
 function affine(uv, ps) {
   const [[u0, v0], [u1, v1], [u2, v2]] = uv;
   const [[x0, y0], [x1, y1], [x2, y2]] = ps;
@@ -157,15 +157,15 @@ function affine(uv, ps) {
   return new DOMMatrix([a, b, c, d, x0 - a * u0 - c * v0, y0 - b * u0 - d * v0]);
 }
 
-// ---------- el trazado ----------
-const layouts = new Map(); // la línea central de cada circuito (tracks/*.layout.json), se baja una vez
+// ---------- the layout ----------
+const layouts = new Map(); // the centerline of each track (tracks/*.layout.json), downloaded once
 
-// la línea central de un circuito, girada como el mapa del juego (track.js): [[x, y], ...] en metros, y el largo
+// a track's centerline, rotated like the game map (track.js): [[x, y], ...] in meters, and the length
 export async function trackShape(def) {
   if (!def.layout) return null;
   if (!layouts.has(def.id)) {
-    // si la descarga falla (el servidor a veces corta alguna cuando se piden todas juntas), se reintenta una vez y,
-    // si vuelve a fallar, no queda guardada: la próxima vez que se dibuje se pide de nuevo
+    // if the download fails (the server sometimes drops one when they are all requested together), it retries once
+    // and, if it fails again, it isn't cached: the next time it is drawn it is requested again
     const get = () => fetch(def.layout).then((r) => r.json());
     layouts.set(
       def.id,
@@ -191,8 +191,8 @@ export async function trackShape(def) {
 
 const WIDE = 0.8;
 
-// Dibuja el trazado entrando en el canvas: la pista, la largada (a cuadros) y una flecha con el sentido de giro.
-// points: [[x, y], ...]; dot (de 0 a 1): dónde va un punto que da la vuelta, si se quiere uno
+// Draws the layout to fit the canvas: the track, the start (checkered) and an arrow with the direction of travel.
+// points: [[x, y], ...]; dot (0 to 1): where a dot going around the lap goes, if one is wanted
 export function drawShape(canvas, points, { color = '#f2f2f2', dot = null, accent = '#ffd400', line = 1 } = {}) {
   const dpr = Math.min(2, devicePixelRatio || 1);
   const w = Math.round(canvas.clientWidth * dpr),
@@ -210,8 +210,8 @@ export function drawShape(canvas, points, { color = '#f2f2f2', dot = null, accen
     y0 = Math.min(...ys),
     y1 = Math.max(...ys);
   const m = Math.max(8 * dpr, Math.min(w, h) * 0.08);
-  // a lo ancho llega hasta WIDE del lugar: los trazados largos y finitos (Montreal), que se estiran de punta a punta,
-  // si no se ven más grandes que los demás
+  // widthwise it fills up to WIDE of the space: otherwise long thin layouts (Montreal), which stretch end to end,
+  // look bigger than the others
   const k = Math.min((WIDE * (w - 2 * m)) / (x1 - x0 || 1), (h - 2 * m) / (y1 - y0 || 1));
   const ox = (w - (x1 - x0) * k) / 2,
     oy = (h - (y1 - y0) * k) / 2;
@@ -231,7 +231,7 @@ export function drawShape(canvas, points, { color = '#f2f2f2', dot = null, accen
   g.lineWidth = lw;
   g.stroke();
 
-  // largada: una franja a cuadros cruzando la pista, y una flecha corta con el sentido
+  // start: a checkered strip across the track, and a short arrow with the direction
   const at = (i) => P(points[((i % points.length) + points.length) % points.length]);
   const [sx, sy] = at(0),
     [nx, ny] = at(3);
@@ -246,7 +246,7 @@ export function drawShape(canvas, points, { color = '#f2f2f2', dot = null, accen
       g.fillRect(j * cell - cell, i * cell, cell, cell);
     }
   }
-  // la flecha va un poco más adelante, al costado de la pista
+  // the arrow goes a bit further ahead, beside the track
   g.translate(lw * 4, -lw * 2.2);
   g.fillStyle = accent;
   g.beginPath();

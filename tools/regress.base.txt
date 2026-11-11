@@ -1,15 +1,15 @@
-solo          4800 pasos 0921b26726c67908
-pack          600 pasos c75f0876ef4b463d
-start         1000 pasos 1391adb3469e75e2
-chase         1200 pasos cfb6f769565b0f90
-race          4800 pasos 10e031f8519f2f17
-manada solo   600 pasos 6f4a2d04200956d9
-manada grid   600 pasos a2c4ba38ae2bc2c0
-manada rolling 600 pasos e297169b57e56903
-manada chase  600 pasos dad7282f3615320b
-manada flying 600 pasos 3489b9269b927f4b
-manada start  267 pasos 2e66e043d98d772f
-monza        toques por auto 9.0 (provocados 7.7) · pasto por auto 4.6 s (una rueda 0.6 s) · 1.ª vuelta +-0.1 s · ganó en 171.1 s · el jugador terminó 22.º
-interlagos   toques por auto 7.4 (provocados 6.0) · pasto por auto 3.0 s (una rueda 0.5 s) · 1.ª vuelta +1.0 s · ganó en 161.0 s · el jugador terminó 9.º
-daños por carrera: 18.00 autos con algo roto · 3.00 con un alerón destrozado · 1.00 pinchazos · 0.50 abandonos
-total: toques por auto 8.21 (provocados 6.86) · pasto por auto 3.83 s (una rueda 0.55 s) · 1.ª vuelta +0.45 s (jugador +0.00 s) · tiempo del ganador 166.05 s · jugador 15.50.º
+solo          4800 steps 0921b26726c67908
+pack          600 steps c75f0876ef4b463d
+start         1000 steps 1391adb3469e75e2
+chase         1200 steps cfb6f769565b0f90
+race          4800 steps 10e031f8519f2f17
+herd solo     600 steps 6f4a2d04200956d9
+herd grid     600 steps a2c4ba38ae2bc2c0
+herd rolling  600 steps e297169b57e56903
+herd chase    600 steps dad7282f3615320b
+herd flying   600 steps 3489b9269b927f4b
+herd start    267 steps 2e66e043d98d772f
+monza        contacts per car 9.0 (caused 7.7) · grass per car 4.6 s (one wheel 0.6 s) · 1st lap +-0.1 s · won in 171.1 s · the player finished P22
+interlagos   contacts per car 7.4 (caused 6.0) · grass per car 3.0 s (one wheel 0.5 s) · 1st lap +1.0 s · won in 161.0 s · the player finished P9
+damage per race: 18.00 cars with something broken · 3.00 with a wrecked wing · 1.00 punctures · 0.50 retirements
+total: contacts per car 8.21 (caused 6.86) · grass per car 3.83 s (one wheel 0.55 s) · 1st lap +0.45 s (player +0.00 s) · winner's time 166.05 s · player position 15.50

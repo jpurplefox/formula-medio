@@ -1,14 +1,14 @@
-"""Arma el perfil de un auto de F1 a partir de la telemetría de OpenF1 (https://openf1.org).
+"""Builds an F1 car profile from OpenF1 telemetry (https://openf1.org).
 
-Toma las vueltas más rápidas de una carrera y, con la velocidad, las RPM, la marcha, el acelerador,
-el freno y la posición de los autos, calcula:
-  - la relación de cada marcha (km/h por cada rpm) y las RPM máximas y de cambio,
-  - cuánto acelera el auto a fondo y cuánto frena, según la velocidad,
-  - cuánto desacelera al soltar todo (resistencia del aire y freno motor),
-  - cuánto agarre lateral tiene según la velocidad (con la curvatura de la trayectoria).
-Sólo usa la biblioteca estándar.
+Takes the fastest laps of a race and, from the speed, RPM, gear, throttle, brake and position of
+the cars, computes:
+  - the ratio of each gear (km/h per rpm) and the maximum and shift RPM,
+  - how hard the car accelerates at full throttle and how hard it brakes, by speed,
+  - how much it slows when lifting off everything (air drag and engine braking),
+  - how much lateral grip it has by speed (from the curvature of its path).
+Uses only the standard library.
 
-Uso:
+Usage:
     python3 tools/car_profile.py Interlagos 2023 cars/f1-2023.json
 """
 
@@ -17,6 +17,7 @@ import math
 import statistics
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
@@ -33,13 +34,13 @@ def get(endpoint: str, **params: object) -> list[dict]:
         try:
             with urllib.request.urlopen(f"{API}/{endpoint}?{query}", timeout=60) as r:
                 data = json.load(r)
-            time.sleep(0.4)  # respetamos el límite de pedidos de la API
+            time.sleep(0.4)  # respect the API's request limit
             return data
         except urllib.error.HTTPError as e:
             if e.code != 429:
                 raise
             time.sleep(2 * (attempt + 1))
-    raise RuntimeError("OpenF1 no respondió (demasiados pedidos)")
+    raise RuntimeError("OpenF1 did not respond (too many requests)")
 
 
 def seconds(date: str) -> float:
@@ -55,7 +56,7 @@ def percentile(values: list[float], p: float) -> float:
 
 
 def table(samples: list[tuple[float, float]], p: float, min_count: int = 6) -> list[list[float]]:
-    """Agrupa (velocidad km/h, valor) por franjas de velocidad y devuelve [velocidad m/s, percentil p]."""
+    """Groups (speed km/h, value) into speed bins and returns [speed m/s, percentile p]."""
     bins: dict[int, list[float]] = {}
     for kmh, value in samples:
         bins.setdefault(int(kmh // SPEED_BIN), []).append(value)
@@ -68,8 +69,8 @@ def table(samples: list[tuple[float, float]], p: float, min_count: int = 6) -> l
 
 
 def fit_v2(rows: list[list[float]], vmin: float, vmax: float) -> dict:
-    """Ajusta a + b·v² (cuadrados mínimos) a las filas [v, a] con vmin ≤ v ≤ vmax.
-    Es la forma física de la carga aerodinámica: más velocidad, más apoyo, más agarre y más frenada."""
+    """Fits a + b·v² (least squares) to the rows [v, a] with vmin ≤ v ≤ vmax.
+    It is the physical shape of downforce: more speed, more load, more grip and more braking."""
     pts = [(v * v, a) for v, a in rows if vmin <= v <= vmax]
     n = len(pts)
     mx = sum(x for x, _ in pts) / n
@@ -89,7 +90,7 @@ def lap_data(session_key: int, lap: dict) -> tuple[list[dict], list[dict]]:
 
 
 def lateral_samples(car: list[dict], loc: list[dict]) -> list[tuple[float, float]]:
-    """Aceleración lateral v²·curvatura, con la curvatura del círculo que pasa por 3 posiciones."""
+    """Lateral acceleration v²·curvature, with the curvature of the circle through 3 positions."""
     if len(loc) < 7 or len(car) < 2:
         return []
     ct = [seconds(c["date"]) for c in car]
@@ -102,7 +103,7 @@ def lateral_samples(car: list[dict], loc: list[dict]) -> list[tuple[float, float
         if ab < 5 or bc < 5 or area < 1e-6:
             continue
         radius = ab * bc * ca / (4 * area)
-        # velocidad en ese instante (la telemetría del auto tiene otra frecuencia)
+        # speed at that instant (the car telemetry has a different sample rate)
         t = seconds(b["date"])
         j = min(range(len(ct)), key=lambda k: abs(ct[k] - t))
         kmh = car[j]["speed"]
@@ -114,7 +115,7 @@ def lateral_samples(car: list[dict], loc: list[dict]) -> list[tuple[float, float
 def main(circuit: str, year: int, out: Path) -> None:
     sessions = get("sessions", circuit_short_name=circuit, session_name="Race", year=year)
     if not sessions:
-        sys.exit(f"No encontré la carrera de {year} en {circuit}")
+        sys.exit(f"Could not find the {year} race at {circuit}")
     session_key = sessions[0]["session_key"]
     laps = [
         l for l in get("laps", session_key=session_key)
@@ -129,7 +130,7 @@ def main(circuit: str, year: int, out: Path) -> None:
 
     for lap in best:
         car, loc = lap_data(session_key, lap)
-        print(f"  auto {lap['driver_number']:>2} vuelta {lap['lap_number']:>2}: {lap['lap_duration']:.3f}s, {len(car)} muestras")
+        print(f"  car {lap['driver_number']:>2} lap {lap['lap_number']:>2}: {lap['lap_duration']:.3f}s, {len(car)} samples")
         for p in car:
             rpms.append(p["rpm"])
             speeds.append(p["speed"])
@@ -153,7 +154,7 @@ def main(circuit: str, year: int, out: Path) -> None:
                 coast.append((mid, -dv))
         lateral += lateral_samples(car, loc)
 
-    # relación de cada marcha; las que casi no se usan a fondo se estiman siguiendo la progresión
+    # ratio of each gear; those barely used at full throttle are estimated by following the progression
     known = {g: statistics.median(r) for g, r in ratios.items() if len(r) >= 10}
     top = max(known)
     for g in range(top - 1, 0, -1):
@@ -162,18 +163,18 @@ def main(circuit: str, year: int, out: Path) -> None:
     brake_rows = table(brake, 0.9)
     grip_rows = table(lateral, 0.9)
     data = {
-        "source": f"OpenF1 · carrera {year} en {circuit} · {len(best)} vueltas más rápidas",
+        "source": f"OpenF1 · {year} race at {circuit} · {len(best)} fastest laps",
         "maxRpm": round(percentile(rpms, 0.995)),
         "upshiftRpm": round(statistics.median(upshift)),
         "downshiftRpm": round(statistics.median(downshift)),
         "topSpeed": round(max(speeds) / 3.6, 1),
-        # km/h por rpm de cada marcha, de 1ª en adelante (las que no aparecían a fondo, estimadas)
+        # km/h per rpm for each gear, from 1st up (those not seen at full throttle are estimated)
         "gearKmhPerRpm": [round(known[g], 5) for g in range(1, top + 1)],
         "estimatedGears": [g for g in range(1, top + 1) if g not in ratios or len(ratios[g]) < 10],
-        # [velocidad m/s, m/s²]: aceleración a fondo y desaceleración sin pedales, por velocidad
+        # [speed m/s, m/s²]: full-throttle acceleration and no-pedal deceleration, by speed
         "accel": table(accel, 0.75),
         "coast": table(coast, 0.5, 3),
-        # frenada y agarre lateral como base + perV2·v² (m/s²), ajustados a lo medido
+        # braking and lateral grip as base + perV2·v² (m/s²), fitted to the measurements
         "brake": fit_v2(brake_rows, 40, 100),
         "lateralGrip": fit_v2(grip_rows, 20, 70),
         "measured": {"brake": brake_rows, "lateralGrip": grip_rows},
@@ -182,8 +183,8 @@ def main(circuit: str, year: int, out: Path) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(data, ensure_ascii=False, indent=1))
     print(data["source"])
-    print(f"RPM máx {data['maxRpm']} · cambio arriba {data['upshiftRpm']} · abajo {data['downshiftRpm']} · punta {data['topSpeed'] * 3.6:.0f} km/h")
-    print("marchas (km/h a 10.000 rpm):", [round(r * 10000) for r in data["gearKmhPerRpm"]])
+    print(f"max RPM {data['maxRpm']} · upshift {data['upshiftRpm']} · downshift {data['downshiftRpm']} · top {data['topSpeed'] * 3.6:.0f} km/h")
+    print("gears (km/h at 10,000 rpm):", [round(r * 10000) for r in data["gearKmhPerRpm"]])
     for name in ("accel", "coast"):
         print(f"{name:12}", " ".join(f"{v * 3.6:.0f}:{a / 9.81:.1f}g" for v, a in data[name]))
     for name in ("brake", "lateralGrip"):

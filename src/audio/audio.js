@@ -1,29 +1,29 @@
-// Sonido de los motores, sintetizado con Web Audio (sin archivos de sonido).
-// Cada auto tiene su "voz". Un V6 de 4 tiempos hace 3 explosiones por vuelta del cigüeñal, así que el tono de
-// las explosiones es rpm / 20 Hz (200 Hz en ralentí, 600 Hz a 12.000 rpm). La voz se arma con:
-// - el tono de las explosiones, con muchos armónicos (una onda a medida, con más cuerpo en los armónicos bajos);
-// - el giro del cigüeñal (un tercio del tono) y medio tono, que aparecen porque ninguna explosión es igual a otra;
-// - aspereza: ruido que "late" al ritmo de las explosiones (el escape);
-// - irregularidad: el tono tiembla apenas, como en un motor de verdad;
-// - el turbo: un soplido agudo que crece con las rpm;
-// todo saturado apenas, con dos resonancias del escape y un filtro que se abre con las rpm y el acelerador.
-// Encima, sonidos sueltos: el cambio de marcha (un corte de una fracción de segundo con un golpe seco al subir,
-// y un acelerón con explosiones al bajar), las explosiones al soltar el acelerador a muchas vueltas, y el
-// tartamudeo del corte de rpm.
-// Los autos se escuchan desde la cámara: más bajo cuanto más lejos, a la izquierda o a la derecha según dónde
-// estén, más apagados si están detrás, y con efecto Doppler (más agudo cuando se acercan, más grave cuando se alejan).
+// Engine sound, synthesized with Web Audio (no sound files).
+// Each car has its own "voice". A 4-stroke V6 fires 3 times per crankshaft revolution, so the firing tone is
+// rpm / 20 Hz (200 Hz at idle, 600 Hz at 12,000 rpm). The voice is built from:
+// - the firing tone, with many harmonics (a custom wave, with more body in the low harmonics);
+// - the crankshaft rotation (a third of the tone) and half the tone, which appear because no firing is like another;
+// - roughness: noise that "beats" at the firing rate (the exhaust);
+// - irregularity: the tone wavers slightly, as in a real engine;
+// - the turbo: a high-pitched whistle that grows with rpm;
+// all slightly saturated, with two exhaust resonances and a filter that opens with rpm and throttle.
+// On top, one-off sounds: the gear change (a cut of a fraction of a second with a sharp knock on upshifts,
+// and a throttle blip with backfires on downshifts), the backfires when lifting off at high revs, and the
+// stutter of the rev limiter.
+// Cars are heard from the camera: quieter the farther away, to the left or right depending on where they
+// are, more muffled if they are behind, and with Doppler effect (higher when approaching, lower when moving away).
 
 import { MenuMusic } from './music.js';
 
 const SOUND_SPEED = 343; // m/s
-const NEAR = 20; // a esta distancia (m) un auto suena a la mitad de volumen
-const MAX_VOICES = 8; // motores que suenan a la vez: los más cercanos (los lejanos casi no se oyen y cada voz cuesta)
+const NEAR = 20; // at this distance (m) a car sounds at half volume
+const MAX_VOICES = 8; // engines that sound at once: the nearest (distant ones are barely heard and each voice costs)
 const MASTER = 0.5;
-const LIMITER_RPM = 11700; // a partir de acá, a fondo, se escucha el corte
-const POP_RPM = 8000; // al soltar el acelerador por encima de esto, el escape petardea
-const POP_TIME = 0.35; // durante cuánto (s)
-const THROTTLE_TIME = 0.15; // lo que tarda el sonido en pasar de acelerando a retención (s)
-const BLIP_GAP = 0.2; // entre dos rebajes seguidos (frenando) no se repite el acelerón (s)
+const LIMITER_RPM = 11700; // from here on, at full throttle, the rev limiter is heard
+const POP_RPM = 8000; // when lifting off above this, the exhaust backfires
+const POP_TIME = 0.35; // for how long (s)
+const THROTTLE_TIME = 0.15; // how long the sound takes to go from on-throttle to engine braking (s)
+const BLIP_GAP = 0.2; // between two downshifts in a row (while braking) the blip isn't repeated (s)
 
 function softClip(amount) {
   const n = 1024,
@@ -42,7 +42,7 @@ function noiseBuffer(ctx, seconds) {
   return b;
 }
 
-// Onda del tono de las explosiones: armónicos que bajan de a poco, con más cuerpo alrededor del 3º-5º
+// Firing tone wave: harmonics that fall off gradually, with more body around the 3rd-5th
 function engineWave(ctx) {
   const n = 40,
     real = new Float32Array(n),
@@ -51,7 +51,7 @@ function engineWave(ctx) {
   return ctx.createPeriodicWave(real, imag);
 }
 
-// Recursos compartidos por todas las voces
+// Resources shared by all voices
 class Kit {
   constructor(ctx) {
     this.ctx = ctx;
@@ -77,7 +77,7 @@ class Voice {
         g.gain.value = v;
       });
 
-    // cadena: mezcla → saturación → resonancias del escape → filtro → volumen (distancia) → envolvente (cortes) → paneo
+    // chain: mix → saturation → exhaust resonances → filter → volume (distance) → envelope (cuts) → pan
     this.mix = gain(1);
     const shaper = node(ctx.createWaveShaper, (s) => {
       s.curve = kit.drive;
@@ -112,7 +112,7 @@ class Voice {
       .connect(this.pan)
       .connect(out);
 
-    // irregularidad: ruido muy lento que mueve el tono unos pocos cents
+    // irregularity: very slow noise that moves the tone a few cents
     const wobble = node(ctx.createBufferSource, (s) => {
       s.buffer = kit.noise;
       s.loop = true;
@@ -125,7 +125,7 @@ class Voice {
     wobble.connect(slow).connect(depth);
     wobble.start(0, Math.random() * 2);
 
-    // osciladores: [oscilador, múltiplo del tono de las explosiones]
+    // oscillators: [oscillator, multiple of the firing tone]
     const osc = (setup, mult, level) => {
       const o = ctx.createOscillator();
       setup(o);
@@ -142,17 +142,17 @@ class Voice {
         },
         1 / 3,
         0.3,
-      ), // el cigüeñal
+      ), // the crankshaft
       osc(
         (o) => {
           o.type = 'triangle';
         },
         0.5,
         0.12,
-      ), // medio tono
+      ), // half tone
     ];
 
-    // aspereza: ruido por un pasabanda que sigue al tono, que late con una cuadrada al ritmo de las explosiones
+    // roughness: noise through a bandpass that follows the tone, beating with a square wave at the firing rate
     const rasp = node(ctx.createBufferSource, (s) => {
       s.buffer = kit.noise;
       s.loop = true;
@@ -165,14 +165,14 @@ class Voice {
     const pulse = ctx.createOscillator();
     pulse.type = 'square';
     this.pulse = pulse;
-    // el volumen del ruido va de 0 al doble de su valor, al ritmo de las explosiones
+    // the noise volume goes from 0 to twice its value, at the firing rate
     this.pulseDepth = gain(0);
     pulse.connect(this.pulseDepth).connect(this.raspGain.gain);
     rasp.connect(this.raspBand).connect(this.raspGain).connect(this.mix);
     rasp.start(0, Math.random() * 2);
     pulse.start();
 
-    // turbo: soplido agudo, después del filtro (no se apaga con él)
+    // turbo: high-pitched whistle, after the filter (it isn't muffled by it)
     const turbo = node(ctx.createBufferSource, (s) => {
       s.buffer = kit.noise;
       s.loop = true;
@@ -187,17 +187,17 @@ class Voice {
 
     this.gear = null;
     this.throttle = 0;
-    this.smooth = 0; // el acelerador, suavizado: el sonido no cambia de golpe al soltar o al pisar
+    this.smooth = 0; // the throttle, smoothed: the sound doesn't change abruptly when lifting or pressing
     this.lastTime = 0;
     this.nextPop = 0;
     this.lastBlip = 0;
   }
 
-  // f: tono (Hz), level: volumen, bright: apertura del filtro (Hz), pan: -1 izquierda … 1 derecha,
-  // thr: acelerador (0..1), rpm
+  // f: tone (Hz), level: volume, bright: filter cutoff (Hz), pan: -1 left … 1 right,
+  // thr: throttle (0..1), rpm
   set(f, level, bright, pan, thr, rpm) {
     const t = this.ctx.currentTime,
-      k = 0.03; // los cambios se suavizan en ~30 ms
+      k = 0.03; // changes are smoothed over ~30 ms
     for (const [o, mult] of this.oscs) o.frequency.setTargetAtTime(f * mult, t, k);
     this.pulse.frequency.setTargetAtTime(f, t, k);
     this.raspBand.frequency.setTargetAtTime(f * 3, t, k);
@@ -211,7 +211,7 @@ class Voice {
     this.turboGain.gain.setTargetAtTime(thr * Math.min(1, Math.max(0, (rpm - 6000) / 5000)) * 0.05, t, k);
   }
 
-  // un golpe de ruido corto: tipo de filtro y frecuencia, volumen, duración (s) y cuándo (s desde ahora)
+  // a short noise burst: filter type and frequency, volume, duration (s) and when (s from now)
   burst(type, freq, vol, dur, delay = 0) {
     const ctx = this.ctx,
       t = ctx.currentTime + delay;
@@ -228,14 +228,14 @@ class Voice {
     src.start(t, Math.random() * 0.15, dur + 0.02);
   }
 
-  // explosión del escape: un golpe grave más un chasquido
+  // exhaust backfire: a low thump plus a crack
   pop(vol, delay = 0) {
     this.burst('bandpass', 500 + Math.random() * 500, vol, 0.05, delay);
     this.burst('highpass', 2500, vol * 0.4, 0.02, delay);
   }
 
-  // eventos: cambio de marcha, explosiones al soltar el acelerador y corte de rpm
-  // (audible: si el auto está tan lejos que no se oye, sólo se anota el estado)
+  // events: gear change, backfires when lifting off and rev limiter
+  // (audible: if the car is so far away it can't be heard, only the state is recorded)
   events(gear, thr, rpm, audible) {
     const t = this.ctx.currentTime;
     if (!audible) {
@@ -248,13 +248,13 @@ class Voice {
       env.cancelScheduledValues(t);
       env.setValueAtTime(env.value, t);
       if (gear > this.gear) {
-        // subida: el encendido se corta una fracción de segundo y entra la marcha con un golpe seco
+        // upshift: the ignition cuts for a fraction of a second and the gear goes in with a sharp knock
         env.linearRampToValueAtTime(0.15, t + 0.012);
         env.linearRampToValueAtTime(1, t + 0.09);
         this.burst('lowpass', 180, 0.5, 0.06);
         this.burst('highpass', 3000, 0.15, 0.02);
       } else if (t - this.lastBlip > BLIP_GAP) {
-        // bajada: un acelerón corto para igualar vueltas y, a veces, una explosión suave
+        // downshift: a short blip to match revs and, sometimes, a soft backfire
         env.linearRampToValueAtTime(1.12, t + 0.04);
         env.linearRampToValueAtTime(1, t + 0.14);
         if (Math.random() < 0.35) this.pop(0.08 + Math.random() * 0.06, 0.04);
@@ -262,13 +262,13 @@ class Voice {
       }
     }
     this.gear = gear;
-    // al soltar a muchas vueltas, petardeo durante un ratito
+    // when lifting off at high revs, backfiring for a short while
     if (this.throttle && !thr && rpm > POP_RPM) this.popUntil = t + POP_TIME;
     if (!thr && t < (this.popUntil || 0) && t > this.nextPop) {
       this.pop(0.06 + Math.random() * 0.08);
       this.nextPop = t + 0.08 + Math.random() * 0.15;
     }
-    // corte de rpm: el encendido se corta y vuelve muy rápido
+    // rev limiter: the ignition cuts and comes back very quickly
     if (thr && rpm > LIMITER_RPM && t > this.nextPop) {
       env.cancelScheduledValues(t);
       env.setValueAtTime(1, t);
@@ -285,12 +285,12 @@ class Voice {
   }
 }
 
-// Todo el sonido del juego: los motores y la música del menú, cada uno con su volumen, y un volumen general.
-// El ruido de las ruedas sobre el costado de la pista, para el auto propio:
-// - el piano: "brrrr", ruido grave que late al ritmo con el que las ruedas pasan los escalones (velocidad / largo
-//   del escalón), más un zumbido a ese mismo ritmo; cuanto más rápido, más agudo y más fuerte;
-// - la franja verde: un siseo áspero, como lija;
-// - la salchicha: un golpe seco al subirse.
+// All the game's sound: the engines and the menu music, each with its own volume, and a master volume.
+// The noise of the wheels on the edge of the track, for the player's own car:
+// - the kerb: "brrrr", a low noise beating at the rate the wheels pass the ridges (speed / ridge
+//   length), plus a hum at that same rate; the faster, the higher and louder;
+// - the green strip: a rough hiss, like sandpaper;
+// - the sausage kerb: a sharp knock when climbing it.
 class Rumble {
   constructor(kit, out) {
     const ctx = (this.ctx = kit.ctx);
@@ -299,7 +299,7 @@ class Rumble {
     const noise = ctx.createBufferSource();
     noise.buffer = kit.noise;
     noise.loop = true;
-    // piano: ruido filtrado grave, con el volumen latiendo (amplitud entre 0,15 y 1)
+    // kerb: low filtered noise, with the volume beating (amplitude between 0.15 and 1)
     const band = ctx.createBiquadFilter();
     band.type = 'bandpass';
     band.frequency.value = 160;
@@ -312,7 +312,7 @@ class Rumble {
     const depth = ctx.createGain();
     depth.gain.value = 0.42;
     this.lfo.connect(depth).connect(this.beat.gain);
-    // y el zumbido de los escalones
+    // and the hum of the ridges
     this.tone = ctx.createOscillator();
     this.tone.type = 'sawtooth';
     this.tone.frequency.value = 20;
@@ -327,7 +327,7 @@ class Rumble {
     this.tone.connect(toneLow).connect(toneGain).connect(this.beat);
     this.kerbLevel.connect(out);
     this.band = band;
-    // verde: ruido más agudo, parejo
+    // green: higher noise, even
     const hiss = ctx.createBiquadFilter();
     hiss.type = 'bandpass';
     hiss.frequency.value = 1400;
@@ -344,14 +344,14 @@ class Rumble {
   set({ kerb = 0, green = 0, speed = 0, ridge = 1.6, jolt = 0 }) {
     const t = this.ctx.currentTime,
       v = Math.abs(speed);
-    const rate = Math.max(4, Math.min(80, v / ridge)); // escalones por segundo
+    const rate = Math.max(4, Math.min(80, v / ridge)); // ridges per second
     this.lfo.frequency.setTargetAtTime(rate, t, 0.03);
     this.tone.frequency.setTargetAtTime(rate * 2, t, 0.03);
     this.band.frequency.setTargetAtTime(120 + v * 4, t, 0.05);
     const fast = Math.min(1, v / 30);
     this.kerbLevel.gain.setTargetAtTime(kerb * fast * 0.5, t, 0.03);
     this.greenLevel.gain.setTargetAtTime(green * fast * 0.12, t, 0.05);
-    // golpe de la salchicha: cuando el salto empieza (jolt sube de golpe)
+    // sausage kerb knock: when the jump starts (jolt rises abruptly)
     if (jolt > this.lastJolt + 0.2) this.thump(jolt);
     this.lastJolt = jolt;
   }
@@ -387,7 +387,7 @@ export class EngineAudio {
     this.wantMusic = false;
   }
 
-  // volúmenes de 0 a 1
+  // volumes from 0 to 1
   setVolumes(volumes) {
     Object.assign(this.volumes, volumes);
     if (!this.ctx) return;
@@ -398,7 +398,7 @@ export class EngineAudio {
     this.musicBus.gain.setTargetAtTime(music, t, 0.03);
   }
 
-  // música del menú: prender o apagar (se apaga de a poco)
+  // menu music: on or off (fades out)
   playMusic(on) {
     this.wantMusic = on;
     if (!this.ctx) return;
@@ -406,7 +406,7 @@ export class EngineAudio {
     else this.music.stop();
   }
 
-  // el navegador sólo deja arrancar el audio después de una tecla o un click
+  // the browser only lets audio start after a key press or a click
   start() {
     if (!this.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -430,34 +430,34 @@ export class EngineAudio {
     if (this.ctx.state === 'suspended') this.ctx.resume();
   }
 
-  // apaga todas las voces de los motores (menú, silencio)
+  // silences all engine voices (menu, silence)
   silence() {
     for (const v of this.voices) v.mute();
     this.rumble?.set({});
   }
 
-  // lo que pisan las ruedas del auto propio: { kerb, green (fracción de ruedas, 0..1), speed (m/s), ridge (m entre
-  // escalones del piano), jolt (salto de la salchicha, 0..1) }
+  // what the player's car wheels are on: { kerb, green (fraction of wheels, 0..1), speed (m/s), ridge (m between
+  // kerb ridges), jolt (sausage kerb jump, 0..1) }
   surface(info) {
     if (this.ctx) this.rumble.set(info);
   }
 
-  // silencio total: motores y música
+  // total silence: engines and music
   stopAll() {
     this.silence();
     this.playMusic(false);
   }
 
   // cars: [{ rpm, throttle (0..1), gear, x, y (m), angle, speed (m/s) }]
-  // ear: dónde escucha la cámara { x, y (m), angle, vx, vy (m/s) }; inside: índice del auto en el que va la cámara
-  // (cabina), que suena "adentro": fuerte, al centro y sin Doppler
+  // ear: where the camera listens { x, y (m), angle, vx, vy (m/s) }; inside: index of the car the camera is in
+  // (cockpit), which sounds "inside": loud, centered and without Doppler
   update(cars, ear, inside = -1) {
     if (!this.ctx) return;
     const rx = -Math.sin(ear.angle),
-      ry = Math.cos(ear.angle); // derecha de la cámara
+      ry = Math.cos(ear.angle); // camera's right
     const fx = Math.cos(ear.angle),
       fy = Math.sin(ear.angle);
-    // cada voz sigue a un auto mientras esté entre los más cercanos; si sale, la toma otro (empieza de cero)
+    // each voice follows a car while it is among the nearest; if it drops out, another takes it (starting from zero)
     const near = cars
       .map((c, i) => [i === inside ? -1 : Math.hypot(c.x - ear.x, c.y - ear.y), i])
       .sort((a, b) => a[0] - b[0])
@@ -479,8 +479,8 @@ export class EngineAudio {
         v.mute();
         return;
       }
-      const thr = Math.min(1, +c.throttle || 0); // con joystick, a medias
-      // el acelerador suavizado: el timbre y el volumen pasan de a poco entre acelerando y retención
+      const thr = Math.min(1, +c.throttle || 0); // with a gamepad, partial
+      // the smoothed throttle: timbre and volume move gradually between on-throttle and engine braking
       const now = this.ctx.currentTime;
       v.smooth += (thr - v.smooth) * Math.min(1, (now - v.lastTime) / THROTTLE_TIME);
       v.lastTime = now;
@@ -495,10 +495,10 @@ export class EngineAudio {
         const d = Math.hypot(dx, dy) || 1;
         level /= 1 + (d / NEAR) ** 2;
         pan = Math.max(-0.9, Math.min(0.9, (dx * rx + dy * ry) / d));
-        // detrás de la cámara se escucha más apagado; lejos, también (el aire se come los agudos)
+        // behind the camera it sounds more muffled; far away too (the air absorbs the highs)
         if ((dx * fx + dy * fy) / d < 0) bright *= 0.6;
         bright /= 1 + d / 150;
-        // Doppler: velocidad con la que se aleja (positiva) o se acerca (negativa)
+        // Doppler: speed at which it moves away (positive) or approaches (negative)
         const vx = Math.cos(c.angle) * c.speed - ear.vx,
           vy = Math.sin(c.angle) * c.speed - ear.vy;
         const away = (vx * dx + vy * dy) / d;

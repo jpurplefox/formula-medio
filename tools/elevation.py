@@ -1,10 +1,10 @@
-"""Extrae el perfil de alturas de un circuito a partir de la telemetría de F1.
+"""Extracts a track's elevation profile from F1 telemetry.
 
-Usa la API abierta de OpenF1 (https://openf1.org), que tiene las posiciones X, Y, Z de los autos.
-Promedia las vueltas más rápidas de una carrera y guarda la altura en función de la fracción
-de vuelta (0 = línea de largada, 1 = vuelta completa). Sólo usa la biblioteca estándar.
+Uses the open OpenF1 API (https://openf1.org), which has the X, Y, Z positions of the cars.
+Averages the fastest laps of a race and saves the height as a function of the lap fraction
+(0 = start line, 1 = full lap). Uses only the standard library.
 
-Uso:
+Usage:
     python3 tools/elevation.py Interlagos 2023 tracks/interlagos.elevation.json
 """
 
@@ -30,11 +30,11 @@ def get(endpoint: str, **params: object) -> list[dict]:
                 data = json.load(r)
             break
         except urllib.error.HTTPError as e:
-            # 429: pedimos demasiado rápido; esperamos cada vez más y reintentamos
+            # 429: we asked too fast; wait longer each time and retry
             if e.code != 429 or attempt == 5:
                 raise
             time.sleep(5 * 2**attempt)
-    time.sleep(0.4)  # respetamos el límite de pedidos de la API
+    time.sleep(0.4)  # respect the API's request limit
     return data
 
 
@@ -47,7 +47,7 @@ def lap_profile(session_key: int, lap: dict) -> tuple[list[float], float]:
         driver_number=lap["driver_number"],
         **{"date>": start.isoformat(), "date<": end.isoformat()},
     )
-    # OpenF1 da las posiciones en décimas de metro
+    # OpenF1 gives positions in tenths of a meter
     xs = [p["x"] / 10 for p in points]
     ys = [p["y"] / 10 for p in points]
     zs = [p["z"] / 10 for p in points]
@@ -55,7 +55,7 @@ def lap_profile(session_key: int, lap: dict) -> tuple[list[float], float]:
     for i in range(1, len(points)):
         dist.append(dist[-1] + ((xs[i] - xs[i - 1]) ** 2 + (ys[i] - ys[i - 1]) ** 2) ** 0.5)
     length = dist[-1]
-    # La vuelta es cerrada: repartimos el pequeño error de cierre a lo largo de la vuelta
+    # The lap is a closed loop: spread the small closure error along the lap
     closure = zs[-1] - zs[0]
     heights = []
     j = 0
@@ -72,7 +72,7 @@ def lap_profile(session_key: int, lap: dict) -> tuple[list[float], float]:
 def main(circuit: str, year: int, out: Path) -> None:
     sessions = get("sessions", circuit_short_name=circuit, session_name="Race", year=year)
     if not sessions:
-        sys.exit(f"No encontré la carrera de {year} en {circuit}")
+        sys.exit(f"Could not find the {year} race at {circuit}")
     session_key = sessions[0]["session_key"]
 
     laps = [
@@ -87,20 +87,20 @@ def main(circuit: str, year: int, out: Path) -> None:
         h, length = lap_profile(session_key, lap)
         profiles.append(h)
         lengths.append(length)
-        print(f"  auto {lap['driver_number']:>2} vuelta {lap['lap_number']:>2}: {lap['lap_duration']:.3f}s, {length:.0f} m")
+        print(f"  car {lap['driver_number']:>2} lap {lap['lap_number']:>2}: {lap['lap_duration']:.3f}s, {length:.0f} m")
 
     heights = [sum(p[k] for p in profiles) / len(profiles) for k in range(SAMPLES)]
     low = min(heights)
     heights = [h - low for h in heights]
 
     data = {
-        "source": f"OpenF1 · carrera {year} en {circuit} · promedio de las {len(best)} vueltas más rápidas",
+        "source": f"OpenF1 · {year} race at {circuit} · average of the {len(best)} fastest laps",
         "lapLengthMeters": round(sum(lengths) / len(lengths), 1),
         "heightsMeters": [round(h, 2) for h in heights],
     }
     out.write_text(json.dumps(data, ensure_ascii=False))
     print(data["source"])
-    print(f"Largo de vuelta: {data['lapLengthMeters']:.0f} m · desnivel: {max(heights):.1f} m")
+    print(f"Lap length: {data['lapLengthMeters']:.0f} m · elevation change: {max(heights):.1f} m")
 
 
 if __name__ == "__main__":

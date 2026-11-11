@@ -1,17 +1,17 @@
-// El tablero en pantalla: velocidad y marcha, las luces de cambio, vueltas y tiempos, la tabla de posiciones, los
-// resultados, los daños y las gomas de tu auto, el semáforo de largada, el minimapa y los mensajes (flash). Lee el
-// estado del juego (main.js) y de la carrera (race/race.js); no cambia nada.
+// The on-screen dashboard: speed and gear, the shift lights, laps and times, the standings tower, the
+// results, your car's damage and tyres, the start lights, the minimap and the messages (flash). It reads the
+// state of the game (main.js) and of the race (race/race.js); it changes nothing.
 import { TEMP_HIGH, TEMP_LOW } from '../sim/car.js';
 import { damaged } from '../sim/damage.js';
 import { T } from '../sim/track.js';
 
 export const SHIFT_LIGHTS = 15;
-const FLASH_TIME = 2.5; // s que queda un mensaje
+const FLASH_TIME = 2.5; // s a message stays up
 
-// Daños de tu auto: aparece sólo si hay algo roto. El auto visto desde arriba (la trompa para arriba), cada pieza
-// de su color según cuánto está rota, y abajo la lista.
+// Your car's damage: it appears only if something is broken. The car seen from above (nose up), each part
+// colored by how broken it is, and the list below.
 const DAMAGE_PARTS = [
-  // pieza, índice, rectángulo en m (x adelante de 2,8 a -2,8; y a la derecha de -1 a 1), nombre
+  // part, index, rectangle in m (x forward from 2.8 to -2.8; y to the right from -1 to 1), name
   ['frontWing', 0, [2.25, 2.8, -0.95, 0], 'Alerón del. izq.'],
   ['frontWing', 1, [2.25, 2.8, 0, 0.95], 'Alerón del. der.'],
   ['suspension', 0, [1.3, 2.0, -1.0, -0.6], 'Susp. del. izq.'],
@@ -28,10 +28,10 @@ const WHEEL_NAMES = ['del. izq.', 'del. der.', 'tras. izq.', 'tras. der.'];
 
 const damageColor = (x) => (x <= 0 ? '#3a4150' : x < 0.34 ? '#ffd400' : x < 0.67 ? '#ff8a00' : '#ff3b30');
 
-// Las gomas del panel: el color de cada una es su temperatura (azul fría, verde en su punto, de amarilla a roja
-// pasada), con los °C; la barrita, la goma que le queda; un borde blanco, que está bloqueada o patinando
+// The tyres in the panel: each one's color is its temperature (blue cold, green in the window, yellow to red
+// overheated), with the °C; the little bar, the tyre left; a white border, locked or spinning
 const TYRE_COLD = 50,
-  TYRE_HOT = 40; // °C por debajo y por encima de la ventana hasta el azul y el rojo plenos
+  TYRE_HOT = 40; // °C below and above the window until full blue and full red
 
 export class Hud {
   damageClock = 0;
@@ -44,8 +44,8 @@ export class Hud {
 
   minimapBase = null;
 
-  // $: busca un elemento de la página por id; ctx: el canvas 2D de encima del juego (volante y semáforo); scale: la
-  // escala de los dibujos 2D; ghostStep: cada cuánto se grabó el fantasma (s)
+  // $: finds a page element by id; ctx: the 2D canvas on top of the game (steering wheel and start lights); scale:
+  // the scale of the 2D drawings; ghostStep: how often the ghost was recorded (s)
   constructor($, { ctx, scale, ghostStep }) {
     Object.assign(this, { ctx, scale, ghostStep });
     for (const id of [
@@ -74,7 +74,7 @@ export class Hud {
     this.mctx = this.minimap.getContext('2d');
   }
 
-  // los mensajes se van solos
+  // messages go away on their own
   tick(dt) {
     this.flashTimer -= dt;
   }
@@ -90,12 +90,12 @@ export class Hud {
       Y = (x) => 60 - x * 20;
     const rect = ([x0, x1, y0, y1], fill, extra = '') =>
       `<rect x="${X(y0)}" y="${Y(x1)}" width="${(y1 - y0) * 20}" height="${(x1 - x0) * 20}" rx="1.5" fill="${fill}"${extra}/>`;
-    let svg = rect([1.0, 2.25, -0.25, 0.25], '#3a4150') + rect([-2.3, 1.0, -0.3, 0.3], '#3a4150'); // trompa y chasis
+    let svg = rect([1.0, 2.25, -0.25, 0.25], '#3a4150') + rect([-2.3, 1.0, -0.3, 0.3], '#3a4150'); // nose and chassis
     const lines = [];
     for (const [part, i, box, name] of DAMAGE_PARTS) {
       const x = d[part][i];
       const flat = part === 'suspension' && d.tyre[i] > 0;
-      // rota del todo: sólo el contorno, como si faltara; con la goma pinchada, un borde rojo cortado
+      // fully broken: only the outline, as if missing; with a punctured tyre, a dashed red border
       const outline = ' fill-opacity="0" stroke="#ff3b30" stroke-width="1.2" stroke-dasharray="2 1.5"';
       svg += rect(
         box,
@@ -138,7 +138,7 @@ export class Hud {
     }
   }
 
-  // distancia con el de adelante, como en la TV: segundos o vueltas
+  // gap to the car ahead, as on TV: seconds or laps
   gapText(g, ahead, behind) {
     const gap = g.race.gap(ahead, behind);
     if (!gap) return '';
@@ -146,7 +146,7 @@ export class Hud {
   }
 
   drawTower(g, time) {
-    if (time - this.towerClock < 200) return; // 5 veces por segundo alcanza, y se lee mejor
+    if (time - this.towerClock < 200) return; // 5 times per second is enough, and it reads better
     this.towerClock = time;
     const order = g.race.order();
     const rows = order.map((e, i) => {
@@ -165,7 +165,7 @@ export class Hud {
     if (this.tower.innerHTML !== html) this.tower.innerHTML = html;
   }
 
-  // tabla de resultados: aparece cuando terminás
+  // results table: appears when you finish
   drawResults(g) {
     const show = g.race.finished.some((f) => f.entry === g.player) || g.player.out !== undefined;
     this.results.classList.toggle('show', show);
@@ -201,8 +201,8 @@ export class Hud {
     return `${m}:${s.toFixed(3).padStart(6, '0')}`;
   }
 
-  // Semáforo de largada, como el de la F1: cinco columnas con dos luces rojas cada una.
-  // Se prenden de a una por segundo y, después de una espera al azar, se apagan todas: ahí se larga.
+  // Start lights, like the F1 ones: five columns with two red lights each.
+  // They come on one per second and, after a random wait, all go out: that's the start.
   drawLights(g) {
     const { lit } = g.race.lights();
     const w = 26,
@@ -264,7 +264,7 @@ export class Hud {
     this.dot(g.car.x * k, g.car.y * k, g.player.color);
   }
 
-  // minimapa de la repetición: dots = [[x, y, color, destacado]]
+  // replay minimap: dots = [[x, y, color, highlighted]]
   drawMinimapAt(track, dots) {
     const k = this.minimap.width / track.W;
     this.mctx.clearRect(0, 0, this.minimap.width, this.minimap.height);

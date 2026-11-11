@@ -1,176 +1,178 @@
-# La física
+# Physics
 
-Cómo se mueve el auto, cómo choca y cómo se rompe. Todo está en `src/sim/` y es lo mismo para vos, para los
-rivales y para el entrenamiento de la red.
+How the car moves, how it collides and how it breaks. Everything is in `src/sim/` and it is the same for you, for the
+rivals and for training the network.
 
-## Escala y modelo del auto
+## Scale and car model
 
-Cada circuito tiene una escala real en metros por celda, calculada con el largo real de la vuelta (de la
-telemetría, o `lengthMeters`). Lo que puede hacer el auto sale de un **modelo físico calibrado con vueltas reales**
-(`src/sim/dynamics.js`, ver "Calibración con vueltas reales"): carga y resistencia aerodinámicas que crecen con v² y
-con la densidad del aire (la altura del circuito), dos alerones y un balance mecánico que elige cada uno (**puesta a
-punto**), agarre por eje según la carga, potencia y tracción; y una caja de 8 marchas con RPM, corte y luces de
-cambio (`src/sim/car.js`).
+Each track has a real scale in meters per cell, computed from the real lap length (from telemetry, or
+`lengthMeters`). What the car can do comes from a **physical model calibrated against real laps**
+(`src/sim/dynamics.js`, see "Calibration against real laps"): downforce and drag that grow with v² and with air
+density (the track's altitude), two wings and a mechanical balance that each player chooses (**setup**), per-axle
+grip depending on load, power and traction; and an 8-speed gearbox with RPM, rev limiter and shift lights
+(`src/sim/car.js`).
 
-`dynamics.js` es un modelo chico, el de un simulador de vuelta:
+`dynamics.js` is a small model, the kind used in a lap simulator:
 
-- **Aerodinámica:** carga y resistencia = ½·ρ·C·v². Con los alerones al mínimo el auto tiene la carga del piso y
-  la carrocería (`clMin`) y con los dos al máximo, ~45 % más (`clMax`). Cada alerón cobra en resistencia su carga
-  sobre su eficiencia: el delantero casi nada, el trasero mucho. La densidad del aire ρ sale de la altura del
-  circuito (`altitude` en `tracks/index.js`): en Interlagos hay ~9 % menos de aire que a nivel del mar.
-- **Gomas:** cada rueda agarra `mu · carga^0,85` (cada kilo de más agarra un poco menos), con la carga aerodinámica
-  repartida entre los ejes y el traslado de peso a las ruedas de afuera en las curvas. Con más agarre adelante que
-  atrás el auto sobrevira; con menos, subvira. A lo largo agarran un poco más que de costado (`brakeMu`,
-  `tractionMu`); la frenada y la tracción "a fondo" que usa la trazada son el 93 % y el 92 % de lo que aguantan.
-- **Motor:** una potencia (empuja menos cuanto más rápido va); el turbo compensa casi todo el aire que falta en la
-  altura. Cada kilo de nafta se suma al peso.
+- **Aerodynamics:** downforce and drag = ½·ρ·C·v². With the wings at minimum the car has the downforce of the floor
+  and the bodywork (`clMin`), and with both at maximum, ~45 % more (`clMax`). Each wing charges its downforce
+  divided by its efficiency as drag: the front almost nothing, the rear a lot. The air density ρ comes from the
+  track's altitude (`altitude` in `tracks/index.js`): at Interlagos there is ~9 % less air than at sea level.
+- **Tyres:** each wheel grips `mu · load^0.85` (each extra kilo grips a bit less), with the downforce split between
+  the axles and the weight transfer to the outside wheels in corners. With more grip at the front than at the rear
+  the car oversteers; with less, it understeers. Longitudinally they grip a bit more than laterally (`brakeMu`,
+  `tractionMu`); the "full" braking and traction the racing line uses are 93 % and 92 % of what they can hold.
+- **Engine:** a power figure (it pushes less the faster the car goes); the turbo makes up almost all the air missing
+  at altitude. Every kilo of fuel adds to the weight.
 
-## Superficie por rueda
+## Surface per wheel
 
-Cada rueda mira qué pisa (asfalto, piano, pasto, leca o escapatoria asfaltada; `SURFACES` en `src/sim/car.js` y
-`surfaceAt` en `src/sim/track.js`). Cada eje agarra según sus dos ruedas (una trasera en el pasto suelta la cola,
-una delantera quita dirección), cada rueda en el pasto frena y, si frena más de un lado, el auto tira para ese
-lado; con las dos traseras en el pasto el motor no empuja más de ~90 km/h. La leca frena más y casi no deja doblar;
-la escapatoria asfaltada agarra casi como la pista. Para el entrenamiento, las tres cuentan como fuera de la pista
-(`car.grass`). Además: choques y gravedad en las pendientes.
+Each wheel checks what it is on (asphalt, kerb, grass, gravel or paved runoff; `SURFACES` in `src/sim/car.js` and
+`surfaceAt` in `src/sim/track.js`). Each axle grips according to its two wheels (a rear wheel on the grass loses the
+rear, a front one takes away steering), each wheel on the grass slows the car and, if one side slows more, the car
+pulls to that side; with both rear wheels on the grass the engine can't push beyond ~90 km/h. Gravel slows more and
+barely lets the car turn; paved runoff grips almost like the track. For training, all three count as off track
+(`car.grass`). Also: collisions and gravity on slopes.
 
-## La estela de otro auto
+## Another car's wake
 
-Hasta 120 m atrás y 2,5 m de costado; a 20 m queda el 70 % y a 45 m, el 40 %. Hay menos resistencia del aire
-(**rebufo**, hasta un 35 % pegado a él) pero también menos carga aerodinámica (**aire sucio**, que se nota sólo de
-cerca: a 10 m se pierde ~30 % de la carga, a 20 m ~15 % y a 40 m casi nada, y más adelante que atrás; es lo
-publicado de los F1 de 2023 en adelante). En la recta se gana velocidad; en una curva rápida, a 10 m de otro auto
-se dobla un 19 % menos (a 20 m, 10 %) y el auto subvira, y la frenada se alarga. Vale para vos y para los rivales.
+Up to 120 m behind and 2.5 m to the side; at 20 m 70 % remains and at 45 m, 40 %. There is less drag
+(**slipstream**, up to 35 % right behind it) but also less downforce (**dirty air**, noticeable only up close: at
+10 m ~30 % of the downforce is lost, at 20 m ~15 % and at 40 m almost nothing, and more at the front than at the rear;
+this is what has been published for F1 cars from 2023 on). On the straight you gain speed; in a fast corner, 10 m
+behind another car you turn 19 % less (at 20 m, 10 %) and the car understeers, and braking gets longer. It applies to
+you and to the rivals.
 
-La carga también cambia con cómo va el auto: frenando se corre adelante (la trompa baja) y con el auto de costado
-se pierde (hasta la mitad en un trompo). Y la **nafta** pesa: en carrera se carga la justa para las vueltas que son
-(0,37 kg por km) y se gasta a 100 kg/h a fondo; con 100 kg el auto dobla ~6 % menos en las curvas rápidas.
+Downforce also changes with what the car is doing: under braking it shifts forward (the nose dips) and with the car
+sideways it is lost (up to half in a spin). And **fuel** has weight: in a race the car carries just enough for the
+laps (0.37 kg per km) and burns it at 100 kg/h at full throttle; with 100 kg the car turns ~6 % less in fast corners.
 
 ## Balance
 
-Al frenar el peso se pasa adelante y al acelerar, atrás (lo que dé la física: a fondo, 12 a 16 % del peso, con un
-instante de demora por la suspensión), y en las curvas, a las ruedas de afuera (el **balance mecánico** de la
-puesta a punto decide qué eje se lleva más de ese traslado). Cada rueda agarra según su carga, pero no en
-proporción (el doble de carga da 1,8 veces el agarre), así que el eje que más traslada es el que menos agarra.
-Además cada eje reparte su agarre entre frenar o empujar y doblar (**círculo de fricción**: √(frenada² + giro²) ≤
-agarre; el motor empuja sólo con las de atrás). Los frenos reparten la frenada como la carga de cada eje en ese
-momento, corrida adelante; cuánto, es el **reparto de frenada** de la puesta a punto.
+Under braking the weight moves forward and under acceleration, backward (whatever the physics gives: at full
+throttle or full braking, 12 to 16 % of the weight, with a brief delay from the suspension), and in corners, to the
+outside wheels (the **mechanical balance** in the setup decides which axle takes more of that transfer). Each wheel
+grips according to its load, but not proportionally (double the load gives 1.8 times the grip), so the axle that
+transfers the most is the one that grips the least. Each axle also splits its grip between braking or pushing and
+turning (**friction circle**: √(braking² + turning²) ≤ grip; the engine only pushes through the rear wheels). The
+brakes split the braking force like the load on each axle at that moment, shifted forward; how much is the **brake
+bias** in the setup.
 
-## Bloqueos y patinamiento
+## Lockups and wheelspin
 
-Si a un eje se le pide frenar o empujar más de lo que agarra, sus ruedas se bloquean (o patinan): frenan o empujan
-menos, casi no sostienen de costado (con las de adelante bloqueadas el auto sigue derecho; con las de atrás, la
-cola se va), se recalientan y se gastan (un plano). El pedal de freno manda la fuerza de los frenos, y a fondo es
-lo que aguantan las gomas a la velocidad punta, con toda la carga aerodinámica: a medida que el auto frena hay
-menos carga y hay que ir soltándolo, o se bloquean (y antes sobre un piano, el pasto o en el aire sucio de otro).
-Con el **ABS** (opciones; prendido por defecto, para el teclado, que frena todo o nada) los frenos sueltan solos
-antes de bloquear. El motor puede más que las gomas hasta unos 140 km/h: sin control de tracción, a fondo en las
-marchas bajas las traseras patinan y hay que dosificar.
+If an axle is asked to brake or push more than it can grip, its wheels lock (or spin): they brake or push less, hold
+almost nothing sideways (with the fronts locked the car goes straight on; with the rears, the rear steps out), and
+they overheat and wear (a flat spot). The brake pedal sets the brake force, and at full pressure it is what the tyres
+can hold at top speed with full downforce: as the car slows there is less downforce and you have to ease off, or they
+lock (and sooner on a kerb, on the grass or in another car's dirty air). With **ABS** (options; on by default, for
+the keyboard, which brakes all or nothing) the brakes release by themselves before locking. The engine is stronger
+than the tyres up to about 140 km/h: without traction control, at full throttle in low gears the rears spin and you
+have to modulate.
 
-## Temperatura y desgaste, rueda por rueda
+## Temperature and wear, wheel by wheel
 
-Las gomas se calientan con lo que deslizan (doblando, frenando, empujando; mucho bloqueadas o patinando) y con
-rodar cargadas, y el aire las enfría. Agarran todo entre 85 y 105 °C; salen de las mantas a 80 °C (la primera
-vuelta agarran un poco menos), en una vuelta normal andan entre 87 y 103 °C de media y pasadas de temperatura
-pierden hasta un 20 % y se gastan más rápido. Se calienta y se gasta más la de afuera de cada curva. Gastadas del
-todo agarran 8 % menos y sobre el final (pasado el 85 %) se caen otro 6 %: manejando normal llegan al final de la
-carrera con ~80 %, justo antes; el que las maltrata se queda sin gomas. El panel, al lado del velocímetro, muestra
-las cuatro: el color es la temperatura (azul fría, verde en su punto, de amarilla a roja pasada), el número los
-°C, la barrita lo que queda de goma y un borde blanco, que está bloqueada o patinando.
+The tyres heat up from sliding (turning, braking, pushing; a lot when locked or spinning) and from rolling under
+load, and the air cools them. They have full grip between 85 and 105 °C; they come out of the blankets at 80 °C (on
+the first lap they grip a bit less), on a normal lap they average between 87 and 103 °C, and overheated they lose up
+to 20 % and wear faster. The outside tyre in each corner heats up and wears the most. Fully worn they grip 8 % less,
+and near the end (past 85 %) they drop another 6 %: driving normally they reach the end of the race at ~80 %, just
+before that; whoever abuses them runs out of tyres. The panel, next to the speedometer, shows all four: the color is
+the temperature (blue cold, green in the window, yellow to red overheated), the number the °C, the small bar how much
+rubber is left, and a white border that it is locked or spinning.
 
-## Subviraje y sobreviraje
+## Understeer and oversteer
 
-El eje delantero limita cuánto dobla el auto (si no alcanza, se va de trompa: subviraje); si al trasero no le
-alcanza para sostener la curva, la cola se abre y el auto queda cruzado (sobreviraje) hasta que levantás el pie o
-contravolanteás. La curva la tienen que sostener los dos ejes: con la cola corta (sin alerón trasero, o con una
-puesta muy sobrevirante) el auto no dobla más que lo que aguanta la cola (con un 5 % de margen, cruzándose) y la
-cola arrastrándose de costado frena. Lo que la cola gasta frenando o empujando no achica la curva: la abre. Y el
-deslizamiento de costado lo frena sólo lo que le sobra a las gomas después de doblar: doblando al límite, el auto
-se sigue abriendo. En una curva sin pedales da lo mismo que el agarre medido; lo que cambia es frenar fuerte
-doblando (la cola se pone liviana), soltar el freno de a poco al entrar (la trompa muerde y el auto rota) y pisar
-a fondo en una curva lenta (la cola se abre). El traslado de peso de costado también resta agarre, pero eso ya
-está dentro del agarre lateral medido.
+The front axle limits how much the car turns (if it isn't enough, the nose runs wide: understeer); if the rear isn't
+enough to hold the corner, the rear steps out and the car ends up sideways (oversteer) until you lift or
+countersteer. Both axles have to hold the corner: with a light rear (no rear wing, or a very oversteery setup) the car
+turns no more than the rear can hold (with a 5 % margin, going sideways) and the rear sliding sideways slows the car.
+What the rear spends braking or pushing does not tighten the corner: it opens it. And sideways sliding is only slowed
+by what the tyres have left after turning: turning at the limit, the car keeps drifting wide. In a corner with no
+pedals it is the same as the measured grip; what changes is braking hard while turning (the rear goes light),
+releasing the brake gradually on entry (the nose bites and the car rotates) and flooring it in a slow corner (the
+rear steps out). Lateral weight transfer also takes away grip, but that is already included in the measured lateral
+grip.
 
-## Puesta a punto
+## Setup
 
-En el menú, por circuito: alerón delantero y trasero de 1 a 10 y balance mecánico de -5 a 5 (las barras
-estabilizadoras: qué eje se lleva más del traslado de peso de costado; es lo que queda para las curvas lentas,
-donde casi no hay carga aerodinámica). Y el **reparto de frenada**, de -5 a 5: más adelante el auto frena más
-estable pero bloquea antes las delanteras y frena un poco menos; más atrás frena más y rota al entrar a la curva,
-hasta que se bloquean las de atrás. Cada circuito trae una recomendada, la que llevan los equipos (`tune` en
-`tracks/index.js`: Monza 1/1, Barcelona 8/8…) y los rivales usan esa; la tuya se recuerda por circuito. Abajo de
-los controles el menú dice cómo queda el auto: punta, agarre en curva rápida y si subvira o sobrevira en curvas
-lentas y rápidas.
+In the menu, per track: front and rear wing from 1 to 10 and mechanical balance from -5 to 5 (the anti-roll bars:
+which axle takes more of the lateral weight transfer; it is what is left for slow corners, where there is almost no
+downforce). And the **brake bias**, from -5 to 5: further forward the car brakes more stably but locks the fronts
+sooner and brakes a bit less; further back it brakes more and rotates on corner entry, until the rears lock. Each
+track comes with a recommended one, the one the teams use (`tune` in `tracks/index.js`: Monza 1/1, Barcelona 8/8…),
+and the rivals use that one; yours is remembered per track. Below the controls the menu says how the car ends up: top
+speed, grip in fast corners and whether it understeers or oversteers in slow and fast corners.
 
-## Choques
+## Collisions
 
-`src/sim/collision.js`, con impulsos, como un motor de física 2D. Además de la velocidad de marcha, cada auto tiene
-una velocidad de costado y un giro que le dejan los golpes, y que las gomas van frenando (más rápido cuanto más
-agarre). Entre autos, cada uno es un juego de piezas de 5,6 × 2 m en total (alerón delantero, trompa, las cuatro
-ruedas asomadas, pontones, caja y alerón trasero; `ZONES` en `src/sim/damage.js`): se detecta el choque pieza
-contra pieza con el test de ejes separadores, el punto de contacto es el promedio de las esquinas que quedaron
-dentro de la otra pieza, y el impulso depende de con qué velocidad se acercan ahí (con un poco de rebote y
-rozamiento). **Rueda contra rueda** es distinto: la goma agarra mucho más y la parte que se toca gira más rápido
-que el auto, así que el más rápido arrastra al más lento y los dos se tuercen; y si una delantera le pega de atrás
-a una trasera, se trepa: pierde velocidad, queda girando y se rompe la suspensión. Si le pegás de atrás a alguien,
-sale empujado; si el golpe es desplazado del centro, los autos giran, y uno fuerte te hace trompear.
+`src/sim/collision.js`, with impulses, like a 2D physics engine. Besides its forward speed, each car has a sideways
+speed and a spin left by impacts, which the tyres gradually damp (faster the more grip). Between cars, each one is a
+set of parts 5.6 × 2 m in total (front wing, nose, the four protruding wheels, sidepods, gearbox and rear wing;
+`ZONES` in `src/sim/damage.js`): the collision is detected part against part with the separating axis test, the
+contact point is the average of the corners that ended up inside the other part, and the impulse depends on how fast
+they approach each other there (with a little bounce and friction). **Wheel against wheel** is different: the tyre
+grips much more and the part in contact spins faster than the car, so the faster car drags the slower one and both
+twist; and if a front wheel hits a rear wheel from behind, it climbs over it: it loses speed, is left spinning and the
+suspension breaks. If you hit someone from behind, they get pushed; if the hit is off-center, the cars spin, and a
+hard one sends you into a spin.
 
-Contra los muros, el auto son tres círculos a lo largo: un roce en ángulo casi no frena y lo endereza contra el
-muro; de frente, frena y rebota. Apoyados sin acercarse, se deslizan sin frenarse.
+Against the walls, the car is three circles along its length: a glancing hit barely slows it and straightens it
+against the wall; head-on, it slows down and bounces. Resting against the wall without approaching it, the car slides
+without slowing down.
 
-## Daños
+## Damage
 
-`src/sim/damage.js`, en el menú: no, reducidos o reales. Cada golpe rompe la pieza donde pega según qué tan fuerte
-es (desde unos m/s de cambio de velocidad en el punto de contacto; los golpes se suman), con su lado (izquierda o
-derecha) para cuando haya que dibujarlos:
+`src/sim/damage.js`, in the menu: off, reduced or real. Each hit breaks the part where it lands depending on how hard
+it is (from a few m/s of change in speed at the contact point; hits add up), with its side (left or right) for when
+they need to be drawn:
 
-- **alerón delantero:** los flaps primero, después entero. Se pierde su apoyo: en curva lenta casi no se nota y en
-  las rápidas la trompa no dobla;
-- **alerón trasero:** menos apoyo atrás (la cola se abre en las rápidas) y menos resistencia (más punta);
-- **pontón y piso:** menos apoyo y el motor recalienta (rinde menos);
-- **suspensión** de cada rueda: torcida, esa rueda agarra menos y el auto tira para un lado; rota, abandono;
-- **pinchazo** (un alerón ajeno que corta la goma, o rueda contra rueda fuerte): la goma se desinfla en 4 s, agarra
-  la mitad y frena.
+- **front wing:** the flaps first, then the whole wing. Its downforce is lost: in slow corners it is barely
+  noticeable and in fast ones the nose won't turn;
+- **rear wing:** less downforce at the rear (the rear steps out in fast corners) and less drag (more top speed);
+- **sidepod and floor:** less downforce and the engine overheats (it produces less power);
+- **suspension** of each wheel: bent, that wheel grips less and the car pulls to one side; broken, retirement;
+- **puncture** (someone else's wing cutting the tyre, or a hard wheel-to-wheel hit): the tyre deflates in 4 s, grips
+  half and slows the car.
 
-Con daño de un solo lado el auto agarra distinto según para dónde dobla (en curva el peso va a las ruedas de
-afuera). Un auto que abandona frena hasta pararse y a los 2 s lo sacan de la pista; en la tabla queda "AB". Con
-daños reducidos todo se rompe a la mitad y nada del todo, sin pinchazos ni abandonos. Cuando tu auto tiene algo
-roto aparece a la derecha un esquema visto desde arriba, cada pieza de su color (amarillo, naranja, rojo; rota,
-sólo el contorno).
+With damage on one side only, the car grips differently depending on which way it turns (in a corner the weight goes
+to the outside wheels). A car that retires brakes to a stop and after 2 s it is removed from the track; the table
+shows "AB". With reduced damage everything breaks half as much and nothing completely, with no punctures or
+retirements. When your car has something broken, a diagram seen from above appears on the right, each part in its
+color (yellow, orange, red; broken, only the outline).
 
-Con `?prueba` en la dirección, las teclas **1** a **9** rompen piezas (1–2 alerón delantero izquierdo/derecho, 3–4
-trasero, 5–6 pontones, 7 pinchazo trasero izquierdo, 8 suspensión delantera derecha, 9 dirección rota) y **0**
-arregla todo. Los umbrales se ajustaron con `GAME=1 DAMAGE=real HITS=1 node rl/race_eval.js models/v22/fase18.json`
-(cuántos autos rompen algo por carrera y qué tan fuertes son los golpes en cada pieza).
+With `?test` in the URL, the keys **1** to **9** break parts (1–2 front wing left/right, 3–4 rear, 5–6 sidepods,
+7 rear left puncture, 8 front right suspension, 9 broken steering) and **0** repairs everything. The thresholds were
+tuned with `GAME=1 DAMAGE=real HITS=1 node rl/race_eval.js models/v22/fase18.json` (how many cars break something per
+race and how hard the hits on each part are).
 
-## Calibración con vueltas reales
+## Calibration against real laps
 
-Los números del auto (`cars/f1-2025.json`) se ajustaron con `tools/calibrate.js` contra las poles de 2025 en los 8
-circuitos (lo que ya bajó `tools/layout.py` a `tools/.cache/`):
+The car's numbers (`cars/f1-2025.json`) were fitted with `tools/calibrate.js` against the 2025 poles on the 8 tracks
+(what `tools/layout.py` already downloaded to `tools/.cache/`):
 
 ```bash
-node tools/calibrate.js          # cómo da el auto como está (y tools/.out/calibration.html con los gráficos)
-node tools/calibrate.js --fit    # busca los números que mejor ajustan y los escribe
+node tools/calibrate.js          # how the car does as it is (and tools/.out/calibration.html with the charts)
+node tools/calibrate.js --fit    # searches for the numbers that fit best and writes them
 ```
 
-Simula cada vuelta sobre la trazada que hace la red y la compara con la velocidad real a lo largo de la vuelta
-(`tools/openf1.js`: las 5 mejores vueltas de la clasificación, proyectadas sobre el trazado), la punta con las
-trampas de velocidad y además pide que la puesta a punto de cada circuito sea la más rápida ahí (así se ajusta
-cuánto cuesta el alerón). Cosas a saber:
+It simulates each lap on the line the network drives and compares it with the real speed along the lap
+(`tools/openf1.js`: the 5 best qualifying laps, projected onto the layout), the top speed with the speed traps, and
+it also requires each track's setup to be the fastest one there (that is how the cost of the wing is fitted). Things
+to know:
 
-- La velocidad sale de las posiciones (~4 por segundo), no de la telemetría del auto: los tiempos bailan, así que
-  está suavizada y la punta sale unos km/h de más (la de verdad es la de las trampas). Las frenadas no se pueden
-  medir bien, así que la frenada y la sensibilidad a la carga quedan fijas en valores razonables.
-- Las chicanas del juego (variantes de Monza, la última de Montreal) quedaron más abiertas que las reales: ahí el
-  juego va más rápido y por eso el error cuenta lineal pasados los 15 km/h.
-- La adherencia (`mu`) tiene tope en 1,9, lo que da una goma slick: sin tope el ajuste cambia carga aerodinámica
-  por agarre mecánico. Con ese tope el auto tiene más carga (iguala a su peso a ~165 km/h) y menos agarre en lento.
-- Resultado: punta de 310 a 355 km/h según el circuito (como las trampas), ~2,0 g en curva lenta, ~5 g a 250 km/h
-  y ~6,2 g a 300 km/h, frenadas de hasta ~6 g, y vueltas simuladas de -4,3 a +0,7 s de la pole (lo más rápido, en
-  los circuitos de chicanas).
+- The speed comes from the positions (~4 per second), not from the car's telemetry: the times jitter, so it is
+  smoothed and the top speed comes out a few km/h too high (the real one is the speed trap's). Braking can't be
+  measured well, so braking and load sensitivity are fixed at reasonable values.
+- The game's chicanes (the Monza chicanes, the last one at Montreal) ended up more open than the real ones: there the
+  game is faster, which is why the error counts linearly past 15 km/h.
+- Grip (`mu`) is capped at 1.9, which gives a slick tyre: without a cap the fit trades downforce for mechanical grip.
+  With that cap the car has more downforce (equal to its weight at ~165 km/h) and less grip at low speed.
+- Result: top speed from 310 to 355 km/h depending on the track (like the speed traps), ~2.0 g in slow corners, ~5 g
+  at 250 km/h and ~6.2 g at 300 km/h, braking up to ~6 g, and simulated laps from -4.3 to +0.7 s off pole (the
+  fastest, on the tracks with chicanes).
 
-`node tools/lapcompare.js` grafica la pole real contra la red del juego dando una vuelta (`tools/.out/laps.html`).
+`node tools/lapcompare.js` plots the real pole against the game network doing a lap (`tools/.out/laps.html`).
 
-Las marchas y RPM siguen saliendo de `tools/car_profile.py` (las 15 vueltas más rápidas de una carrera en OpenF1:
-`python3 tools/car_profile.py Interlagos 2023 cars/f1-2023.json`), que además mide aceleración, frenada y agarre
-lateral, lo que usaba la física de antes.
+The gears and RPM still come from `tools/car_profile.py` (the 15 fastest laps of a race in OpenF1:
+`python3 tools/car_profile.py Interlagos 2023 cars/f1-2023.json`), which also measures acceleration, braking and
+lateral grip, what the old physics used.

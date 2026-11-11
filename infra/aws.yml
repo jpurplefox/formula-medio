@@ -1,28 +1,28 @@
 AWSTemplateFormatVersion: '2010-09-09'
-# Lo que necesita Fórmula ½ en AWS, todo de una vez (docs/deployment.md):
-# - un bucket S3 privado con los archivos del juego;
-# - una distribución de CloudFront delante, que es la única que puede leer el bucket (Origin Access Control);
-# - un rol que GitHub Actions asume con OIDC para publicar desde main (sin claves de AWS guardadas en GitHub).
-Description: Formula 1/2 - sitio estatico (S3 + CloudFront) y rol de deploy para GitHub Actions
+# What Fórmula ½ needs on AWS, all at once (docs/deployment.md):
+# - a private S3 bucket with the game files;
+# - a CloudFront distribution in front, the only thing that can read the bucket (Origin Access Control);
+# - a role that GitHub Actions assumes with OIDC to publish from main (no AWS keys stored in GitHub).
+Description: Formula 1/2 - static site (S3 + CloudFront) and deploy role for GitHub Actions
 
 Parameters:
   BucketName:
     Type: String
     Default: formula-medio
-    Description: Nombre del bucket (unico en todo S3)
+    Description: Bucket name (unique across all of S3)
   GitHubSubjectPrefix:
     Type: String
     Default: repo:jpurplefox@9813325/formula-medio@1453280176
     Description: >-
-      Como se presenta el repo que puede publicar (el sub del token de GitHub sin la rama). Los repos nuevos usan el
-      formato con IDs, que no cambia si el repo se renombra; sale de
+      How the repo that may publish identifies itself (the sub of the GitHub token without the branch). New repos use
+      the format with IDs, which does not change if the repo is renamed; it comes from
       gh api repos/OWNER/REPO/actions/oidc/customization/sub (sub_claim_prefix)
   GitHubOIDCProviderArn:
     Type: String
     Default: ''
     Description: >-
-      ARN del proveedor OIDC de GitHub si la cuenta ya lo tiene (por ejemplo, el de sleepmon). Vacio lo crea.
-      Una cuenta puede tener uno solo por URL, así que si ya existe hay que pasarlo.
+      ARN of the GitHub OIDC provider if the account already has one (for example, sleepmon's). Empty creates it.
+      An account can have only one per URL, so if it already exists it must be passed in.
 
 Conditions:
   CreateOIDCProvider: !Equals [!Ref GitHubOIDCProviderArn, '']
@@ -59,7 +59,7 @@ Resources:
         Comment: Formula 1/2
         DefaultRootObject: index.html
         HttpVersion: http2and3
-        # todas las regiones: con PriceClass_100 no hay puntos en Sudamérica
+        # all regions: PriceClass_100 has no edge locations in South America
         PriceClass: PriceClass_All
         Origins:
           - Id: s3
@@ -72,7 +72,8 @@ Resources:
           ViewerProtocolPolicy: redirect-to-https
           AllowedMethods: [GET, HEAD]
           CachedMethods: [GET, HEAD]
-          # Managed-CachingOptimized: comprime con gzip y brotli (la red de los rivales, 1,2 MB de JSON, baja mucho)
+          # Managed-CachingOptimized: compresses with gzip and brotli (the rivals' network, 1.2 MB of JSON, shrinks
+          # a lot)
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
           Compress: true
 
@@ -115,7 +116,7 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                # sólo lo que corre en main de este repo
+                # only what runs on main in this repo
                 token.actions.githubusercontent.com:sub: !Sub '${GitHubSubjectPrefix}:ref:refs/heads/main'
       Policies:
         - PolicyName: publicar
@@ -134,11 +135,11 @@ Resources:
 
 Outputs:
   SiteUrl:
-    Description: Donde queda el juego
+    Description: Where the game lives
     Value: !Sub 'https://${Distribution.DomainName}'
   DistributionId:
-    Description: Para el secret CLOUDFRONT_DISTRIBUTION_ID
+    Description: For the CLOUDFRONT_DISTRIBUTION_ID secret
     Value: !Ref Distribution
   DeployRoleArn:
-    Description: Para el secret AWS_ROLE_ARN
+    Description: For the AWS_ROLE_ARN secret
     Value: !GetAtt DeployRole.Arn

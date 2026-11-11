@@ -1,8 +1,9 @@
-// Equipos (parodias de los de la F1, con sus colores) y niveles de dificultad.
+// Teams (parodies of the F1 ones, with their colors) and difficulty levels.
 
-// color: carrocería; accent: franja y detalles de la decoración; helmet: casco; drivers: sus dos pilotos (nombre,
-// sigla para la tabla y número), inventados a partir de la grilla de 2026. Como en la F1, el primero lleva la cámara
-// de arriba, la "T", negra y el segundo, amarilla (como en la grilla de 2026 de verdad); si elegís ese equipo, manejás el auto del piloto que elijas.
+// color: bodywork; accent: livery stripe and details; helmet: helmet; drivers: its two drivers (name, code for the
+// standings table and number), made up from the 2026 grid. As in F1, the first one carries the camera on top, the
+// "T", in black and the second in yellow (as on the real 2026 grid); if you pick that team, you drive the car of the
+// driver you choose.
 export const TEAMS = [
   {
     id: 'hierrari',
@@ -138,16 +139,17 @@ export const TEAMS = [
   },
 ];
 
-// Ritmo de los rivales: del más rápido (pole) al más lento, repartido parejo entre los 21
-// (fracción de la velocidad de su trazada; en Interlagos, 1,1 da vueltas de ~68,8 s, 1,06 de ~69,7 s,
-// 0,98 de ~71,9 s, 0,93 de ~75 s y 0,87 de ~80 s). En las curvas lentas no pasan de 0,975 (ai.js).
-// Con la red entrenada (rl/) el ritmo no se elige: lo da el auto. setups: agarre y potencia del más rápido y del más
-// lento (1 = el tuyo). La red (v5) se entrenó con autos de 0,85 a 1,2; un poco más abajo sigue sin pisar el pasto.
-// Medido con GAME=1 DIFFICULTY=… node rl/race_eval.js: el ganador tarda 260 s (Fácil), 251 s (Normal), 243 s
-// (Difícil) y 237 s (Experto), y un jugador al ritmo más rápido de la IA clásica en esa dificultad termina
-// 5.º, 4.º, 6.º y 9.º.
-// Con la IA clásica, en Interlagos: vueltas de ~75 a 80 s (Fácil), ~71,5 a 74 s (Normal), ~69,5 a 72 s (Difícil)
-// y ~69 a 70 s (Experto).
+// Rivals' pace: from the fastest (pole) to the slowest, spread evenly among the 21
+// (fraction of the speed of their racing line; at Interlagos, 1.1 gives laps of ~68.8 s, 1.06 of ~69.7 s,
+// 0.98 of ~71.9 s, 0.93 of ~75 s and 0.87 of ~80 s). In slow corners they don't go above 0.975 (ai.js).
+// With the trained network (rl/) the pace is not chosen: the car sets it. setups: grip and power of the fastest and
+// the slowest (1 = yours). The network (v5) was trained with cars from 0.85 to 1.2; a bit lower it still stays off
+// the grass.
+// Measured with GAME=1 DIFFICULTY=… node rl/race_eval.js: the winner takes 260 s (Fácil), 251 s (Normal), 243 s
+// (Difícil) and 237 s (Experto), and a player at the classic AI's fastest pace on that difficulty finishes
+// 5th, 4th, 6th and 9th.
+// With the classic AI, at Interlagos: laps of ~75 to 80 s (Fácil), ~71.5 to 74 s (Normal), ~69.5 to 72 s (Difícil)
+// and ~69 to 70 s (Experto).
 export const DIFFICULTIES = [
   { id: 'easy', name: 'Fácil', paces: [0.93, 0.87], setups: [0.83, 0.78] },
   { id: 'normal', name: 'Normal', paces: [0.985, 0.945], setups: [0.89, 0.84] },
@@ -160,15 +162,15 @@ const spread = ([fast, slow], count) =>
 
 export const rivalPaces = (difficulty, count) => spread(difficulty.paces, count);
 
-// Agarre y potencia de cada rival con la red, del más rápido al más lento (el resto como el tuyo)
+// Grip and power of each rival with the network, from the fastest to the slowest (the rest like yours)
 export const rivalSetups = (difficulty, count) =>
   spread(difficulty.setups, count).map((k) => ({ power: k, topSpeed: 1, grip: k, brakes: 1, wear: 1 }));
 
 export const LAP_OPTIONS = [1, 3, 5, 10];
 
-// Cómo viene el campeonato, del mejor equipo al peor (actualizarlo a medida que avanza la temporada). Los rivales
-// van en este orden: los de los mejores equipos largan adelante y reciben el ritmo (IA clásica) o el agarre y la
-// potencia (red) más altos de la dificultad elegida.
+// Championship standings, from the best team to the worst (update it as the season goes on). Rivals go in this
+// order: those from the best teams start at the front and get the highest pace (classic AI) or grip and power
+// (network) of the chosen difficulty.
 const STANDINGS = [
   'merchoedes',
   'hierrari',
@@ -183,16 +185,16 @@ const STANDINGS = [
   'cadillaque',
 ];
 
-// Cuántos rivales se pueden elegir en el menú: con 10 (lo que viene elegido), uno de cada equipo rival; con todos, la
-// grilla completa
+// How many rivals can be picked in the menu: with 10 (the default), one from each rival team; with all of them, the
+// full grid
 export const RIVAL_OPTIONS = [1, 3, 7, 10, 21];
 export const DEFAULT_RIVALS = TEAMS.length - 1;
 
-// Los autos de la carrera: 2 por equipo. Vos manejás el de tu piloto (slot) en tu equipo; los rivales son los otros
-// 21 (tu compañero incluido), ordenados por el campeonato. Con uno por equipo rival (DEFAULT_RIVALS), el primer piloto
-// de cada uno de los otros equipos. Con otra cantidad (count), se toman repartidos de punta a punta de la lista
-// completa, así sigue habiendo autos rápidos y lentos (con uno solo, el del mejor equipo).
-// Cada auto: { team, slot (0 o 1), number }
+// The race cars: 2 per team. You drive your driver's car (slot) in your team; the rivals are the other 21 (your
+// teammate included), sorted by the championship. With one per rival team (DEFAULT_RIVALS), the first driver of each
+// of the other teams. With any other count, they are taken spread from end to end of the full list, so there are
+// still fast and slow cars (with only one, the one from the best team).
+// Each car: { team, slot (0 or 1), number }
 export function rivalCars(team, count = Infinity, slot = 0) {
   const rank = (t) => STANDINGS.indexOf(t.id);
   const ranked = [...TEAMS].sort((a, b) => rank(a) - rank(b));
@@ -209,8 +211,8 @@ export const car = (team, slot) => {
   return { team, slot, name, code, number };
 };
 
-// Lugar en la grilla de cada rival (en el orden de rivalCars): como en una clasificación, los mejores autos suelen
-// largar adelante, pero cualquiera puede quedar hasta unos GRID_MIX puestos más adelante o más atrás
+// Grid slot of each rival (in rivalCars order): as in qualifying, the best cars usually start at the front, but any
+// of them can end up to about GRID_MIX places further forward or back
 const GRID_MIX = 6;
 export function gridOrder(count, rand = Math.random) {
   const order = Array.from({ length: count }, (_, i) => ({ i, key: i + GRID_MIX * rand() })).sort(

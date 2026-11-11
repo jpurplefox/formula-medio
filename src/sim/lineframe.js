@@ -1,9 +1,8 @@
-// La línea central de la pista, celda por celda: cada punto y su normal. La usan la IA (para seguir la trazada, que
-// está guardada como desplazamiento de costado respecto de esta línea), la grilla, los rescates, el renderer y las
-// cámaras de la repetición.
+// The track's centerline, cell by cell: each point and its normal. Used by the AI (to follow the racing line, which
+// is stored as a sideways offset from this line), the grid, the rescues, the renderer and the replay cameras.
 
-// Por cada celda de la línea central: el punto de la línea central y la normal hacia la derecha.
-// (La trazada ideal está guardada como desplazamiento de costado respecto de esa línea.)
+// For each centerline cell: the centerline point and the normal pointing right.
+// (The racing line is stored as a sideways offset from that line.)
 const frames = new WeakMap();
 export function lineFrame(track) {
   if (frames.has(track)) return frames.get(track);
@@ -32,7 +31,7 @@ export function lineFrame(track) {
   return f;
 }
 
-// Punto de la pista a una posición sobre la línea central (celdas) y a un desplazamiento de costado (celdas)
+// Track point at a position along the centerline (cells) and a sideways offset (cells)
 export function pointAt(f, u, side) {
   const i = ((Math.round(u) % f.L) + f.L) % f.L;
   return { x: f.cx[i] + f.nx[i] * side, y: f.cy[i] + f.ny[i] * side, angle: Math.atan2(-f.nx[i], f.ny[i]) };

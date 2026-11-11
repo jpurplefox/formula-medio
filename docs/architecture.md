@@ -1,79 +1,79 @@
-# Arquitectura
+# Architecture
 
-El juego, el entrenamiento de la IA y las herramientas comparten un mismo núcleo: la física, las reglas y la
-carrera. Ese núcleo no sabe nada del navegador, así que corre igual en el juego, en Node (`rl/`, `tools/`) y en los
-tests. Alrededor van los adaptadores: lo que se ve, lo que se oye, el teclado, el menú.
+The game, the AI training and the tools share one core: the physics, the rules and the race. That core knows nothing
+about the browser, so it runs the same in the game, in Node (`rl/`, `tools/`) and in the tests. Around it are the
+adapters: what you see, what you hear, the keyboard, the menu.
 
-Es la idea de la arquitectura hexagonal, a la manera de JavaScript: módulos de funciones y algunas clases donde hay
-estado, sin interfaces formales ni contenedores de dependencias. Los puertos son la forma que tiene que tener un
-objeto, documentada con JSDoc y revisada por TypeScript.
+It is the idea of hexagonal architecture, done the JavaScript way: modules of functions and a few classes where there
+is state, with no formal interfaces or dependency containers. The ports are the shape an object must have,
+documented with JSDoc and checked by TypeScript.
 
-## Las capas de `src/`
+## The layers of `src/`
 
-| Carpeta | Qué hay | Puede usar |
+| Folder | What is in it | May use |
 |---|---|---|
-| `sim/` | La física y las reglas del auto y la pista: dinámica (`dynamics.js`), el auto (`car.js`), choques y daños, la pista, la trazada, la goma, el semáforo y el paso físico de varios autos (`traffic.js`) | nada de afuera |
-| `race/` | La carrera (`race.js`: grilla, semáforo, largadas, vueltas, abandonos, llegada, orden), la grilla y los equipos | `sim/` |
-| `drivers/` | Quién maneja: la IA clásica (`ai.js`), la red (`policy.js`, con lo que ve en `sensors.js`) y el jugador (`human.js`) | `sim/`, `race/` |
-| `render/` | El dibujo 3D (WebGL y CPU), los modelos y las texturas | todo lo anterior |
-| `ui/` | El HUD, el menú, las opciones guardadas, la animación del piloto y la repetición | todo lo anterior |
-| `input/` | Teclado y joystick | todo lo anterior |
-| `audio/` | Motores y música | todo lo anterior |
-| `load/` | Armar un circuito desde una imagen (necesita el navegador) | todo lo anterior |
+| `sim/` | The physics and rules of the car and the track: dynamics (`dynamics.js`), the car (`car.js`), collisions and damage, the track, the racing line, the rubber, the start lights and the physics step for several cars (`traffic.js`) | nothing outside |
+| `race/` | The race (`race.js`: grid, start lights, starts, laps, retirements, finish, order), the grid and the teams | `sim/` |
+| `drivers/` | Who drives: the classic AI (`ai.js`), the network (`policy.js`, with what it sees in `sensors.js`) and the player (`human.js`) | `sim/`, `race/` |
+| `render/` | 3D drawing (WebGL and CPU), the models and the textures | all of the above |
+| `ui/` | The HUD, the menu, the saved options, the driver animation and the replay | all of the above |
+| `input/` | Keyboard and gamepad | all of the above |
+| `audio/` | Engines and music | all of the above |
+| `load/` | Building a track from an image (needs the browser) | all of the above |
 
-`main.js` arma todo: crea la partida, conecta los adaptadores y corre el bucle.
+`main.js` puts everything together: it creates the game session, connects the adapters and runs the loop.
 
-`rl/`, `tools/` y `test/` corren en Node: usan `sim/`, `race/` y `drivers/`, nunca lo del navegador.
+`rl/`, `tools/` and `test/` run in Node: they use `sim/`, `race/` and `drivers/`, never the browser parts.
 
-Las reglas las revisa ESLint (`eslint.config.js`). Si `sim/` importa algo de `render/`, o usa `document`, el lint
-falla.
+ESLint checks the rules (`eslint.config.js`). If `sim/` imports something from `render/`, or uses `document`, lint
+fails.
 
-## Los puertos
+## The ports
 
-- **Piloto** (`Driver`, en `race/race.js`): `drive(dt, track, line, me, others)` devuelve
-  `{ throttle, brake, steer }`. Lo implementan la IA clásica, la red y el jugador. Los que además tienen
-  `grid(...)` y `seesLights` manejan su propia largada.
-- **Carrera** (`Race`): `step(dt)` avanza la carrera y devuelve lo que pasó (eventos: `start`, `lap`, `invalid`,
-  `finish`, `retire`). El juego los muestra (vueltas, mensajes, repetición); `rl/race_eval.js` los cuenta.
-- **Paso físico** (`stepCars`, en `sim/traffic.js`): estela, cada auto con lo que pide su piloto y choques, en ese
-  orden. Lo usan la carrera y los simuladores de entrenamiento (`rl/race.js`, `rl/herd.js`), así se maneja igual
-  en todos lados.
+- **Driver** (`Driver`, in `race/race.js`): `drive(dt, track, line, me, others)` returns
+  `{ throttle, brake, steer }`. The classic AI, the network and the player implement it. Those that also have
+  `grid(...)` and `seesLights` handle their own start.
+- **Race** (`Race`): `step(dt)` advances the race and returns what happened (events: `start`, `lap`, `invalid`,
+  `finish`, `retire`). The game shows them (laps, messages, replay); `rl/race_eval.js` counts them.
+- **Physics step** (`stepCars`, in `sim/traffic.js`): wake, each car with what its driver asks for, and collisions,
+  in that order. The race and the training simulators (`rl/race.js`, `rl/herd.js`) use it, so driving works the
+  same everywhere.
 
-## Python y JavaScript
+## Python and JavaScript
 
-| Python | Acá |
+| Python | Here |
 |---|---|
-| módulo / paquete | archivo `.js` con `export` / carpeta. Se importa del archivo concreto, sin `index.js` que reexporte |
-| `Protocol` / ABC | un `@typedef` de JSDoc con la forma del objeto |
-| type hints + mypy | JSDoc + `npm run types` (TypeScript sin compilar, `tsconfig.json`) |
-| inyección de dependencias | pasar el objeto por parámetro o al constructor (por ejemplo, `setupMenu(app)`) |
-| import-linter | `no-restricted-imports` en `eslint.config.js` |
+| module / package | `.js` file with `export` / folder. Import from the specific file, with no `index.js` that re-exports |
+| `Protocol` / ABC | a JSDoc `@typedef` with the shape of the object |
+| type hints + mypy | JSDoc + `npm run types` (TypeScript without compiling, `tsconfig.json`) |
+| dependency injection | pass the object as a parameter or to the constructor (for example, `setupMenu(app)`) |
+| import-linter | `no-restricted-imports` in `eslint.config.js` |
 | pytest | `node:test` (`npm test`) |
 
-## Cómo se revisa
+## How it is checked
 
-`npm install` una vez, y después:
+`npm install` once, and then:
 
-- `npm test`: los tests de `test/` (`node:test`, menos de un segundo): propiedades de la física (`dynamics.js`,
-  `lapsim.js`, `car.js`: punta, frenada, alerones, altura, nafta, gomas), daños, choques, semáforo, la carrera,
-  equipos y grilla, sensores y una vuelta lanzada de la red del juego en Monza. Prueban propiedades con márgenes, no
-  números exactos: siguen valiendo después de recalibrar el auto, y si un cambio a propósito los rompe, hay que
-  revisar si el test sigue teniendo sentido.
-- `npm run lint`: ESLint (errores y capas), Prettier (formato, sólo los `.js`) y los tipos (`npm run types`).
-  `npm run format` formatea.
-- `npm run regress` (`tools/regress.js`): carreras con semilla fija comparadas bit a bit con
-  `tools/regress.base.txt`. Cubre la física, los choques, los daños, los sensores, la red, la carrera tipo juego y
-  los dos simuladores de entrenamiento: si un cambio toca algo de eso, aunque sea en el último decimal, salta (~1
-  min). Cuando el cambio es a propósito, `node tools/regress.js save` actualiza la base. No cubre lo que es sólo
-  del navegador (cámara, HUD, menú, sonido).
+- `npm test`: the tests in `test/` (`node:test`, under a second): physics properties (`dynamics.js`, `lapsim.js`,
+  `car.js`: top speed, braking, wings, altitude, fuel, tyres), damage, collisions, start lights, the race, teams and
+  grid, sensors and a flying lap of the game network at Monza. They test properties with margins, not exact numbers:
+  they still hold after recalibrating the car, and if an intentional change breaks them, check whether the test
+  still makes sense.
+- `npm run lint`: ESLint (errors and layers), Prettier (formatting, only the `.js` files) and the types
+  (`npm run types`). `npm run format` formats.
+- `npm run regress` (`tools/regress.js`): fixed-seed races compared bit for bit with `tools/regress.base.txt`. It
+  covers the physics, collisions, damage, sensors, the network, the game-style race and both training simulators: if
+  a change touches any of that, even in the last decimal, it fails (~1 min). When the change is intentional,
+  `node tools/regress.js save` updates the baseline. It does not cover what is browser-only (camera, HUD, menu,
+  sound).
 
-El CI (`.github/workflows/check.yml`) corre las tres cosas en cada PR. La regresión corre en macOS arm64: en x64
-las funciones matemáticas pueden dar distinto en el último decimal y la base no coincide, así que la base se guarda
-en una Mac con Apple Silicon.
+CI (`.github/workflows/check.yml`) runs all three on every PR. The regression runs on macOS arm64: on x64 the math
+functions can differ in the last decimal and the baseline does not match, so the baseline is saved on a Mac with
+Apple Silicon.
 
-## Dónde va cada cosa nueva
+## Where new things go
 
-- Una regla de física o del auto: `sim/`, con un test en `test/`.
-- Algo de la carrera (bandera amarilla, boxes, penalizaciones): `race/race.js`, que avisa con un evento nuevo.
-- Otro tipo de piloto: `drivers/`, con `drive(...)`.
-- Algo que se ve o se toca: `render/`, `ui/` o `input/`, y se conecta en `main.js`.
+- A physics or car rule: `sim/`, with a test in `test/`.
+- Something about the race (yellow flag, pit stops, penalties): `race/race.js`, which reports it with a new event.
+- Another kind of driver: `drivers/`, with `drive(...)`.
+- Something you see or touch: `render/`, `ui/` or `input/`, connected in `main.js`.

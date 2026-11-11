@@ -1,43 +1,44 @@
-// Fases 2 a 4: carreras con varios autos. Algunos autos aprenden (los "agentes", todos con la misma red: compite
-// contra sí misma) y los demás son rivales que no aprenden: la IA clásica (ai.js) con ritmos distintos o redes
-// ya entrenadas (versiones anteriores).
+// Phases 2 to 4: races with several cars. Some cars learn (the "agents", all with the same network: it competes
+// against itself) and the others are opponents that don't learn: the classic AI (ai.js) at different paces or
+// already trained networks (earlier versions).
 //
-// Cada carrera es un escenario (rl/CURRICULUM.md), elegido al azar según la mezcla de la fase:
-//   solo     agentes repartidos por la pista, sin rivales (repaso de la fase 1)
-//   pack     grupos de 2 o 3 autos que llegan juntos a una curva: frenar sin llevarse a nadie puesto
-//   start    largada con muchos autos, poco antes de una curva: pasarla sin chocar
-//   chase    un rival más lento adelante (y a veces otro agente atrás), en recta o antes de una curva: pasarlo
-//   race     carrera completa: largada o en fila, con rivales de todo tipo (consolidar)
-// Los escenarios cortos duran pocos segundos: muchos más intentos por hora en las situaciones que importan.
+// Each race is a scenario (rl/CURRICULUM.md), picked at random according to the phase's mix:
+//   solo     agents spread around the track, without opponents (a review of phase 1)
+//   pack     groups of 2 or 3 cars arriving together at a corner: brake without taking anyone out
+//   start    start with many cars, shortly before a corner: get through it without crashing
+//   chase    a slower opponent ahead (and sometimes another agent behind), on a straight or before a corner: pass it
+//   race     full race: standing start or in single file, with all kinds of opponents (consolidate)
+// The short scenarios last a few seconds: many more attempts per hour in the situations that matter.
 //
-// Recompensa de cada agente (la misma en todos los escenarios, así lo aprendido en uno vale en los demás):
-//   + metros avanzados (en el pasto no cuentan); - pasto, muro, quedarse quieto, tener que ser rescatado
-//   - toque con otro auto, según lo fuerte; mucho más si lo provocó él (le pegó al de adelante o apretó al de al lado)
-//   - peligro: si al ritmo que se acerca alcanzaría al de adelante (o al de al lado) en menos de TTC segundos
-//     (castiga el peligro, no la cercanía: ir pegado a la misma velocidad, a rebufo, está bien)
-//   + pasada limpia: pasa a un auto cercano y sigue adelante PASS_HOLD segundos, sin tocar a nadie ni pisar el
-//     pasto en ese rato, y con no más de 2 autos alrededor (en un pelotón la prioridad es no chocar)
-//   - ser pasado limpio (bastante menos: defender sí, pero nunca a costa de un toque)
-//   - zigzag defendiendo: en recta y con alguien pegado atrás, cambiar de dirección más de una vez
-//   - ir lento con la pista libre (piso de ritmo, si la fase lo usa)
-//   - largada lenta: perder en la primera vuelta desde parado más de lo que se permite (launch, si la fase lo usa)
+// Reward of each agent (the same in every scenario, so what is learned in one applies to the others):
+//   + meters advanced (they don't count on the grass); - grass, wall, standing still, needing to be rescued
+//   - contact with another car, according to its strength; much more if it caused it (hit the car ahead or squeezed
+//     the car alongside)
+//   - danger: if at the rate it is closing it would catch the car ahead (or alongside) in less than TTC seconds
+//     (it penalizes danger, not closeness: following close at the same speed, in the slipstream, is fine)
+//   + clean pass: passes a nearby car and stays ahead PASS_HOLD seconds, without touching anyone or going on the
+//     grass in that time, and with no more than 2 cars around (in a pack the priority is not crashing)
+//   - being passed cleanly (much less: defending yes, but never at the cost of a contact)
+//   - weaving while defending: on a straight with someone right behind, changing direction more than once
+//   - driving slowly with a clear track (pace floor, if the phase uses it)
+//   - slow start: losing more than allowed on the first lap from a standstill (launch, if the phase uses it)
 //
-// Cada fase puede escalar partes del premio (rewards: progress, pass, paceFloor, paceAlways, paceCrowd, crowd) y el castigo
-// por toque provocado se multiplica por contactScale, que el entrenamiento ajusta solo según un presupuesto de
-// toques (rl/train.py). progress (de 0 a 1, cuánto lleva la fase) achica la desventaja del rival en persecución.
-// boost hace a los rivales más rápidos (ver el constructor).
+// Each phase can scale parts of the reward (rewards: progress, pass, paceFloor, paceAlways, paceCrowd, crowd) and
+// the penalty for a caused contact is multiplied by contactScale, which training adjusts on its own according to a
+// contact budget (rl/train.py). progress (from 0 to 1, how far along the phase is) shrinks the opponent's handicap
+// in the chase. boost makes the opponents faster (see the constructor).
 //
-// Cada auto es un poco distinto (motor, punta, agarre, frenos, desgaste: ± spread) y las gomas pueden estar
-// gastadas; la red lo recibe como entradas. Con autos distintos, pasar y defender aparecen solos.
+// Each car is a little different (engine, top speed, grip, brakes, wear: ± spread) and the tyres may be worn; the
+// network receives this as inputs. With different cars, passing and defending appear on their own.
 //
-// Si un agente se queda en el pasto, quieto o va para atrás, vuelve a la pista ahí mismo con un castigo; la carrera
-// sigue. Al terminar el tiempo del escenario termina la carrera para todos.
+// If an agent gets stuck on the grass, stands still or goes backwards, it is put back on the track right there with
+// a penalty; the race goes on. When the scenario's time runs out the race ends for everyone.
 //
-// Daños (damage): 'off', 'reduced', 'real' o 'mix' (cada escenario con uno de los tres al azar), para todos los autos
-// de la carrera. Con damagedStarts, esa parte de los agentes arranca con algo roto (damage.js: randomDamage), así
-// aprende a manejar un auto roto. Si un agente abandona, termina su episodio con un castigo (y no suma más: el
-// resto de la carrera lo perdió) y vuelve a la pista con el auto arreglado; los rivales que abandonan, cuando
-// quedan parados, salen de la pista.
+// Damage (damage): 'off', 'reduced', 'real' or 'mix' (each scenario with one of the three at random), for every car
+// in the race. With damagedStarts, that share of the agents starts with something broken (damage.js: randomDamage),
+// so it learns to drive a broken car. If an agent retires, its episode ends with a penalty (and it earns nothing
+// more: it lost the rest of the race) and it goes back on the track with the car repaired; opponents that retire
+// leave the track once they have stopped.
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -57,67 +58,67 @@ const SUBSTEPS = 3;
 const PROGRESS_REWARD = 0.02;
 const GRASS_PENALTY = 0.1;
 const WALL_PENALTY = 1;
-const CAR_PENALTY = 6; // por un toque a fondo con otro auto, si le pegó él al de adelante
-const CAR_PENALTY_HIT = 0.25; // fracción si le pegaron a él (algo de culpa siempre: que no se meta donde no hay lugar)
-const TTC = 1; // s: tiempo hasta alcanzar al de adelante por debajo del cual hay peligro
-const TTC_SIDE = 1; // s: lo mismo con el de al lado (con menos, esquiva hacia el costado y lo apreta)
-// por decisión, con el choque inminente (proporcional a cuánto falta). Como mucho 0,6 por segundo: menos que lo que
-// da avanzar a ritmo de curva, así levantar el pie con alguien cerca nunca conviene más que seguir corriendo
+const CAR_PENALTY = 6; // for a full-strength contact with another car, if it hit the car ahead
+const CAR_PENALTY_HIT = 0.25; // fraction if it was hit (always some fault: don't go where there is no room)
+const TTC = 1; // s: time to catch the car ahead below which there is danger
+const TTC_SIDE = 1; // s: the same with the car alongside (with less, it swerves sideways and squeezes it)
+// per decision, with the crash imminent (proportional to how close it is). At most 0.6 per second: less than what
+// advancing at cornering pace gives, so lifting with someone nearby never pays more than racing on
 const DANGER_PENALTY = 0.03;
-const ALONGSIDE = 5.5; // m adelante o atrás: hasta acá un auto está "al lado"
-const CAR_WIDTH = 2; // m entre centros por debajo de los cuales dos autos de costado se tocan
-const SQUEEZE_SPEED = 0.5; // m/s de costado hacia el otro: desde acá, en un toque de costado la culpa es suya
-const PASS_REWARD = 1; // por pasada limpia
-const PASSED_PENALTY = 0.3; // por ser pasado limpio
-const PASS_GAP = 30; // m: sólo cuentan los cambios de orden entre autos cerca
-const PASS_HOLD = 2.5; // s que tiene que seguir adelante para que la pasada cuente
-const PASS_CLEAN = 2; // s antes de la pasada sin toques ni pasto
+const ALONGSIDE = 5.5; // m ahead or behind: up to here a car is "alongside"
+const CAR_WIDTH = 2; // m between centers below which two cars side by side touch
+const SQUEEZE_SPEED = 0.5; // m/s sideways toward the other car: from here on, a side contact is its fault
+const PASS_REWARD = 1; // per clean pass
+const PASSED_PENALTY = 0.3; // for being passed cleanly
+const PASS_GAP = 30; // m: only order changes between nearby cars count
+const PASS_HOLD = 2.5; // s it has to stay ahead for the pass to count
+const PASS_CLEAN = 2; // s before the pass without contacts or grass
 const CROWD_RANGE = 50,
-  CROWD_MAX = 2; // con más de 2 autos a menos de 50 m, pasar no suma
-const WEAVE_PENALTY = 0.5; // por cada cambio de dirección de más defendiendo en recta
-const WEAVE_MOVE = 1.5; // m de costado: desde acá cuenta como movimiento
-// Trabado, en el pasto o para atrás demasiado tiempo: se lo vuelve a poner en la pista (como el rescate del juego)
-// con un castigo, pero el episodio sigue. Si terminara, quedarse quieto sería una salida barata de un
-// amontonamiento: la red se ahorra los toques y el peligro que venían, y aprende a frenar en vez de salir de ahí
+  CROWD_MAX = 2; // with more than 2 cars within 50 m, passing earns nothing
+const WEAVE_PENALTY = 0.5; // for each extra change of direction while defending on a straight
+const WEAVE_MOVE = 1.5; // m sideways: from here on it counts as a move
+// Stuck, on the grass or going backwards for too long: it is put back on the track (like the game's rescue) with a
+// penalty, but the episode goes on. If it ended, standing still would be a cheap way out of a pile-up: the network
+// would avoid the contacts and danger that were coming, and learn to brake instead of getting out of there
 const GRASS_LIMIT = 6,
   STUCK_LIMIT = 6,
   BACKWARDS_LIMIT = 30,
   RESCUE_PENALTY = 4;
-const STALL_PENALTY = 1; // por segundo casi quieto
-const RETIRE_PENALTY = 10; // por abandonar
+const STALL_PENALTY = 1; // per second almost standing still
+const RETIRE_PENALTY = 10; // for retiring
 const DAMAGE_LEVELS = ['off', 'reduced', 'real'];
-// Piso de ritmo: con la pista libre adelante, ir por debajo de PACE_FLOOR de la velocidad de la trazada se castiga
-// (hasta PACE_PENALTY por segundo, proporcional a lo que le falta). Así frenar nunca es "seguro" sin motivo; con
-// alguien adelante no aplica, porque seguir a uno más lento está bien
+// Pace floor: with a clear track ahead, going below PACE_FLOOR of the racing line speed is penalized (up to
+// PACE_PENALTY per second, proportional to the shortfall). That way braking is never "safe" without a reason; with
+// someone ahead it does not apply, because following a slower car is fine
 const PACE_FLOOR = 0.75,
   PACE_PENALTY = 1,
   FREE_ROAD = 40;
-// Con paceAlways el piso cuenta también con alguien adelante (quedarse detrás de uno lento cuesta: hay que pasarlo),
-// salvo en un amontonamiento: más de CROWD_CLOSE autos a menos de CROWD_NEAR m (largadas, pelotones). Ahí, con
-// crowd, un toque provocado cuesta crowd veces más y el peligro se mira con TTC_CROWD veces más anticipación
+// With paceAlways the floor also counts with someone ahead (staying behind a slow car costs: it has to be passed),
+// except in a pile-up: more than CROWD_CLOSE cars within CROWD_NEAR m (starts, packs). There, with crowd, a caused
+// contact costs crowd times more and danger is checked TTC_CROWD times further ahead
 const CROWD_NEAR = 30,
   CROWD_CLOSE = 3,
   TTC_CROWD = 1.5;
-// Con paceCrowd (una fracción, como PACE_FLOOR) el piso también cuenta amontonado, pero más bajo: en una largada
-// meterse en fila levantando el pie cuesta tiempo, así que si hay lugar conviene seguir a la par
-// Largada (launch): desde parado, lo que la primera vuelta va perdiendo contra su ritmo de vuelta lanzada. Se
-// permiten LAUNCH_START s de la salida desde parado más LAUNCH_LAP s repartidos en la vuelta: lo que perdía la fase 2
-// de v6 (la primera vuelta de 7,5 a 10 s más lenta que la mejor), antes de aprender a no chocar haciendo fila. Pasado
-// eso, cada segundo de más cuesta LAUNCH_PENALTY, y más cuanto más lleva perdido (×2 a LAUNCH_SCALE s de más): perder
-// un poco es aceptable, mucho no. Para no castigar lo que ya cuesta ir más lento, el ritmo de vuelta lanzada es el
-// de las vueltas recientes de los agentes en ese circuito (LAUNCH_PACE: el cuartil más rápido de las últimas)
+// With paceCrowd (a fraction, like PACE_FLOOR) the floor also counts in a pile-up, but lower: at a start, getting
+// into single file by lifting costs time, so if there is room it pays to keep running side by side
+// Start (launch): from a standstill, what the first lap loses against its flying lap pace. LAUNCH_START s are
+// allowed for getting off the line plus LAUNCH_LAP s spread over the lap: what phase 2 of v6 lost (the first lap
+// 7.5 to 10 s slower than the best), before it learned to avoid crashing by forming a line. Beyond that, each extra
+// second costs LAUNCH_PENALTY, and more the more it has lost (×2 at LAUNCH_SCALE s over): losing a little is
+// acceptable, a lot is not. To avoid penalizing what going slower already costs, the flying lap pace is that of the
+// agents' recent laps on that track (LAUNCH_PACE: the fastest quartile of the latest ones)
 const LAUNCH_START = 5,
   LAUNCH_LAP = 10,
   LAUNCH_PENALTY = 2,
   LAUNCH_SCALE = 3;
 const LAUNCH_PACE = { laps: 60, min: 8, quantile: 0.25, initial: 1.08 };
-// Persecución: desventaja del rival de adelante (menos agarre y motor) al principio y al final de la fase
+// Chase: handicap of the opponent ahead (less grip and engine) at the start and at the end of the phase
 const CHASE_HANDICAP = [0.2, 0.08];
 
-// escenarios: duración (decisiones, a 20 por segundo)
+// scenarios: length (decisions, at 20 per second)
 export const SCENARIOS = { solo: 2400, pack: 300, start: 500, chase: 600, race: 2400 };
 
-// vueltas lanzadas recientes de los agentes por circuito, como fracción de la vuelta de la trazada para su auto
+// recent flying laps of the agents per track, as a fraction of the racing line lap for their car
 const paces = new Map();
 export function recordPace(id, ratio) {
   if (!paces.has(id)) paces.set(id, []);
@@ -136,16 +137,16 @@ let profile = DEFAULT_PROFILE;
 try {
   profile = JSON.parse(readFileSync(fileURLToPath(new URL('../cars/f1-2025.json', import.meta.url)), 'utf8'));
 } catch {
-  // sin el perfil medido, el de por defecto
+  // without the measured profile, the default one
 }
 
-// circuito, trazada ideal y dónde están las curvas (el punto más lento de cada una, en celdas)
+// track, racing line and where the corners are (the slowest point of each one, in cells)
 const tracks = new Map();
 export function getTrack(id) {
   if (!tracks.has(id)) {
     const track = loadTrack(id);
     const line = racingLine(track, limitsOn(profile, track), { brakeUse: 0.93 });
-    // segundos hasta cada celda yendo a la velocidad de la trazada (para medir lo que se pierde en la largada)
+    // seconds to each cell going at the racing line speed (to measure what is lost at the start)
     const clock = new Float64Array(line.speed.length + 1);
     line.speed.forEach((v, i) => (clock[i + 1] = clock[i] + track.meters / Math.max(1, v)));
     tracks.set(id, { track, line, clock, corners: corners(track, line) });
@@ -184,12 +185,12 @@ function getPolicy(file) {
   return policies.get(file);
 }
 
-export const wrap = (d, L) => (((d % L) + 1.5 * L) % L) - L / 2; // diferencia de posición en la vuelta, entre -L/2 y L/2
+export const wrap = (d, L) => (((d % L) + 1.5 * L) % L) - L / 2; // position difference in the lap, between -L/2 and L/2
 export const mod = (u, L) => ((u % L) + L) % L;
 
 export class RaceSim {
-  // agents: cuántos autos aprenden; opponents: redes que manejan algunos rivales; mix: peso de cada escenario
-  // (en pasos de entrenamiento, no en carreras); spread: variación de los autos (raceSpread en carrera completa)
+  // agents: how many cars learn; opponents: networks that drive some opponents; mix: weight of each scenario
+  // (in training steps, not in races); spread: car variation (raceSpread in a full race)
   constructor({
     trackIds,
     agents = 4,
@@ -209,8 +210,8 @@ export class RaceSim {
     this.tuneSpread = tuneSpread;
     this.damage = damage;
     this.damagedStarts = damagedStarts;
-    // boost: los rivales con esa fracción más de agarre y potencia, y la IA clásica a más ritmo (de 1 a 1,1):
-    // para seguir mejorando el ritmo detrás de autos más rápidos que uno mismo
+    // boost: opponents with that fraction more grip and power, and the classic AI at a higher pace (from 1 to 1.1):
+    // to keep improving the pace behind cars faster than itself
     this.boost = boost;
     this.rewards = { progress: 1, pass: 1, paceFloor: 0, paceAlways: 0, paceCrowd: 0, crowd: 1, launch: 0, ...rewards };
     this.contactScale = contactScale;
@@ -221,7 +222,7 @@ export class RaceSim {
     this.opponents = opponents.map(getPolicy);
     this.spread = spread;
     this.raceSpread = raceSpread;
-    // cada escenario se elige según su peso dividido su duración: así el peso es la parte de los pasos
+    // each scenario is picked by its weight divided by its length: that way the weight is the share of steps
     this.mix = Object.entries(mix)
       .filter(([, w]) => w > 0)
       .map(([k, w]) => [k, w / SCENARIOS[k]]);
@@ -234,14 +235,15 @@ export class RaceSim {
     return this.mix[this.mix.length - 1][0];
   }
 
-  // Ubica un auto en la posición u de la vuelta (celdas), corrido side metros a la derecha de la línea central
+  // Places a car at position u of the lap (cells), shifted side meters to the right of the centerline
   place(u, side, speed) {
     const { track } = this;
     u = mod(u, track.length);
     const h = trackHeading(track, u);
     const { x, y } = pointOnCenter(track, u);
     const s = side / track.meters;
-    const car = Object.assign(new Car(x - Math.sin(h) * s, y + Math.cos(h) * s, h, profile), RIVAL_AIDS); // con las ayudas del juego
+    // with the game's driving aids
+    const car = Object.assign(new Car(x - Math.sin(h) * s, y + Math.cos(h) * s, h, profile), RIVAL_AIDS);
     car.speed = speed;
     while (car.gear < car.gears && car.rpmAt(speed, car.gear) > profile.upshiftRpm) car.gear++;
     car.rpm = Math.max(4000, car.rpmAt(speed, car.gear));
@@ -255,7 +257,7 @@ export class RaceSim {
     return v[Math.floor(mod(u, this.track.length)) % v.length];
   }
 
-  // rival de la IA clásica (pace: fracción de la trazada ideal) o, a veces, una red ya entrenada
+  // classic AI opponent (pace: fraction of the racing line) or, sometimes, an already trained network
   bot(k, pace = this.boost ? 1 + 0.1 * this.rand() : 0.9 + 0.18 * this.rand(), neural = 0) {
     if (this.opponents.length && this.rand() < neural)
       return new NeuralDriver(this.opponents[Math.floor(this.rand() * this.opponents.length)]);
@@ -297,7 +299,8 @@ export class RaceSim {
         agent(u, (r() - 0.5) * half, r() * 0.8 * this.lineSpeed(u));
       }
     } else if (scenario === 'pack') {
-      // de a dos agentes (y a veces un rival) por curva, a 150-350 m de la frenada, a la par o uno atrás del otro
+      // two agents (and sometimes an opponent) per corner, 150-350 m from the braking zone, side by side or one
+      // behind the other
       const used = [];
       for (let k = 0; k < A; k += 2) {
         let c = corner();
@@ -306,7 +309,7 @@ export class RaceSim {
         const u0 = c - (150 + 200 * r()) / M;
         const v = (0.85 + 0.15 * r()) * this.lineSpeed(u0);
         const group = Math.min(2, A - k) + (r() < 0.5 ? 1 : 0);
-        const abreast = r() < 0.5; // los dos primeros a la par; si no, uno atrás del otro
+        const abreast = r() < 0.5; // the first two side by side; otherwise, one behind the other
         let back = 0;
         for (let j = 0; j < group; j++) {
           const side = abreast && j < 2 ? (j % 2 ? -1 : 1) * Math.min(2.2, half * 0.4) : (r() - 0.5) * half * 0.6;
@@ -318,7 +321,7 @@ export class RaceSim {
         }
       }
     } else if (scenario === 'start') {
-      // grilla de 12 a 20 autos, 250-500 m antes de una curva; los agentes en lugares al azar
+      // grid of 12 to 20 cars, 250-500 m before a corner; the agents in random places
       const total = A + 8 + Math.floor(r() * 9);
       const kinds = [...Array(A).fill('agent'), ...Array(total - A).fill('bot')];
       for (let i = kinds.length - 1; i > 0; i--) {
@@ -333,7 +336,7 @@ export class RaceSim {
         else bot(u, side, 0, this.bot(k, undefined, 0.4));
       });
     } else if (scenario === 'chase') {
-      // un rival lento adelante; atrás uno o dos agentes. En recta (saliendo de una curva) o antes de una curva
+      // a slow opponent ahead; one or two agents behind. On a straight (coming out of a corner) or before a corner
       const used = [];
       for (let k = 0; k < A;) {
         const two = A - k >= 2 && r() < 0.5;
@@ -343,8 +346,8 @@ export class RaceSim {
         used.push(c);
         const u0 = straight ? c + (20 + 40 * r()) / M : c - (150 + 150 * r()) / M;
         const v = (straight ? 0.9 : 0.8 + 0.15 * r()) * this.lineSpeed(u0);
-        // más lento: menos agarre, motor, frenos y punta, una desventaja que se achica a lo largo de la fase (primero
-        // pasadas fáciles, con lugar de sobra; al final, más ajustadas). Maneja a su ritmo con ese auto
+        // slower: less grip, engine, brakes and top speed, a handicap that shrinks over the phase (first easy passes,
+        // with plenty of room; at the end, tighter ones). It drives at its own pace with that car
         const [h0, h1] = CHASE_HANDICAP;
         const h = (h0 + (h1 - h0) * Math.min(1, this.progress)) * (0.75 + 0.5 * r());
         const setup = { ...SAME_SETUP, grip: 1 - h, power: 1 - h, brakes: 1 - h / 2, topSpeed: 1 - h / 3 };
@@ -359,7 +362,7 @@ export class RaceSim {
         k += two ? 2 : 1;
       }
     } else {
-      // carrera completa: grilla o en fila, con 0 a 14 rivales de todo tipo
+      // full race: grid or single file, with 0 to 14 opponents of all kinds
       const total = A + Math.floor(r() * 15);
       const kinds = [...Array(A).fill('agent'), ...Array(total - A).fill('bot')];
       for (let i = kinds.length - 1; i > 0; i--) {
@@ -381,7 +384,7 @@ export class RaceSim {
     this.cars = spots.map((s) => {
       const car = this.place(s.u, s.side, s.v);
       car.setup = s.setup ?? randomSetup(r, spread);
-      // los rivales más rápidos (salvo los que ya traen su auto, como el de adelante en las persecuciones)
+      // faster opponents (except those that bring their own car, like the car ahead in chases)
       if (s.kind === 'bot' && !s.setup && this.boost) {
         car.setup = {
           ...car.setup,
@@ -389,7 +392,7 @@ export class RaceSim {
           power: car.setup.power * (1 + this.boost),
         };
       }
-      // la puesta a punto y el aire varían sólo para los que aprenden: los demás manejan para la del circuito
+      // setup and air vary only for the learners: the others drive for the track's setup
       if (s.kind === 'agent') randomTune(car, r, track, this.tuneSpread);
       else car.placeOn(track);
       randomTyres(car, r, track);
@@ -406,18 +409,18 @@ export class RaceSim {
       };
       if (s.kind === 'bot') {
         e.driver = s.driver;
-        // la IA clásica no sabe de su auto: con menos agarre, menos ritmo (la velocidad en curva va con su raíz)
+        // the classic AI doesn't know about its car: with less grip, less pace (cornering speed goes with its root)
         if (e.driver.pace) e.driver.pace *= Math.sqrt(Math.min(1, car.setup.grip));
       } else {
         this.newEpisode(e);
-        // largando parado: se mide cuánto tiempo pierde en la primera vuelta contra la trazada
+        // standing start: measure how much time it loses on the first lap against the racing line
         if (!s.v) e.launch = { from: e.dist, clock: this.launchClock(car, e.u), worst: 0 };
       }
       return e;
     });
     this.agentsList = this.cars.filter((e) => e.kind === 'agent');
-    this.ahead = new Map(); // "i,j" → si i iba adelante de j
-    this.pending = []; // pasadas a confirmar: { passer, passed, t, clean }
+    this.ahead = new Map(); // "i,j" → whether i was ahead of j
+    this.pending = []; // passes to confirm: { passer, passed, t, clean }
     return this.agentsList.map((e) => this.observe(e));
   }
 
@@ -462,7 +465,7 @@ export class RaceSim {
     return e.start + e.dist;
   }
 
-  // o en el marco de e: [adelante, a la derecha] (m)
+  // o in e's frame: [ahead, to the right] (m)
   rel(e, o) {
     const M = this.track.meters,
       { car } = e;
@@ -473,7 +476,7 @@ export class RaceSim {
     return [dx * ca + dy * sa, -dx * sa + dy * ca];
   }
 
-  // actions: [volante, pedal] de cada agente, en orden. Devuelve un resultado por agente, como RaceEnv.step
+  // actions: [steering, pedal] of each agent, in order. Returns one result per agent, like RaceEnv.step
   step(actions) {
     const { track, line, cars } = this;
     const L = track.length,
@@ -515,7 +518,7 @@ export class RaceSim {
             if (fault) e.faults++;
           }
         }
-        // avance sobre la línea central
+        // progress along the centerline
         const u = stationAt(track, e.car.x, e.car.y);
         if (u < 0) return;
         let du = u - e.u;
@@ -608,8 +611,8 @@ export class RaceSim {
         retired,
       };
     });
-    // los rescatados vuelven a la pista donde estaban, a un costado y despacio, sin cortar el episodio (con su auto
-    // como estaba); los que abandonaron, igual pero arreglados y con un episodio nuevo
+    // rescued cars go back on the track where they were, to one side and slowly, without ending the episode (with
+    // their car as it was); retired ones, the same but repaired and with a new episode
     for (const r of results) {
       const e = r.e;
       if (r.retired) r.obs = this.observe(e);
@@ -635,7 +638,7 @@ export class RaceSim {
       delete r.rescue;
       delete r.retired;
     }
-    // los rivales que abandonaron y ya quedaron parados salen de la carrera (y de las pasadas por confirmar)
+    // opponents that retired and have stopped leave the race (and the passes to confirm)
     if (this.cars.some((e) => e.car.gone)) {
       this.cars = this.cars.filter((e) => !e.car.gone);
       this.ahead = new Map();
@@ -644,8 +647,8 @@ export class RaceSim {
     return results;
   }
 
-  // Pasadas entre autos cercanos (al menos uno agente). Un cambio de orden queda pendiente PASS_HOLD segundos;
-  // si sigue así, cuenta: premio al que pasó y castigo al pasado, sólo si fue limpia
+  // Passes between nearby cars (at least one an agent). An order change stays pending for PASS_HOLD seconds;
+  // if it holds, it counts: reward for the passer and penalty for the passed car, only if it was clean
   passes(rewards) {
     const { cars, time } = this;
     const reward = (e, x) => {
@@ -664,7 +667,7 @@ export class RaceSim {
         this.ahead.set(key, now);
         if (was === undefined || was === now || Math.abs(gap) > PASS_GAP) continue;
         const [passer, passed] = now ? [a, b] : [b, a];
-        // si era una pasada pendiente al revés, se deshace
+        // if it was a pending pass the other way, it is undone
         const back = this.pending.findIndex((p) => p.passer === passed && p.passed === passer);
         if (back >= 0) {
           this.pending.splice(back, 1);
@@ -681,7 +684,7 @@ export class RaceSim {
     }
     this.pending = this.pending.filter((p) => {
       if (time - p.t < PASS_HOLD) return true;
-      // en el rato que siguió tampoco tuvo que tocar a nadie ni irse al pasto
+      // in the time that followed it also must not have touched anyone or gone onto the grass
       if (p.clean && p.passer.lastHit < p.t && p.passer.lastGrass < p.t) {
         reward(p.passer, PASS_REWARD * this.rewards.pass);
         reward(p.passed, -PASSED_PENALTY * this.rewards.pass);
@@ -692,7 +695,7 @@ export class RaceSim {
     });
   }
 
-  // Peligro: el auto que tiene adelante en su carril, si al ritmo que se le acerca lo alcanza en menos de TTC
+  // Danger: the car ahead in its lane, if at the rate it is closing it catches it in less than TTC
   danger(e, dt) {
     let worst = 0;
     const look = this.rewards.crowd > 1 && this.crowded(e) ? TTC_CROWD : 1;
@@ -713,10 +716,10 @@ export class RaceSim {
         ovy = os * o.car.speed + oc * o.car.slip;
       const closing = (vx - ovx) * ca + (vy - ovy) * sa;
       if (closing <= 0) continue;
-      const ttc = Math.max(0, fwd - 5) / closing; // 5 m: el largo de un auto
+      const ttc = Math.max(0, fwd - 5) / closing; // 5 m: the length of a car
       if (ttc < TTC_AHEAD) worst = Math.max(worst, 1 - ttc / TTC_AHEAD);
     }
-    // de costado: el que tiene al lado, si se le va encima y a ese ritmo lo toca en menos de TTC_SIDE
+    // sideways: the car alongside, if it moves into it and at that rate touches it in less than TTC_SIDE
     for (const o of this.cars) {
       if (o === e) continue;
       const [fwd, side] = this.rel(e, o);
@@ -730,8 +733,8 @@ export class RaceSim {
     return DANGER_PENALTY * worst;
   }
 
-  // Segundos hasta cada celda de la vuelta largando desde u parado (o a v0 m/s): la trazada para ese auto (más lenta
-  // con menos agarre, como en el piso de ritmo), pero acelerando desde v0 con lo que da su motor
+  // Seconds to each cell of the lap starting from u at a standstill (or at v0 m/s): the racing line for that car
+  // (slower with less grip, as in the pace floor), but accelerating from v0 with what its engine gives
   launchClock(car, u, v0 = 0) {
     const { track } = this,
       L = track.length,
@@ -750,14 +753,15 @@ export class RaceSim {
     return clock;
   }
 
-  // vuelta de la trazada para el auto de e (s; con menos agarre, más lenta, como en el piso de ritmo)
+  // racing line lap for e's car (s; with less grip, slower, as in the pace floor)
   idealLap(e) {
     return this.clock[this.clock.length - 1] / Math.sqrt(Math.min(1, e.car.setup.grip));
   }
 
-  // Largada: lo que pierde en la primera vuelta desde parado (lag, s) contra su ritmo de vuelta lanzada en ese
-  // circuito (lagRef: los segundos de trazada que lleva recorridos, para su auto). Deja de medirse al completar la
-  // vuelta o si lo rescatan. Devuelve el castigo (con launch) por lo que pierde de más (ver LAUNCH_START)
+  // Start: what it loses on the first lap from a standstill (lag, s) against its flying lap pace on that track
+  // (lagRef: the seconds of racing line it has covered, for its car). It stops being measured when the lap is
+  // completed or if it is rescued. Returns the penalty (with launch) for what it loses beyond the allowance (see
+  // LAUNCH_START)
   lag(e) {
     const { launch } = e;
     if (!launch) return 0;
@@ -782,9 +786,8 @@ export class RaceSim {
     return cost;
   }
 
-  // Piso de ritmo: con nadie adelante en su carril a menos de FREE_ROAD metros (o siempre, con paceAlways, salvo en
-  // un amontonamiento), por debajo de PACE_FLOOR de la velocidad de la trazada para su auto paga en proporción a lo
-  // que le falta
+  // Pace floor: with nobody ahead in its lane within FREE_ROAD meters (or always, with paceAlways, except in a
+  // pile-up), below PACE_FLOOR of the racing line speed for its car it pays in proportion to the shortfall
   slow(e, dt) {
     const crowded = this.rewards.paceAlways && this.crowded(e);
     const free = this.rewards.paceAlways
@@ -801,8 +804,8 @@ export class RaceSim {
     return PACE_PENALTY * dt * (1 - Math.max(0, e.car.speed) / floor);
   }
 
-  // Zigzag defendiendo: en recta, con un auto pegado atrás, el primer movimiento vale y volver también; cambiar
-  // de dirección otra vez se castiga. Sin nadie atrás se reinicia la cuenta; en un pelotón no aplica
+  // Weaving while defending: on a straight, with a car right behind, the first move is allowed and so is moving
+  // back; changing direction again is penalized. With nobody behind the count resets; in a pack it does not apply
   weave(e, dt) {
     const { track } = this,
       M = track.meters;
@@ -816,12 +819,12 @@ export class RaceSim {
       e.defDir = 0;
       e.moves = 0;
     }
-    // posición de costado en la pista (m); ext: hasta dónde llegó en el último movimiento
+    // lateral position on the track (m); ext: how far it went in the last move
     const lat = sampleField(track.lat, track.W, e.car.x, e.car.y) * M;
-    // recta: el rumbo de la pista casi no cambia 50 m antes y 100 m después
+    // straight: the track heading barely changes 50 m before and 100 m after
     const h = (d) => trackHeading(track, e.u + d / M);
     const turn = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
-    // en un pelotón (más de 2 autos cerca) esquivar es lo que corresponde: la regla es para los duelos
+    // in a pack (more than 2 cars nearby) swerving is the right thing: the rule is for duels
     const crowd = this.cars.filter((o) => o !== e && Math.hypot(...this.rel(e, o)) < CROWD_RANGE).length;
     if (!behind || crowd > CROWD_MAX || turn(h(-50), h(0)) > 0.15 || turn(h(0), h(100)) > 0.15) {
       e.ext = lat;
@@ -830,23 +833,23 @@ export class RaceSim {
     e.ext ??= lat;
     const d = lat - e.ext;
     if (e.defDir === 0) {
-      // primer movimiento: vale
+      // first move: allowed
       if (Math.abs(d) > WEAVE_MOVE) [e.defDir, e.ext] = [Math.sign(d), lat];
       return 0;
     }
     if (d * e.defDir > 0) {
-      e.ext = lat; // sigue para el mismo lado
+      e.ext = lat; // keeps going the same way
       return 0;
     }
     if (-d * e.defDir < WEAVE_MOVE) return 0;
-    // cambió de dirección: volver a la trazada vale una vez; la siguiente ya es zigzag
+    // changed direction: going back to the racing line is allowed once; the next one is already weaving
     [e.defDir, e.ext] = [-e.defDir, lat];
     if (++e.moves < 2) return 0;
     e.weaves++;
     return WEAVE_PENALTY;
   }
 
-  // Velocidad de e de costado (respecto de la pista) hacia o (m/s): positiva si se le va encima
+  // e's sideways speed (relative to the track) toward o (m/s): positive if it is moving into it
   lateralToward(e, o) {
     const { track } = this,
       M = track.meters;
@@ -862,7 +865,7 @@ export class RaceSim {
     return lat(e.car) * dir;
   }
 
-  // ¿amontonamiento? más de CROWD_CLOSE autos a menos de CROWD_NEAR metros
+  // pile-up? more than CROWD_CLOSE cars within CROWD_NEAR meters
   crowded(e) {
     let n = 0;
     for (const o of this.cars)
@@ -870,7 +873,7 @@ export class RaceSim {
     return false;
   }
 
-  // ¿apretó él a un auto que tenía al lado? Es culpa suya si se le fue encima más rápido de lo que el otro se acercó
+  // did it squeeze a car alongside? It is its fault if it moved into it faster than the other car closed in
   squeezed(e) {
     return this.cars.some((o) => {
       if (o === e) return false;
@@ -881,7 +884,7 @@ export class RaceSim {
     });
   }
 
-  // ¿había un auto justo adelante suyo (le pegó él)?
+  // was there a car right ahead of it (did it hit it)?
   hitAhead(e) {
     return this.cars.some((o) => {
       if (o === e) return false;

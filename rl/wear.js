@@ -1,5 +1,5 @@
-// Calibra el desgaste de las gomas (WEAR_USE en src/sim/car.js): la IA clásica da una vuelta en cada circuito
-// con wearRate = 1 / largo de la vuelta; si la calibración está bien, termina cada vuelta con desgaste ≈ 1.
+// Calibrates tyre wear (WEAR_USE in src/sim/car.js): the classic AI drives a lap on each track with
+// wearRate = 1 / lap length; if the calibration is right, it ends each lap with wear ≈ 1.
 //
 //   node rl/wear.js
 
@@ -35,13 +35,13 @@ for (const id of TRACK_IDS) {
       track,
     );
     if (st - prev < -track.length / 2) {
-      // la primera vuelta arranca al cruzar la línea; se mide la siguiente, lanzada
+      // the first lap starts when crossing the line; the next one, a flying lap, is measured
       if (++crossed === 1) start = car.wear;
     }
     prev = st;
   }
   const lap = car.wear - start;
   all.push(lap);
-  console.log(`${id.padEnd(12)} desgaste en una vuelta lanzada: ${lap.toFixed(3)}`);
+  console.log(`${id.padEnd(12)} wear over a flying lap: ${lap.toFixed(3)}`);
 }
-console.log(`promedio ${(all.reduce((a, b) => a + b, 0) / all.length).toFixed(3)}`);
+console.log(`mean ${(all.reduce((a, b) => a + b, 0) / all.length).toFixed(3)}`);

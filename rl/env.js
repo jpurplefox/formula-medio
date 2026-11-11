@@ -1,18 +1,18 @@
-// Entorno de entrenamiento: un auto en un circuito, con la misma física del juego y sin dibujar nada.
+// Training environment: one car on a track, with the same physics as the game and without drawing anything.
 //
-// Acción: [volante, pedal], los dos de -1 a 1 (pedal positivo acelera, negativo frena).
-// La IA decide 20 veces por segundo; entre decisiones la física avanza 3 pasos de 1/60 s, como en el juego.
+// Action: [steering, pedal], both from -1 to 1 (positive pedal accelerates, negative brakes).
+// The AI decides 20 times per second; between decisions the physics advances 3 steps of 1/60 s, as in the game.
 //
-// Recompensa por cada decisión:
-//   + metros avanzados sobre la línea central (para atrás resta): optimizarlo es bajar el tiempo de vuelta.
-//     En el pasto no cuentan, así que cortar camino nunca conviene
-//   - por cada paso en el pasto
-//   - por cada golpe contra el muro, según lo fuerte
-// El episodio termina si pasa demasiado tiempo en el pasto, si se queda quieto o si va para atrás,
-// y se corta (sin ser culpa del auto) a los EPISODE_STEPS.
+// Reward for each decision:
+//   + meters advanced along the centerline (going backwards subtracts): optimizing it means lowering the lap time.
+//     They don't count on the grass, so cutting corners never pays off
+//   - for each step on the grass
+//   - for each hit against the wall, according to its strength
+// The episode ends if the car spends too long on the grass, stands still or goes backwards,
+// and is truncated (through no fault of the car) at EPISODE_STEPS.
 //
-// Cada episodio el auto es un poco distinto (motor, punta, agarre, frenos, ritmo de desgaste: ± spread) y larga
-// con las gomas a medio gastar; la red recibe esos datos (sensors.js), así aprende a manejar cualquier auto.
+// Each episode the car is a little different (engine, top speed, grip, brakes, wear rate: ± spread) and starts
+// with half-worn tyres; the network receives that data (sensors.js), so it learns to drive any car.
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -25,27 +25,27 @@ import { loadTrack } from './tracks.js';
 
 const PHYSICS_DT = 1 / 60;
 export const SUBSTEPS = 3;
-const EPISODE_STEPS = 2400; // 2 minutos
-const PROGRESS_REWARD = 0.02; // por metro
-const GRASS_PENALTY = 0.1; // por decisión en el pasto
-const WALL_PENALTY = 1; // por un golpe a fondo
-const GRASS_LIMIT = 6; // s seguidos en el pasto: se termina el episodio (antes, que aprenda a volver)
-const STUCK_LIMIT = 6; // s casi quieto
-const STANDING_START = 0.2; // parte de los episodios que larga con el auto quieto, como en la grilla
-const ROUGH_START = 0.2; // y parte que larga cruzado o con dos ruedas afuera, para aprender a recuperarse
-const BACKWARDS_LIMIT = 30; // m de retroceso acumulado
+const EPISODE_STEPS = 2400; // 2 minutes
+const PROGRESS_REWARD = 0.02; // per meter
+const GRASS_PENALTY = 0.1; // per decision on the grass
+const WALL_PENALTY = 1; // for a full-strength hit
+const GRASS_LIMIT = 6; // s in a row on the grass: the episode ends (before that, it should learn to come back)
+const STUCK_LIMIT = 6; // s almost standing still
+const STANDING_START = 0.2; // share of episodes that start with the car standing still, as on the grid
+const ROUGH_START = 0.2; // and share that start sideways or with two wheels off, to learn to recover
+const BACKWARDS_LIMIT = 30; // m of accumulated reversing
 const END_PENALTY = 2;
-const RETIRE_PENALTY = 10; // por romper el auto contra el muro hasta abandonar (con daños)
+const RETIRE_PENALTY = 10; // for breaking the car against the wall until it retires (with damage)
 const DAMAGE_LEVELS = ['off', 'reduced', 'real'];
 
 let profile = DEFAULT_PROFILE;
 try {
   profile = JSON.parse(readFileSync(fileURLToPath(new URL('../cars/f1-2025.json', import.meta.url)), 'utf8'));
 } catch {
-  // sin el perfil medido, el de por defecto
+  // without the measured profile, the default one
 }
 
-const tracks = new Map(); // id → { track, line } (se arma una vez por proceso)
+const tracks = new Map(); // id → { track, line } (built once per process)
 function getTrack(id) {
   if (!tracks.has(id)) {
     const track = loadTrack(id);
@@ -54,7 +54,7 @@ function getTrack(id) {
   return tracks.get(id);
 }
 
-// generador de números al azar con semilla (mulberry32), para poder repetir un entrenamiento
+// seeded random number generator (mulberry32), so a training run can be repeated
 export function rng(seed) {
   let s = seed >>> 0;
   return () => {
@@ -66,8 +66,8 @@ export function rng(seed) {
   };
 }
 
-// Un auto al azar: cada multiplicador entre 1 - spread y 1 + spread, o entre 1 - spread[0] y 1 + spread[1]
-// (el desgaste varía siempre ±30 %)
+// A random car: each multiplier between 1 - spread and 1 + spread, or between 1 - spread[0] and 1 + spread[1]
+// (wear always varies ±30 %)
 export function randomSetup(rand, spread) {
   const [down, up] = Array.isArray(spread) ? spread : [spread, spread];
   return Object.fromEntries(
@@ -75,11 +75,11 @@ export function randomSetup(rand, spread) {
   );
 }
 
-// Puesta a punto al azar para la red que aprende: alerones hasta TUNE_SPREAD puntos más o menos que los del circuito,
-// balance de -TUNE_SPREAD a TUNE_SPREAD, reparto de frenos hasta TUNE_SPREAD puntos más adelante o atrás y, una de cada
-// AIR_CHANCE veces, el aire de otra altura (hasta la de México). Así aprende a manejar autos con más o menos apoyo, más
-// o menos punta, subvirantes o sobrevirantes y que frenan más con un eje o con el otro.
-// Con spread 0, la del circuito y su aire.
+// Random setup for the learning network: wings up to TUNE_SPREAD points more or less than the track's, balance from
+// -TUNE_SPREAD to TUNE_SPREAD, brake bias up to TUNE_SPREAD points further forward or back and, one in AIR_CHANCE
+// times, the air of another altitude (up to Mexico's). That way it learns to drive cars with more or less downforce,
+// more or less top speed, understeering or oversteering, and braking more with one axle or the other.
+// With spread 0, the track's setup and its air.
 export const TUNE_SPREAD = 3;
 const AIR_CHANCE = 1 / 3,
   MAX_ALTITUDE = 2300;
@@ -97,8 +97,8 @@ export function randomTune(car, rand, track, spread = TUNE_SPREAD) {
   car.placeOn(track);
 }
 
-// Gomas al azar: carreras de 3 a 20 vueltas (desgaste por metro) y en cualquier momento de la carrera; frías como
-// recién salidas de boxes, en su punto o algo pasadas (las cuatro parecidas); y con nafta para 0 a 20 vueltas
+// Random tyres: races of 3 to 20 laps (wear per meter) and at any point of the race; cold as if just out of the
+// pits, at their best or somewhat overheated (all four similar); and with fuel for 0 to 20 laps
 export function randomTyres(car, rand, track) {
   car.wearRate = 1 / ((3 + 17 * rand()) * track.length * track.meters);
   car.wear = 0.9 * rand();
@@ -108,9 +108,9 @@ export function randomTyres(car, rand, track) {
 }
 
 export class RaceEnv {
-  // rewards: escala del castigo por pasto y por muro (la fase 1 del tercer intento los hace más caros); damage: los
-  // daños (src/sim/damage.js: 'off', 'reduced', 'real' o 'mix', uno de los tres al azar en cada episodio). Con daños,
-  // un golpe fuerte contra el muro rompe el auto y si abandona termina el episodio
+  // rewards: scale of the grass and wall penalties (phase 1 of the third attempt makes them more expensive); damage:
+  // the damage level (src/sim/damage.js: 'off', 'reduced', 'real' or 'mix', one of the three at random each
+  // episode). With damage, a hard hit against the wall breaks the car, and if it retires the episode ends
   constructor({ trackIds, seed = 1, spread = 0.02, rewards = {}, tuneSpread = TUNE_SPREAD, damage = 'off' }) {
     this.tuneSpread = tuneSpread;
     this.damage = damage;
@@ -126,7 +126,7 @@ export class RaceEnv {
     const { track, line } = getTrack(id);
     this.id = id;
     this.track = track;
-    // largada en un punto cualquiera de la vuelta, sobre la trazada y a una parte de su velocidad
+    // start at any point of the lap, on the racing line and at a fraction of its speed
     const L = track.length;
     const u = this.rand() * L;
     const rough = this.rand() < ROUGH_START;
@@ -139,7 +139,7 @@ export class RaceEnv {
       h + (this.rand() - 0.5) * (rough ? 1.6 : 0.2),
       profile,
     );
-    Object.assign(car, RIVAL_AIDS); // con las ayudas del juego
+    Object.assign(car, RIVAL_AIDS); // with the game's driving aids
     const standing = this.rand() < STANDING_START;
     car.speed = standing ? 0 : this.rand() * (rough ? 0.4 : 0.8) * line.speed[Math.floor(u) % line.speed.length];
     if (standing) car.launch();
@@ -156,14 +156,14 @@ export class RaceEnv {
     this.grass = 0;
     this.stuck = 0;
     this.back = 0;
-    this.lapStart = null; // tiempo en que cruzó la línea de largada (para medir vueltas completas)
+    this.lapStart = null; // time when it crossed the start line (to measure complete laps)
     this.time = 0;
     this.ret = 0;
     this.dist = 0;
     return observe(track, car, this.u, [], this.obs);
   }
 
-  // Devuelve { obs, reward, done, truncated, info }
+  // Returns { obs, reward, done, truncated, info }
   step(steer, pedal) {
     const { track, car } = this;
     const input = { steer: clamp(steer), throttle: Math.max(0, clamp(pedal)), brake: Math.max(0, -clamp(pedal)) };
@@ -175,7 +175,7 @@ export class RaceEnv {
       car.update(PHYSICS_DT, input, track);
       if (car.bump > bump + 0.05) reward -= WALL_PENALTY * this.rewards.wall * (car.bump - bump);
       this.time += PHYSICS_DT;
-      // avance sobre la línea central (en metros); al cruzar la línea de largada el station vuelve a 0
+      // progress along the centerline (in meters); when crossing the start line the station goes back to 0
       const u = stationAt(track, car.x, car.y);
       if (u >= 0) {
         let du = u - this.u;
@@ -185,7 +185,7 @@ export class RaceEnv {
           this.lapStart = this.time;
         } else if (du > L / 2) {
           du -= L;
-          this.lapStart = null; // cruzó la línea para atrás: esa vuelta no cuenta
+          this.lapStart = null; // crossed the line backwards: that lap doesn't count
         }
         this.u = u;
         const m = du * track.meters;
@@ -231,7 +231,7 @@ export class RaceEnv {
 
 const clamp = (v) => Math.max(-1, Math.min(1, Number.isFinite(v) ? v : 0));
 
-// punto de la línea central en la posición u de la vuelta (celdas)
+// point on the centerline at position u of the lap (cells)
 export function pointOnCenter(track, u) {
   const { n, x, y, st } = track.path;
   const L = st[n];

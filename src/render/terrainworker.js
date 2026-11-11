@@ -1,5 +1,5 @@
-// Worker que dibuja el cielo y el terreno de una franja de columnas de la pantalla (ver TerrainPool en renderer.js).
-// Usa el mismo Renderer que el hilo principal, sin canvas: dibuja en memoria y devuelve su franja.
+// Worker that draws the sky and terrain for a strip of screen columns (see TerrainPool in renderer.js).
+// Uses the same Renderer as the main thread, without a canvas: it draws in memory and returns its strip.
 
 import { Renderer } from './renderer.js';
 
@@ -20,11 +20,11 @@ onmessage = ({ data: m }) => {
     offset = m.offset;
   } else if (m.type === 'frame') {
     r.guide = m.guideColor && offset ? { offset, color: m.guideColor } : null;
-    if (typeof m.rubber === 'object') rubber = m.rubber; // null, o una copia nueva del mapa de goma
+    if (typeof m.rubber === 'object') rubber = m.rubber; // null, or a new copy of the rubber map
     r.rubber = rubber;
     r.setZoom(m.zoom);
     r.drawColumns(track, m.cam, m.horizon, x0, x1);
-    // se empaqueta la franja (fila por fila) y las marcas de profundidad de sus columnas
+    // pack the strip (row by row) and the depth marks of its columns
     const { w, h, buf, clip } = r;
     const sw = x1 - x0;
     const pix = new Uint32Array(m.pix.buffer);

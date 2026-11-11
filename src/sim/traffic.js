@@ -1,16 +1,16 @@
-// Un paso de física de varios autos en la pista: la estela de cada uno, cada auto con lo que pide su piloto y los
-// choques entre ellos, siempre en ese orden. Lo usan la carrera del juego (race/race.js) y el entrenamiento (rl/),
-// así se manejan igual en los dos lados.
+// A physics step for several cars on the track: each one's wake, each car with what its driver asks for, and the
+// collisions between them, always in that order. Used by the game race (race/race.js) and training (rl/), so the
+// cars drive the same on both sides.
 import { isSolid, slipstream } from './car.js';
 import { collideCars } from './collision.js';
 
-// un golpe que se nota (cuánto sube car.bump): menos es un roce que no cuenta
+// a noticeable hit (how much car.bump rises): less is a light contact that doesn't count
 export const HIT_MIN = 0.05;
 
-// cars: los autos en pista (los que ya sacaron no van), en el orden en que se mueven y chocan. inputFor(i): lo que
-// pide el piloto del auto i, en el momento de moverlo (puede mirar a los que ya se movieron en este paso), o null si
-// este paso no se mueve (en la grilla, esperando para largar). Devuelve cuánto golpe se llevó cada uno contra el muro
-// (al moverse) y contra otro auto (0: nada).
+// cars: the cars on track (those already removed are left out), in the order in which they move and collide.
+// inputFor(i): what the driver of car i asks for, at the moment it is moved (it can look at the ones that already
+// moved in this step), or null if it doesn't move in this step (on the grid, waiting for the start). Returns how hard
+// each one was hit against the wall (while moving) and against another car (0: none).
 /**
  * @param {ReturnType<typeof import('./track.js').buildTrackFromLayout>} track
  * @param {import('./car.js').Car[]} cars

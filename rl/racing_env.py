@@ -1,6 +1,6 @@
-"""Entornos del juego para stable-baselines3: varios procesos de Node (rl/worker.js), cada uno con varios autos.
+"""Game environments for stable-baselines3: several Node processes (rl/worker.js), each with several cars.
 
-Cada proceso corre en un núcleo; Python les manda las acciones a todos a la vez y después junta las respuestas.
+Each process runs on one core; Python sends the actions to all of them at once and then collects the replies.
 """
 
 import json
@@ -16,8 +16,8 @@ TRACKS = ["interlagos", "monza", "albertpark", "barcelona", "montreal", "spa", "
 
 
 class Worker:
-    """mode "solo": envs autos sueltos (fase 1); "race": envs carreras con varios autos que aprenden (fases 2 a 4).
-    config: opciones de RaceEnv / RaceSim (rl/env.js, rl/race.js), por ejemplo spread, agents, opponents, mix."""
+    """mode "solo": envs single cars (phase 1); "race": envs races with several learning cars (phases 2 to 4).
+    config: options of RaceEnv / RaceSim (rl/env.js, rl/race.js), for example spread, agents, opponents, mix."""
 
     def __init__(self, envs: int, tracks: list[str], seed: int, mode: str = "solo", config: dict | None = None):
         args = [mode, str(envs), ",".join(tracks), str(seed), json.dumps(config or {})]
@@ -29,13 +29,13 @@ class Worker:
         )
         hello = json.loads(self.proc.stdout.readline())
         self.obs_size = hello["obs_size"]
-        self.actions = hello.get("actions", 2)  # salidas de la red (src/drivers/sensors.js, ACTIONS)
-        self.n = hello["envs"]  # agentes en total
+        self.actions = hello.get("actions", 2)  # network outputs (src/drivers/sensors.js, ACTIONS)
+        self.n = hello["envs"]  # agents in total
 
     def _read(self, count: int) -> np.ndarray:
         data = self.proc.stdout.read(count * 4)
         if len(data) != count * 4:
-            raise RuntimeError("El proceso de Node se cortó")
+            raise RuntimeError("The Node process died")
         return np.frombuffer(data, dtype=np.float32)
 
     def send_reset(self):
@@ -78,7 +78,7 @@ class RacingVecEnv(VecEnv):
         self.per = self.workers[0].n
         super().__init__(workers * self.per, observation_space, action_space)
         self._actions = None
-        self.laps: list[tuple[str, float]] = []  # vueltas completas desde la última vez que se leyeron
+        self.laps: list[tuple[str, float]] = []  # complete laps since the last time they were read
 
     def reset(self):
         for w in self.workers:
@@ -111,8 +111,8 @@ class RacingVecEnv(VecEnv):
         return obs, rewards, dones, infos
 
     def set(self, **settings):
-        """Ajustes de todas las carreras (rl/race.js): contactScale multiplica el castigo por toque provocado
-        (presupuesto de toques, rl/train.py); progress es cuánto lleva la fase, de 0 a 1."""
+        """Settings for all races (rl/race.js): contactScale multiplies the penalty for a caused contact
+        (contact budget, rl/train.py); progress is how far along the phase is, from 0 to 1."""
         for w in self.workers:
             w.set(settings)
 
@@ -120,7 +120,7 @@ class RacingVecEnv(VecEnv):
         for w in self.workers:
             w.close()
 
-    # lo que stable-baselines3 pide a todo VecEnv y acá no hace falta
+    # what stable-baselines3 requires of every VecEnv and is not needed here
     def get_attr(self, attr_name, indices=None):
         return [None] * self.num_envs
 

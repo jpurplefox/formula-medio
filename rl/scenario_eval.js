@@ -1,13 +1,13 @@
-// Mide redes en los escenarios del currículum (rl/race.js), siempre con las mismas carreras: misma semilla,
-// mismos circuitos, mismos autos y rivales de la IA clásica. Así la diferencia entre redes es de manejo y no
-// de suerte con el auto que les tocó.
+// Measures networks in the curriculum scenarios (rl/race.js), always with the same races: same seed, same tracks,
+// same cars and classic AI opponents. That way the difference between networks comes from driving and not from
+// luck with the car they got.
 //
 //   node rl/scenario_eval.js models/a.json [models/b.json ...]
 //
-// Por escenario: toques, toques provocados (le pegó al de adelante o apretó al de al lado) y segundos en peligro cada 1000 m, pasadas limpias, veces que lo pasaron, zigzags y metros
-// recorridos por episodio (el ritmo: una red miedosa choca poco pero avanza menos) y rescates (trabado, en el pasto o
-// para atrás demasiado tiempo). Variables: RACES (carreras por escenario, 40), SPREAD (variación de los autos, 0.02),
-// SCENARIOS (sólo esos, separados por comas).
+// Per scenario: contacts, caused contacts (hit the car ahead or squeezed the car alongside) and seconds in danger
+// per 1000 m, clean passes, times it was passed, weaves and meters driven per episode (the pace: a timid network
+// crashes little but covers less ground) and rescues (stuck, on the grass or going backwards for too long).
+// Variables: RACES (races per scenario, 40), SPREAD (car variation, 0.02), SCENARIOS (only those, comma-separated).
 
 import { readFileSync } from 'node:fs';
 import { Policy } from '../src/drivers/policy.js';
@@ -43,16 +43,16 @@ function measure(policy, scenario) {
   const sum = (f) => eps.reduce((a, e) => a + f(e), 0);
   const km = sum((e) => Math.max(0, e.dist)) / 1000;
   return {
-    toques: sum((e) => e.hits) / km,
-    provocados: sum((e) => e.faults) / km,
-    peligro: sum((e) => e.danger) / km,
-    pasadas: sum((e) => e.passes) / eps.length,
-    pasado: sum((e) => e.passed) / eps.length,
-    zigzag: sum((e) => e.weaves) / eps.length,
-    metros: (km * 1000) / eps.length,
-    rescates: sum((e) => e.rescues) / eps.length,
-    // largadas: segundos perdidos contra la trazada cada 10 s de trazada recorridos
-    largada:
+    contacts: sum((e) => e.hits) / km,
+    faults: sum((e) => e.faults) / km,
+    danger: sum((e) => e.danger) / km,
+    passes: sum((e) => e.passes) / eps.length,
+    passed: sum((e) => e.passed) / eps.length,
+    weaves: sum((e) => e.weaves) / eps.length,
+    meters: (km * 1000) / eps.length,
+    rescues: sum((e) => e.rescues) / eps.length,
+    // starts: seconds lost against the racing line per 10 s of racing line covered
+    start:
       (sum((e) => e.lag ?? 0) /
         Math.max(
           1e-9,
@@ -69,8 +69,8 @@ for (const scenario of Object.keys(SCENARIOS).filter((s) => !only || only.includ
   policies.forEach((p, i) => {
     const m = measure(p, scenario);
     console.log(
-      `  ${files[i].padEnd(36)} toques/km ${m.toques.toFixed(2)} · provocados/km ${m.provocados.toFixed(2)} · peligro s/km ${m.peligro.toFixed(2)} · pasadas ${m.pasadas.toFixed(2)} · ` +
-        `pasado ${m.pasado.toFixed(2)} · zigzag ${m.zigzag.toFixed(2)} · metros ${m.metros.toFixed(0)} · rescates ${m.rescates.toFixed(2)} · largada ${m.largada.toFixed(2)} s/10 s`,
+      `  ${files[i].padEnd(36)} contacts/km ${m.contacts.toFixed(2)} · caused/km ${m.faults.toFixed(2)} · danger s/km ${m.danger.toFixed(2)} · passes ${m.passes.toFixed(2)} · ` +
+        `passed ${m.passed.toFixed(2)} · weaves ${m.weaves.toFixed(2)} · meters ${m.meters.toFixed(0)} · rescues ${m.rescues.toFixed(2)} · start ${m.start.toFixed(2)} s/10 s`,
     );
   });
 }

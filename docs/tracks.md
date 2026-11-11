@@ -1,79 +1,79 @@
-# Los circuitos
+# Tracks
 
-Cómo se arma un circuito, de dónde salen los trazados reales y cómo agregar uno nuevo.
+How a track is built, where the real layouts come from and how to add a new one.
 
-## Del trazado al mapa
+## From layout to map
 
-`src/sim/track.js`: los circuitos de F1 traen la línea central en metros (`tracks/<id>.layout.json`, ver "Trazados
-reales desde la telemetría de F1") y se dibujan en una grilla de celdas de 2 m. Un circuito sin telemetría sale de
-una imagen (`src/load/trackimage.js`, porque necesita el navegador), que se reduce a una grilla (1 celda = `scale`
-píxeles): los píxeles oscuros son pista, se queda con el trazado más grande (descarta números y textos), tapa
-huecos chicos y le saca la línea central.
+`src/sim/track.js`: the F1 tracks come with the centerline in meters (`tracks/<id>.layout.json`, see "Real layouts
+from F1 telemetry") and are drawn on a grid of 2 m cells. A track without telemetry comes from an image
+(`src/load/trackimage.js`, because it needs the browser), which is reduced to a grid (1 cell = `scale` pixels): dark
+pixels are track, it keeps the largest shape (discarding numbers and text), fills small holes and extracts the
+centerline.
 
-En los dos casos la pista es una cinta del ancho del circuito alrededor de la línea central (puede variar por
-tramo); alrededor pone la escapatoria (`runoff` celdas) y después un guardrail. La escapatoria es de asfalto por
-fuera de las curvas lentas, de leca por fuera de las rápidas que vienen después de una recta y de pasto en el resto
-(`surfaces` en `tracks/index.js` lo cambia por tramo). Además calcula, por celda:
+In both cases the track is a ribbon as wide as the track around the centerline (it can vary per section); around it
+goes the runoff (`runoff` cells) and then a barrier. The runoff is asphalt on the outside of slow corners, gravel on
+the outside of fast ones that come after a straight, and grass everywhere else (`surfaces` in `tracks/index.js`
+changes it per section). It also computes, per cell:
 
-- la **distancia con signo al borde** de la pista (para dibujar bordes suaves),
-- el **progreso** a lo largo de la vuelta (para validar vueltas, contramano y las franjas de los pianos),
-- dónde van los **pianos**: se calcula la curvatura de la línea central y se ponen del lado de adentro en las curvas
-  cerradas y del lado de afuera a la salida de las más fuertes; en las rectas, línea blanca,
-- los **carteles de frenada** (200, 150, 100 y 50 m): antes de cada curva cerrada (radio < 110 m) que venga después
-  de una recta de al menos 250 m, del lado de afuera. Se ajusta con las constantes `BOARD_*`,
-- la **altura**, a partir del perfil de elevación.
+- the **signed distance to the edge** of the track (to draw smooth edges),
+- the **progress** along the lap (to validate laps, detect driving the wrong way and draw the kerb stripes),
+- where the **kerbs** go: the curvature of the centerline is computed and they are placed on the inside of tight
+  corners and on the outside at the exit of the sharpest ones; on the straights, a white line,
+- the **braking boards** (200, 150, 100 and 50 m): before each tight corner (radius < 110 m) that comes after a
+  straight of at least 250 m, on the outside. Tuned with the `BOARD_*` constants,
+- the **elevation**, from the elevation profile.
 
-## Trazados reales desde la telemetría de F1
+## Real layouts from F1 telemetry
 
-`tools/layout.py` usa la API abierta de [OpenF1](https://openf1.org) (posiciones X, Y, Z de los autos) y junta
-todas las vueltas de todos los pilotos en las prácticas y la clasificación (sin entradas ni salidas de boxes):
+`tools/layout.py` uses the open [OpenF1](https://openf1.org) API (X, Y, Z positions of the cars) and combines every
+lap of every driver in practice and qualifying (without pit entries or exits):
 
 ```bash
 python3 tools/layout.py Montreal 2025 tracks/montreal.layout.json
 ```
 
-Guarda la línea central cada 2 m desde la línea de largada, el largo de vuelta y la altura en cada punto; lo que
-baja queda en `tools/.cache/`. Las posiciones de OpenF1 no son de GPS: el sistema de tiempos ubica a cada auto sobre
-el dibujo oficial del circuito, así que todos pasan por la misma línea. De ahí sale la forma, suave y en metros
-reales (sin los zigzags de sacar la línea central de una imagen), pero no los bordes: el ancho es el de cada
-circuito (`widthMeters`). La telemetría viene en otra orientación que los dibujos: `rotate` en `tracks/index.js`
-gira el mapa. Si la API dice que hay una sesión en vivo, sólo deja pedir datos con clave hasta que termine.
+It saves the centerline every 2 m from the start line, the lap length and the elevation at each point; what it
+downloads goes to `tools/.cache/`. The OpenF1 positions are not GPS: the timing system places each car on the
+official track drawing, so they all follow the same line. That gives the shape, smooth and in real meters (without the
+zigzags of extracting the centerline from an image), but not the edges: the width is each track's (`widthMeters`).
+The telemetry comes in a different orientation than the drawings: `rotate` in `tracks/index.js` rotates the map. If
+the API says there is a live session, it only allows requests with a key until it ends.
 
-### Sólo las alturas, para un circuito de imagen
+### Elevation only, for an image track
 
-`tools/elevation.py` usa la misma API, promedia las 5 vueltas más rápidas de una carrera y guarda la altura según la
-fracción de vuelta:
+`tools/elevation.py` uses the same API, averages the 5 fastest laps of a race and saves the elevation by lap
+fraction:
 
 ```bash
 python3 tools/elevation.py Interlagos 2023 tracks/interlagos.elevation.json
 ```
 
-El nombre del circuito es el `circuit_short_name` de OpenF1 (Interlagos, Monza, Melbourne, Catalunya, Montreal,
-Spa-Francorchamps, Silverstone, Spielberg). Si la API corta por exceso de pedidos (429), el script espera y
-reintenta.
+The track name is OpenF1's `circuit_short_name` (Interlagos, Monza, Melbourne, Catalunya, Montreal,
+Spa-Francorchamps, Silverstone, Spielberg). If the API cuts off for too many requests (429), the script waits and
+retries.
 
-La línea de largada del dibujo no siempre cae exactamente donde OpenF1 empieza la vuelta. Los perfiles de los
-circuitos nuevos (carrera 2025) se alinearon comparando las curvas del trazado real con las del dibujo y rotando las
-alturas lo que hacía falta (entre 0,4 % y 4,7 % de vuelta; queda anotado en `source`). En el juego, la vuelta se
-escala para que las pendientes sean las reales; `elevationScale` en `tracks/index.js` permite exagerarlas o
-suavizarlas.
+The start line of the drawing doesn't always fall exactly where OpenF1 starts the lap. The profiles of the new tracks
+(2025 race) were aligned by comparing the corners of the real layout with those of the drawing and rotating the
+elevation as much as needed (between 0.4 % and 4.7 % of a lap; it is noted in `source`). In the game, the lap is
+scaled so the slopes are the real ones; `elevationScale` in `tracks/index.js` lets you exaggerate or soften them.
 
-## Agregar un circuito
+## Adding a track
 
-Uno de F1: generar el trazado con `tools/layout.py` y agregar en `tracks/index.js` una entrada con `layout`,
-`widthMeters` y, si hace falta, `rotate`.
+An F1 one: generate the layout with `tools/layout.py` and add an entry in `tracks/index.js` with `layout`,
+`widthMeters` and, if needed, `rotate`.
 
-Desde una imagen del trazado (línea oscura sobre fondo claro), en `tracks/index.js`: copiar la imagen a `tracks/` y
-agregar una entrada con el punto de largada (`start`) y un punto hacia donde se corre (`towards`), ambos en píxeles
-de la imagen, y opcionalmente el perfil de alturas (`elevation`).
+From an image of the layout (dark line on a light background), in `tracks/index.js`: copy the image to `tracks/` and
+add an entry with the start point (`start`) and a point in the direction of travel (`towards`), both in image pixels,
+and optionally the elevation profile (`elevation`).
 
-Según cómo esté dibujado el circuito puede hacer falta:
+Depending on how the track is drawn you may need:
 
-- `scale`: más chico para imágenes chicas (menos de 1 la agranda) o con chicanas cerradas, que si no se suavizan.
-- `threshold`: más bajo si hay flechas rojas u otros dibujos oscuros pegados a la pista.
-- `open`: borra las líneas finas pegadas al trazado (calle de boxes, variantes viejas, el mástil de la bandera).
-- `paint`: repasa en negro un tramo que la bandera a cuadros corta, o tapa un punto blanco dibujado sobre la pista.
-- `smooth`: suaviza más la línea central en imágenes chicas, donde las líneas quedan escalonadas.
+- `scale`: smaller for small images (less than 1 enlarges it) or with tight chicanes, which otherwise get smoothed
+  out.
+- `threshold`: lower if there are red arrows or other dark drawings touching the track.
+- `open`: erases thin lines touching the layout (pit lane, old variants, the flag pole).
+- `paint`: paints over in black a section that the checkered flag cuts, or covers a white dot drawn on the track.
+- `smooth`: smooths the centerline more in small images, where the lines come out stepped.
 
-Para revisar que quedó bien conviene largar una carrera: si la vuelta del rival da un tiempo razonable y la grilla
-está sobre la recta, el trazado se reconoció entero.
+To check that it came out right, start a race: if the rival's lap gives a reasonable time and the grid is on the
+straight, the whole layout was recognized.

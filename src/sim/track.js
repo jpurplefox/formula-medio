@@ -1,32 +1,32 @@
-// Convierte la imagen de un trazado en un mapa de celdas, al estilo Wolfenstein 3D:
-// cada celda es pasto, pista o muro, y además tiene altura y (si corresponde) piano.
+// Turns the image of a layout into a map of cells, Wolfenstein 3D style:
+// each cell is grass, track or wall, and also has a height and (where applicable) a kerb.
 
 import { airDensity, DEFAULT_TUNE } from './dynamics.js';
 
 export const T = { GRASS: 0, ROAD: 1, WALL: 3 };
-const KERB_W = 0.9; // ancho del piano por defecto (en celdas)
+const KERB_W = 0.9; // default kerb width (in cells)
 export const DEFAULT_KERB = [
   [235, 235, 235],
   [200, 30, 30],
-]; // blanco y rojo
+]; // white and red
 export const MAX_KERB_COLORS = 4;
-// Lo que hay al costado de la pista donde hay piano, de adentro hacia afuera:
-//   piano      lomo con franjas de colores y serrucho (escalones a lo largo), de ancho width
-//   verde      franja plana pintada de verde abrasivo detrás del piano, de ancho green (0 = no hay)
-//   salchicha  lomo alto y amarillo, sólo del lado de adentro de las curvas más cerradas (si sausage)
-// Cada circuito puede cambiar el estilo (kerbStyle en tracks/index.js); el resto queda como acá.
+// What lies beside the track where there is a kerb, from the inside out:
+//   kerb       a hump with colored stripes and a sawtooth (steps along it), of width width
+//   green      a flat strip painted abrasive green behind the kerb, of width green (0 = none)
+//   sausage    a tall yellow hump, only on the inside of the tightest corners (if sausage)
+// Each track can change the style (kerbStyle in tracks/index.js); the rest stays as here.
 export const KERB_STYLE = {
-  width: KERB_W, // ancho del piano (celdas)
-  stripe: 1.6, // largo de cada franja de color (celdas)
-  line: true, // línea blanca entre la pista y el piano
-  green: 0.8, // ancho de la franja verde (celdas; 0 = sin franja)
-  sausage: true, // salchichas en las curvas más cerradas
+  width: KERB_W, // kerb width (cells)
+  stripe: 1.6, // length of each colored stripe (cells)
+  line: true, // white line between the track and the kerb
+  green: 0.8, // width of the green strip (cells; 0 = no strip)
+  sausage: true, // sausage kerbs in the tightest corners
 };
-export const KERB_H = 0.07; // altura del lomo del piano (en celdas)
-export const RIDGE = 0.8; // largo de cada escalón del serrucho (celdas)
-export const RIDGE_DEPTH = 0.35; // cuánto baja el lomo al principio de cada escalón (fracción de la altura)
-export const SAUSAGE_W = 0.45; // ancho de la salchicha (celdas)
-export const SAUSAGE_H = 0.09; // altura de la salchicha (celdas)
+export const KERB_H = 0.07; // height of the kerb's hump (in cells)
+export const RIDGE = 0.8; // length of each sawtooth step (cells)
+export const RIDGE_DEPTH = 0.35; // how much the hump drops at the start of each step (fraction of the height)
+export const SAUSAGE_W = 0.45; // sausage kerb width (cells)
+export const SAUSAGE_H = 0.09; // sausage kerb height (cells)
 
 const N8 = [
   [1, 0],
@@ -40,22 +40,22 @@ const N8 = [
 ];
 const N4 = N8.slice(0, 4);
 
-// El circuito a partir de la máscara de su imagen (imageMask, en trackimage.js, que es lo único que necesita el
-// navegador): así también se puede armar en Node (para entrenar la IA, ver rl/)
+// The track from its image mask (imageMask, in trackimage.js, which is the only part that needs the browser): that
+// way it can also be built in Node (to train the AI, see rl/)
 export function buildTrackFromMask({ W, H, road: dark }, def, elevation = null) {
-  // De la imagen sacamos sólo el recorrido: la línea central y el ancho de la pista
+  // From the image we take only the route: the centerline and the track width
   const raw = cleanRoad(dark, def, W, H);
   const path = traceCenterline(raw, startLine(raw, def, W, H), W, H, def.smooth ?? 3);
-  // la línea de largada, sobre la pista definitiva
+  // the start line, on the final track
   const start = (road) => startLine(road, def, W, H);
   return buildTrackFromPath(path, W, H, def, elevation, start);
 }
 
-// A partir del trazado sacado de la telemetría (tools/layout.py): la línea central en metros desde la largada y
-// las alturas. Cada celda mide CELL_M metros; alrededor queda lugar para el pasto, los muros y los árboles.
-// def.rotate (grados): gira el trazado, para que el mapa quede orientado como el dibujo de siempre
+// From the layout taken from telemetry (tools/layout.py): the centerline in meters from the start line and the
+// heights. Each cell is CELL_M meters; around it there is room for the grass, the walls and the trees.
+// def.rotate (degrees): rotates the layout, so the map is oriented like the usual drawing
 const CELL_M = 2,
-  LAYOUT_MARGIN = 45; // celdas
+  LAYOUT_MARGIN = 45; // cells
 export function buildTrackFromLayout(layout, def) {
   const a = ((def.rotate ?? 0) * Math.PI) / 180,
     c = Math.cos(a),
@@ -72,10 +72,10 @@ export function buildTrackFromLayout(layout, def) {
     x: Float64Array.from(pts, (p) => p[0]),
     y: Float64Array.from(pts, (p) => p[1]),
     wrap: (b) => ((b % n) + n) % n,
-    // la telemetría no trae los bordes (ver tools/layout.py): el ancho es el del circuito
+    // telemetry doesn't include the edges (see tools/layout.py): the width is the track's
     halfWidth: (def.widthMeters ?? 14) / 2 / CELL_M,
   };
-  // largada: el primer punto, mirando hacia el siguiente
+  // start: the first point, facing the next one
   const dx = path.x[1] - path.x[0],
     dy = path.y[1] - path.y[0],
     l = Math.hypot(dx, dy);
@@ -90,29 +90,29 @@ export function buildTrackFromLayout(layout, def) {
   return buildTrackFromPath(path, W, H, def, elevation, start);
 }
 
-// path: línea central (en celdas, desde la largada), con el medio ancho en cada punto (halfWidths) o uno solo
-// (halfWidth); start(road): la línea de largada sobre la pista ya armada
+// path: centerline (in cells, from the start line), with the half width at each point (halfWidths) or a single one
+// (halfWidth); start(road): the start line on the already built track
 function buildTrackFromPath(path, W, H, def, elevation, start) {
-  // Escala real: cuántos metros mide una celda, según el largo real de la vuelta
-  // (de la telemetría si la hay; si no, el que diga el circuito o 4 km)
+  // Real scale: how many meters a cell measures, from the real lap length
+  // (from telemetry if available; otherwise, what the track says or 4 km)
   const lapMeters = elevation?.lapLengthMeters ?? def.lengthMeters ?? 4000;
   const st = stations(path);
-  const length = st[path.n]; // largo de la línea central, en celdas
+  const length = st[path.n]; // centerline length, in cells
   const meters = lapMeters / length;
   const halfWidths =
     path.halfWidths ?? new Float32Array(path.n).fill(def.widthMeters ? def.widthMeters / 2 / meters : path.halfWidth);
-  const halfWidth = [...halfWidths].sort((a, b) => a - b)[path.n >> 1]; // el típico
+  const halfWidth = [...halfWidths].sort((a, b) => a - b)[path.n >> 1]; // the typical one
 
-  // 2) Reconstruimos la pista como una cinta de ancho constante alrededor de la línea central:
-  //    bordes suaves, sin las ondulaciones ni mordiscos que trae la imagen pixelada
-  // Cada celda guarda además su posición sobre la línea central (station) y de qué lado está (lat)
+  // 2) Rebuild the track as a ribbon of constant width around the centerline:
+  //    smooth edges, without the waves and bites of the pixelated image
+  // Each cell also stores its position along the centerline (station) and which side it is on (lat)
   const { road, sdf, station, lat } = ribbon(path, st, halfWidths, W, H);
 
-  // 3) Con la pista definitiva calculamos todo lo demás
+  // 3) With the final track, compute everything else
   const { dist, tiles, line, progress, maxProgress } = layout(road, sdf, def, W, H, start(road));
   const runoff = def.runoff ?? 3;
 
-  // Largamos unas celdas detrás de la línea
+  // Start a few cells behind the line
   const spawn = { x: line.x - line.dx * 6, y: line.y - line.dy * 6, angle: Math.atan2(line.dy, line.dx) };
 
   const curv = curvature(path);
@@ -157,7 +157,7 @@ function buildTrackFromPath(path, W, H, def, elevation, start) {
     sausageLeft,
     sausageRight,
     kerbStyle,
-    path: { n: path.n, x: path.x, y: path.y, st }, // línea central: puntos y su posición acumulada
+    path: { n: path.n, x: path.x, y: path.y, st }, // centerline: points and their cumulative position
     progress,
     maxProgress,
     line,
@@ -166,8 +166,8 @@ function buildTrackFromPath(path, W, H, def, elevation, start) {
     boards,
     scale: def.scale ?? 3,
     name: def.name,
-    kerbColors: def.kerb ?? DEFAULT_KERB, // colores de las franjas del piano, en orden
-    // el aire (más arriba, menos denso) y la puesta a punto por defecto de los autos ahí (dynamics.js)
+    kerbColors: def.kerb ?? DEFAULT_KERB, // colors of the kerb stripes, in order
+    // the air (higher up, less dense) and the cars' default setup there (dynamics.js)
     air: airDensity(def.altitude ?? 0),
     tune: def.tune ?? DEFAULT_TUNE,
   };
@@ -175,13 +175,13 @@ function buildTrackFromPath(path, W, H, def, elevation, start) {
 
 function cleanRoad(dark, def, W, H) {
   let road = dark;
-  // Líneas finas pegadas al trazado (calle de boxes, variantes viejas, el mástil de la bandera): se borran
-  // achicando todo `open` celdas y volviendo a agrandarlo; la pista, que es más gruesa, sobrevive
+  // Thin lines touching the layout (pit lane, old chicanes, the flag pole): erased by shrinking everything by
+  // `open` cells and growing it back; the track, which is thicker, survives
   if (def.open) road = openThin(road, W, H, def.open);
-  // Los números de las curvas y otros textos quedan como islas: nos quedamos
-  // sólo con el componente conectado más grande, que es el trazado.
+  // Corner numbers and other text remain as islands: keep
+  // only the largest connected component, which is the layout.
   road = largestComponent(road, W, H);
-  // Y rellenamos los huecos chicos dentro de la pista (p. ej. la bandera a cuadros)
+  // And fill the small holes inside the track (e.g. the checkered flag)
   fillHoles(road, W, H, 400);
   road = closeGaps(road, W, H, def.close ?? 2);
 
@@ -192,8 +192,8 @@ function cleanRoad(dark, def, W, H) {
   return road;
 }
 
-// A partir de la pista: tipo de cada celda, línea de largada y progreso de vuelta.
-// El muro es la franja que está a más de `runoff` celdas del borde (según sdf, que es continuo).
+// From the track: type of each cell, start line and lap progress.
+// The wall is the strip more than `runoff` cells from the edge (according to sdf, which is continuous).
 function layout(road, sdf, def, W, H, line) {
   const runoff = def.runoff ?? 3;
   const dist = distanceFrom(road, W, H, 255);
@@ -217,7 +217,7 @@ function layout(road, sdf, def, W, H, line) {
   return { dist, tiles, line, progress, maxProgress };
 }
 
-// Línea de largada: punto (sobre la pista), dirección de carrera y medio ancho
+// Start line: point (on the track), race direction and half width
 function startLine(road, def, W, H) {
   const scale = def.scale ?? 3;
   let sx = def.start.x / scale;
@@ -231,7 +231,7 @@ function startLine(road, def, W, H) {
   return { x: sx, y: sy, dx, dy, half: lineHalf(road, W, H, sx, sy, dx, dy, def) };
 }
 
-// Medio ancho de la línea de largada: hasta donde llega la pista hacia los costados, más el pasto
+// Half width of the start line: how far the track reaches to each side, plus the grass
 function lineHalf(road, W, H, sx, sy, dx, dy, def) {
   let half = 1;
   for (const s of [1, -1]) {
@@ -242,9 +242,9 @@ function lineHalf(road, W, H, sx, sy, dx, dy, def) {
   return half;
 }
 
-// Recorre la pista desde la largada como un "caminante": avanza un paso, mide hasta dónde
-// llega la pista hacia cada costado y se centra. Así sigue las horquillas sin cortar camino.
-// smooth: pasadas de suavizado de la línea central (más en imágenes chicas, donde las líneas quedan escalonadas)
+// Walks the track from the start line like a "walker": takes a step, measures how far the track reaches to each
+// side and recenters. That way it follows hairpins without cutting across.
+// smooth: smoothing passes over the centerline (more on small images, where the lines come out stepped)
 function traceCenterline(road, line, W, H, smooth) {
   const onRoad = (x, y) => road[idx(W, H, x, y)] === 1;
   const reach = (x, y, nx, ny) => {
@@ -260,7 +260,7 @@ function traceCenterline(road, line, W, H, smooth) {
     ys = [],
     widths = [];
   for (let iter = 0; iter < 20000; iter++) {
-    // centrarse en la sección transversal
+    // center on the cross-section
     for (let k = 0; k < 2; k++) {
       const a = reach(px, py, -dy, dx),
         b = reach(px, py, dy, -dx);
@@ -271,10 +271,10 @@ function traceCenterline(road, line, W, H, smooth) {
     xs.push(px);
     ys.push(py);
     const n = xs.length;
-    // vuelta cerrada: de vuelta en la largada, a menos de media pista (la bandera a cuadros puede correr un poco
-    // el centro, y si no se la reconoce acá el recorrido sigue y da otra vuelta)
+    // closed lap: back at the start line, within half a track width (the checkered flag can shift the center a
+    // little, and if it isn't recognized here the walk continues and does another lap)
     if (n > 50 && Math.hypot(px - xs[0], py - ys[0]) < Math.max(1.5, widths[widths.length - 1] / 2)) break;
-    // rumbo: hacia dónde venimos avanzando, suavizado
+    // heading: the direction we have been moving, smoothed
     if (n > 4) {
       let ndx = px - xs[n - 5],
         ndy = py - ys[n - 5];
@@ -306,27 +306,27 @@ function traceCenterline(road, line, W, H, smooth) {
     x = nx;
     y = ny;
   }
-  // ancho típico: la mediana de lo medido (las curvas y la bandera dan valores atípicos)
+  // typical width: the median of the measurements (corners and the flag give outliers)
   widths.sort((a, b) => a - b);
   const halfWidth = widths[widths.length >> 1] / 2;
   return { n, x, y, wrap, halfWidth };
 }
 
-// Largo acumulado de la línea central en cada punto, en celdas (st[n] = largo total)
+// Cumulative centerline length at each point, in cells (st[n] = total length)
 function stations({ n, x, y, wrap }) {
   const st = new Float64Array(n + 1);
   for (let b = 0; b < n; b++) st[b + 1] = st[b] + Math.hypot(x[wrap(b + 1)] - x[b], y[wrap(b + 1)] - y[b]);
   return st;
 }
 
-// Pista como cinta de ancho fijo. Para cada celda busca el punto más cercano de la línea central y guarda:
-//   sdf     = medio ancho − distancia (positiva sobre la pista)
-//   station = posición de ese punto a lo largo de la línea central, en celdas desde la largada (-1 si lejos)
-//   lat     = distancia con signo hacia el costado (positiva a la derecha del sentido de carrera)
+// Track as a ribbon of fixed width. For each cell it finds the nearest centerline point and stores:
+//   sdf     = half width − distance (positive on the track)
+//   station = position of that point along the centerline, in cells from the start line (-1 if far away)
+//   lat     = signed sideways distance (positive to the right of the race direction)
 function ribbon({ n, x, y, wrap }, st, halfWidths, W, H) {
   const R = Math.max(...halfWidths) + 12;
   const d = new Float32Array(W * H).fill(R);
-  const half = new Float32Array(W * H); // el medio ancho en el punto más cercano de la línea central
+  const half = new Float32Array(W * H); // the half width at the nearest centerline point
   const station = new Float32Array(W * H).fill(-1);
   const lat = new Float32Array(W * H);
   for (let b = 0; b < n; b++) {
@@ -367,7 +367,7 @@ function ribbon({ n, x, y, wrap }, st, halfWidths, W, H) {
   return { road, sdf, station, lat };
 }
 
-// Medio ancho de la pista (celdas) en una posición st de la línea central
+// Track half width (cells) at a position st along the centerline
 export function halfWidthAt(track, st) {
   const {
     halfWidths,
@@ -385,8 +385,8 @@ export function halfWidthAt(track, st) {
   return halfWidths[lo] * (1 - t) + halfWidths[(lo + 1) % n] * t;
 }
 
-// Posición sobre la línea central en un punto cualquiera, interpolada.
-// Donde salta (en la largada, o entre dos tramos de pista cercanos) usa la celda más cercana.
+// Position along the centerline at any point, interpolated.
+// Where it jumps (at the start line, or between two nearby stretches of track) it uses the nearest cell.
 export function stationAt(track, x, y) {
   const { W, station } = track;
   const gx = x - 0.5,
@@ -406,19 +406,20 @@ export function stationAt(track, x, y) {
   return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
 }
 
-// Hasta dónde puede llegar lo que hay al costado de la pista (piano, verde y salchicha), en celdas desde el borde
+// How far what lies beside the track (kerb, green and sausage kerb) can reach, in cells from the edge
 export const edgeReach = (style) => style.width + style.green + SAUSAGE_W;
 
-// Bordes de las franjas del costado (distancias al borde de la pista, negativas: hacia afuera), con k = cuánto
-// piano hay y q = cuánta salchicha: el piano va de kerb a 0, el verde de green a kerb y la salchicha de sausage a green
+// Edges of the side strips (distances to the track edge, negative: outward), with k = how much kerb there is and
+// q = how much sausage kerb: the kerb goes from kerb to 0, the green from green to kerb and the sausage kerb from
+// sausage to green
 function edgeBounds(style, k, q) {
   const kerb = -style.width * k;
   const green = kerb - style.green * k;
   return { kerb, green, sausage: green - SAUSAGE_W * q };
 }
 
-// Qué hay a una distancia s del borde (ver edgeBounds) y cuánto se levanta el piso ahí (celdas), según la
-// posición st sobre la línea central (el serrucho del piano)
+// What lies at a distance s from the edge (see edgeBounds) and how much the ground rises there (cells), given the
+// position st along the centerline (the kerb's sawtooth)
 export function edgeAt(style, s, k, q, st) {
   if (s >= 0) return { surface: 'road', lift: 0 };
   const b = edgeBounds(style, k, q);
@@ -426,11 +427,11 @@ export function edgeAt(style, s, k, q, st) {
   if (k > 0.02 && s > b.green) return { surface: 'green', lift: 0 };
   if (q > 0.02 && s > b.sausage)
     return { surface: 'sausage', lift: SAUSAGE_H * q * Math.sin((Math.PI * (s - b.sausage)) / (b.green - b.sausage)) };
-  return { surface: 'runoff', lift: 0 }; // más allá: la escapatoria (ver edgeInfo)
+  return { surface: 'runoff', lift: 0 }; // beyond: the runoff (see edgeInfo)
 }
 
-// El lomo del piano: sube desde afuera, hace cumbre y baja hacia la pista; a lo largo, escalones de serrucho
-// (cada uno sube despacio y cae de golpe)
+// The kerb's hump: rises from the outside, peaks and drops toward the track; along it, sawtooth steps
+// (each rises slowly and drops sharply)
 export function kerbLift(s, outer, k, st) {
   const t = (s - outer) / -outer;
   const r = st / RIDGE - Math.floor(st / RIDGE);
@@ -438,10 +439,10 @@ export function kerbLift(s, outer, k, st) {
   return KERB_H * k * Math.sin(Math.PI * t) * (1 - RIDGE_DEPTH * (1 - saw));
 }
 
-// Qué hay en un punto: 'road' (la pista), 'kerb' (el piano, por fuera del borde), 'green' (la franja verde detrás
-// del piano), 'sausage' (la salchicha) o lo que haya en la escapatoria de ese lado en ese tramo: 'grass', 'gravel'
-// (leca) o 'asphalt' (escapatoria asfaltada); y cuánto se levanta el piso ahí (lift, en celdas). Las propiedades
-// de cada superficie (agarre, freno) están en SURFACES de car.js.
+// What lies at a point: 'road' (the track), 'kerb' (outside the edge), 'green' (the green strip behind the kerb),
+// 'sausage' (the sausage kerb) or whatever is in the runoff on that side on that stretch: 'grass', 'gravel' or
+// 'asphalt' (paved runoff); and how much the ground rises there (lift, in cells). The properties of each surface
+// (grip, drag) are in SURFACES in car.js.
 export const RUNOFF = ['grass', 'gravel', 'asphalt'];
 export function edgeInfo(track, x, y) {
   const s = sampleField(track.sdf, track.W, x, y);
@@ -463,7 +464,7 @@ export function surfaceAt(track, x, y) {
   return edgeInfo(track, x, y).surface;
 }
 
-// Qué escapatoria hay en esa posición sobre la línea central (un índice de RUNOFF)
+// Which runoff there is at that position along the centerline (an index into RUNOFF)
 export function runoffAt(kinds, st) {
   if (!kinds) return 0;
   const n = kinds.length;
@@ -477,16 +478,16 @@ export function kerbAmount(amounts, st) {
   return amounts[i % n] * (1 - t) + amounts[(i + 1) % n] * t;
 }
 
-// Pianos como en un circuito real: del lado de adentro donde la curva es cerrada,
-// y del lado de afuera a la salida de las curvas más fuertes. En las rectas, nada.
-// Se decide con la curvatura de la línea central y se guarda por cada celda de recorrido.
-const KERB_INSIDE = 1 / 28; // curvatura mínima para piano interno (radio < 28 celdas)
-const KERB_EXIT = 1 / 16; // curvatura mínima para piano externo a la salida
-const KERB_MIN = 5; // largo mínimo de un piano y de un hueco entre pianos (celdas)
-const KERB_RAMP = 3; // largo de la punta de cada piano, donde crece de 0 al ancho completo (celdas)
-const SAUSAGE_CURV = 1 / 15; // curvatura mínima para poner salchicha del lado de adentro (radio < 15 celdas)
+// Kerbs as on a real track: on the inside where the corner is tight,
+// and on the outside at the exit of the sharpest corners. On the straights, none.
+// Decided from the centerline curvature and stored per cell of distance along the track.
+const KERB_INSIDE = 1 / 28; // minimum curvature for an inside kerb (radius < 28 cells)
+const KERB_EXIT = 1 / 16; // minimum curvature for an outside kerb at the exit
+const KERB_MIN = 5; // minimum length of a kerb and of a gap between kerbs (cells)
+const KERB_RAMP = 3; // length of each kerb's tip, where it grows from 0 to full width (cells)
+const SAUSAGE_CURV = 1 / 15; // minimum curvature for a sausage kerb on the inside (radius < 15 cells)
 
-// Curvatura de la línea central en cada punto (radianes por celda; positiva = curva a la derecha), suavizada
+// Centerline curvature at each point (radians per cell; positive = right-hand corner), smoothed
 export function curvature({ n, x, y, wrap }) {
   const K = 6;
   const heading = new Float64Array(n);
@@ -495,7 +496,7 @@ export function curvature({ n, x, y, wrap }) {
   for (let b = 0; b < n; b++) {
     let d = heading[wrap(b + K)] - heading[wrap(b - K)];
     d = Math.atan2(Math.sin(d), Math.cos(d));
-    curv[b] = d / (2 * K); // los puntos de la línea central están a ~1 celda entre sí
+    curv[b] = d / (2 * K); // centerline points are ~1 cell apart
   }
   for (let pass = 0; pass < 2; pass++) {
     const c2 = new Float64Array(n);
@@ -520,7 +521,7 @@ function kerbFlags({ n, wrap }, st, curv, sausages = true) {
     const k = curv[b];
     if (k > KERB_INSIDE) right[u] = 1;
     if (k < -KERB_INSIDE) left[u] = 1;
-    // salchicha: del lado de adentro de las curvas más cerradas, para que no convenga cortarlas
+    // sausage kerb: on the inside of the tightest corners, so cutting them doesn't pay off
     if (sausages && k > SAUSAGE_CURV) sRight[u] = 1;
     if (sausages && k < -SAUSAGE_CURV) sLeft[u] = 1;
     for (let back = 3; back <= 18; back++) {
@@ -531,24 +532,25 @@ function kerbFlags({ n, wrap }, st, curv, sausages = true) {
   }
   const kl = taper(cleanRuns(left)),
     kr = taper(cleanRuns(right));
-  // la salchicha va detrás de un piano: donde no hay piano, tampoco
+  // the sausage kerb goes behind a kerb: where there is no kerb, there is none either
   const sl = taper(cleanRuns(sLeft)).map((q, u) => Math.min(q, kl[u]));
   const sr = taper(cleanRuns(sRight)).map((q, u) => Math.min(q, kr[u]));
   return { left: kl, right: kr, sausageLeft: sl, sausageRight: sr };
 }
 
-// Carteles de distancia antes de las curvas fuertes (200, 150, 100 y 50 m hasta el punto donde empieza la curva),
-// del lado de afuera, que es por donde viene el auto antes de doblar.
-// Una curva es "fuerte" si su radio mínimo es chico y antes tiene una recta larga donde se llega rápido.
-const BOARD_DISTANCES = [200, 150, 100, 50]; // metros
-const BOARD_RADIUS = 110; // radio máximo de la curva (m) para que lleve carteles
-const BOARD_STRAIGHT = 250; // recta mínima antes de la curva (m)
-const BOARD_TURN_IN = 260; // radio (m) a partir del cual consideramos que la curva empezó
-const BOARD_OFFSET = 2; // distancia del cartel al borde de la pista (celdas)
+// Distance boards before the heavy braking corners (200, 150, 100 and 50 m to the point where the corner starts),
+// on the outside, which is where the car comes from before turning in.
+// A corner is "heavy" if its minimum radius is small and it has a long straight before it where cars arrive fast.
+const BOARD_DISTANCES = [200, 150, 100, 50]; // meters
+const BOARD_RADIUS = 110; // maximum corner radius (m) to get boards
+const BOARD_STRAIGHT = 250; // minimum straight before the corner (m)
+const BOARD_TURN_IN = 260; // radius (m) from which we consider the corner to have started
+const BOARD_OFFSET = 2; // distance from the board to the track edge (cells)
 
-// Curvas: tramos seguidos de la línea central con curvatura (del mismo lado) más cerrada que BOARD_TURN_IN.
-// De cada una: dónde empieza y termina (from, to, en celdas de recorrido), para qué lado dobla (sign, + = derecha),
-// su radio mínimo (radius, m) y cuánta recta tiene antes (straight, m, desde el final de la curva anterior)
+// Corners: consecutive stretches of the centerline with curvature (on the same side) tighter than BOARD_TURN_IN.
+// For each: where it starts and ends (from, to, in cells along the track), which way it turns (sign, + = right),
+// its minimum radius (radius, m) and how much straight there is before it (straight, m, from the end of the previous
+// corner)
 function findCorners(path, st, curv, meters) {
   const { n, wrap } = path;
   const length = st[n];
@@ -556,7 +558,7 @@ function findCorners(path, st, curv, meters) {
   const bent = (b) => Math.abs(curv[b]) > turnIn;
   const corners = [];
   let start = 0;
-  while (bent(start) && start < n) start++; // arrancamos en una recta para no partir una curva al medio
+  while (bent(start) && start < n) start++; // start on a straight so as not to split a corner in half
   for (let k = 0; k < n; k++) {
     const b = wrap(start + k);
     if (!bent(b)) continue;
@@ -587,23 +589,23 @@ function brakeBoards(path, st, corners, meters, sdf, W, H) {
     if (c.straight < BOARD_STRAIGHT) return;
     for (const d of BOARD_DISTANCES) {
       const target = (c.from - d / meters + length) % length;
-      // punto de la línea central en esa posición
+      // centerline point at that position
       let b = 0;
       while (b < n - 1 && st[b + 1] <= target) b++;
       const dx = x[wrap(b + 3)] - x[wrap(b - 3)],
         dy = y[wrap(b + 3)] - y[wrap(b - 3)];
       const len = Math.hypot(dx, dy) || 1;
-      // normal hacia la derecha de la marcha (y crece hacia abajo); el cartel va del lado contrario a la curva
+      // normal to the right of the direction of travel (y grows downward); the board goes opposite the corner
       const nx = -dy / len,
         ny = dx / len;
       const side = -c.sign;
-      // buscamos el borde de la pista y nos alejamos un poco más
+      // find the track edge and move a little further away
       let off = 0;
       while (off < 30 && sampleField(sdf, W, x[b] + nx * side * off, y[b] + ny * side * off) > 0) off += 0.25;
       off += BOARD_OFFSET;
       const bx = x[b] + nx * side * off,
         by = y[b] + ny * side * off;
-      // si cae sobre otra parte de la pista (o fuera del mapa), no va
+      // if it lands on another part of the track (or off the map), skip it
       if (bx < 2 || by < 2 || bx >= W - 2 || by >= H - 2 || sampleField(sdf, W, bx, by) > -1) continue;
       boards.push({ x: bx, y: by, meters: d });
     }
@@ -611,21 +613,21 @@ function brakeBoards(path, st, corners, meters, sdf, W, H) {
   return boards;
 }
 
-// Escapatorias: qué hay al costado de la pista (un índice de RUNOFF) por cada celda de recorrido y de cada lado.
-// Como en los circuitos de ahora, por fuera de las curvas, que es por donde se sale el que no llega a doblar:
-//   - curvas lentas (horquillas, chicanas): asfalto, desde la frenada hasta la salida, para volver sin perder
-//     tanto y sin romper el auto
-//   - curvas rápidas después de una recta: leca, que frena al que se pasa antes de que llegue al muro
-//   - el resto, pasto
-// surfaces (del circuito, opcional) pisa lo automático: [[desde, hasta, lado, material], ...] con desde y hasta en
-// metros desde la largada, lado 'left', 'right' o 'both' y material 'grass', 'gravel' o 'asphalt'
-const RUNOFF_SLOW = 60; // m: radio por debajo del cual la curva es lenta (escapatoria de asfalto)
-const RUNOFF_FAST = 250; // m: radio hasta el cual una curva rápida lleva leca
-const GRAVEL_STRAIGHT = 100; // m de recta antes para que se llegue rápido y haga falta leca
+// Runoffs: what lies beside the track (an index into RUNOFF) per cell along the track and on each side.
+// As on modern tracks, outside the corners, which is where a car that can't make the turn goes off:
+//   - slow corners (hairpins, chicanes): asphalt, from the braking zone to the exit, to rejoin without losing
+//     too much and without breaking the car
+//   - fast corners after a straight: gravel, which stops whoever overshoots before reaching the wall
+//   - everywhere else, grass
+// surfaces (from the track, optional) overrides the automatic choice: [[from, to, side, material], ...] with from
+// and to in meters from the start line, side 'left', 'right' or 'both' and material 'grass', 'gravel' or 'asphalt'
+const RUNOFF_SLOW = 60; // m: radius below which the corner is slow (paved runoff)
+const RUNOFF_FAST = 250; // m: radius up to which a fast corner gets gravel
+const GRAVEL_STRAIGHT = 100; // m of straight before it, for cars to arrive fast and need gravel
 const ASPHALT_BEFORE = 80,
-  ASPHALT_AFTER = 60; // m de asfalto antes del comienzo de la curva lenta y después del final
+  ASPHALT_AFTER = 60; // m of asphalt before the start of the slow corner and after its end
 const GRAVEL_BEFORE = 20,
-  GRAVEL_AFTER = 80; // m de leca antes y después de la curva rápida
+  GRAVEL_AFTER = 80; // m of gravel before and after the fast corner
 
 function runoffSurfaces(corners, length, meters, surfaces = []) {
   const L = Math.ceil(length) + 1;
@@ -642,7 +644,7 @@ function runoffSurfaces(corners, length, meters, surfaces = []) {
       if (side !== 'left') right[i] = k;
     }
   };
-  // la curva a la derecha (sign > 0) se sale por la izquierda; primero la leca, así el asfalto le gana si se pisan
+  // a right-hander (sign > 0) is exited on the left; gravel first, so asphalt wins where they overlap
   const outside = (c) => (c.sign > 0 ? 'left' : 'right');
   for (const c of corners) {
     if (c.radius >= RUNOFF_SLOW && c.radius <= RUNOFF_FAST && c.straight >= GRAVEL_STRAIGHT) {
@@ -667,7 +669,7 @@ function runoffSurfaces(corners, length, meters, surfaces = []) {
   return { left, right };
 }
 
-// De marcas 0/1 a cantidad de piano, con puntas en rampa al empezar y al terminar
+// From 0/1 flags to kerb amount, with ramped tips at the start and end
 function taper(flags) {
   const L = flags.length;
   const out = new Float32Array(L);
@@ -683,7 +685,7 @@ function taper(flags) {
   return out;
 }
 
-// Saca pianos muy cortos y tapa huecos muy cortos entre pianos
+// Removes very short kerbs and fills very short gaps between kerbs
 function cleanRuns(flags) {
   const L = flags.length;
   for (const value of [0, 1]) {
@@ -700,10 +702,10 @@ function cleanRuns(flags) {
   return flags;
 }
 
-// Altura de cada celda, en celdas. Sobre la pista (y hasta el muro) sale del perfil de la telemetría
-// según la posición sobre la línea central, así la pista queda pareja de lado a lado.
-// Más allá, el terreno se extiende y se suaviza en lomas.
-// cellsPerMeter: escala del mapa (ya incluye la exageración de alturas, si hay)
+// Height of each cell, in cells. On the track (and up to the wall) it comes from the telemetry profile according
+// to the position along the centerline, so the track is level from side to side.
+// Beyond that, the terrain extends and is smoothed into hills.
+// cellsPerMeter: map scale (already includes the height exaggeration, if any)
 function computeHeight(elevation, cellsPerMeter, station, length, sdf, limit, W, H) {
   const height = new Float32Array(W * H);
   if (!elevation) return height;
@@ -716,7 +718,7 @@ function computeHeight(elevation, cellsPerMeter, station, length, sdf, limit, W,
     return (hs[i % m] * (1 - u) + hs[(i + 1) % m] * u) * cellsPerMeter;
   };
 
-  // valores fijos sobre la pista, propagados al resto por cercanía
+  // fixed values on the track, propagated to the rest by proximity
   const known = new Uint8Array(W * H);
   const queue = new Int32Array(W * H);
   let head = 0,
@@ -745,7 +747,7 @@ function computeHeight(elevation, cellsPerMeter, station, length, sdf, limit, W,
       }
     }
   }
-  // suavizado que respeta la pista: el terreno queda en lomas suaves entre tramos
+  // smoothing that respects the track: the terrain becomes gentle hills between stretches
   const fixed = height.slice();
   for (let pass = 0; pass < 6; pass++) {
     boxBlurInPlace(height, W, H, 6);
@@ -777,8 +779,8 @@ function boxBlurInPlace(a, W, H, r) {
   }
 }
 
-// Interpola un campo definido en el centro de las celdas (bilineal).
-// Es lo que hace que los bordes se vean curvos y no en escalones.
+// Interpolates a field defined at the cell centers (bilinear).
+// This is what makes the edges look curved instead of stepped.
 export function sampleField(field, W, x, y) {
   const gx = x - 0.5,
     gy = y - 0.5;
@@ -870,8 +872,8 @@ function fillHoles(mask, W, H, maxSize) {
   }
 }
 
-// Cierre morfológico: engorda la pista r celdas y después la afina r celdas.
-// Tapa grietas angostas aunque toquen el exterior (la bandera sobresale de la pista).
+// Morphological closing: grows the track by r cells and then shrinks it by r cells.
+// Fills narrow cracks even when they touch the outside (the flag sticks out of the track).
 function closeGaps(mask, W, H, r) {
   if (!r) return mask;
   const grown = distanceFrom(mask, W, H, r);
@@ -883,7 +885,7 @@ function closeGaps(mask, W, H, r) {
   return out;
 }
 
-// Apertura: borra lo que tenga menos de 2r+1 celdas de ancho y deja igual lo demás
+// Opening: erases whatever is narrower than 2r+1 cells and leaves the rest unchanged
 function openThin(mask, W, H, r) {
   const outside = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) outside[i] = mask[i] ? 0 : 1;
@@ -896,7 +898,7 @@ function openThin(mask, W, H, r) {
   return out;
 }
 
-// Distancia (Chebyshev, en celdas) a la máscara; -1 si supera maxDist
+// Distance (Chebyshev, in cells) to the mask; -1 if it exceeds maxDist
 function distanceFrom(mask, W, H, maxDist) {
   const dist = new Int16Array(W * H).fill(-1);
   const queue = new Int32Array(W * H);
@@ -941,9 +943,9 @@ function snapToRoad(road, W, H, x, y) {
   return [x, y];
 }
 
-// Progreso a lo largo de la vuelta: BFS desde la línea de largada hacia adelante,
-// sin permitir cruzarla hacia atrás. Sirve para validar vueltas y detectar contramano.
-// Es un Dijkstra con pasos diagonales de √2, para que la distancia sea "real" y no en escalones.
+// Progress along the lap: BFS from the start line forward,
+// without allowing it to be crossed backward. Used to validate laps and detect driving the wrong way.
+// It is a Dijkstra with diagonal steps of √2, so the distance is "real" and not stepped.
 function computeProgress(drivable, W, H, line) {
   const progress = new Float32Array(W * H).fill(-1);
   const heap = new MinHeap();
@@ -974,7 +976,7 @@ function computeProgress(drivable, W, H, line) {
       if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
       const k = ny * W + nx;
       if (done[k] || !drivable(k)) continue;
-      // las diagonales no pueden colarse entre dos celdas bloqueadas
+      // diagonals can't slip between two blocked cells
       if (dx && dy && (!drivable(y * W + nx) || !drivable(ny * W + x))) continue;
       if (nearLine(nx, ny) && along(x, y) >= 0 && along(nx, ny) < 0) continue;
       const nd = progress[j] + (dx && dy ? Math.SQRT2 : 1);

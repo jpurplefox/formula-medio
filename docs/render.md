@@ -1,90 +1,88 @@
-# El dibujo
+# Rendering
 
-Cómo se dibujan la pista, los autos y la repetición. Todo está en `src/render/` (y la repetición, en
+How the track, the cars and the replay are drawn. Everything is in `src/render/` (and the replay, in
 `src/ui/replay.js`).
 
 ## Voxel Space
 
-`src/render/renderer.js` usa la técnica de *Comanche* (1992), primo del raycasting de *Wolfenstein 3D*: por cada
-columna se recorre el mapa con un rayo de cerca hacia lejos, se lee la altura del terreno y se pinta lo que todavía
-no estaba tapado. El color de cada punto lo decide una función tipo *fragment shader* (asfalto, pianos, pasto, línea
-a cuadros) con sombreado según la pendiente.
+`src/render/renderer.js` uses the *Comanche* (1992) technique, a cousin of *Wolfenstein 3D*'s raycasting: for each
+column a ray walks the map from near to far, reads the terrain height and paints whatever was not hidden yet. The
+color of each point is decided by a *fragment shader*-like function (asphalt, kerbs, grass, checkered line) with
+shading by slope.
 
-Las texturas (asfalto, césped, muros) se generan por código en `src/render/textures.js`, con *mipmaps* para que no
-titilen a lo lejos; el césped tiene franjas de corte. La goma sobre el asfalto (`src/sim/rubber.js`) arranca como
-una franja tenue sobre la trazada ideal (como si antes hubiera corrido otra categoría) y se va marcando por donde
-pasan las ruedas de cada auto, más en frenadas, curvas y salidas: a las 3 vueltas ya se ve la línea de carrera y a
-las 10 está bien negra. Los árboles y los carteles son sprites.
+The textures (asphalt, grass, walls) are generated in code in `src/render/textures.js`, with *mipmaps* so they don't
+flicker in the distance; the grass has mowing stripes. The rubber on the asphalt (`src/sim/rubber.js`) starts as a
+faint strip along the racing line (as if another category had raced before) and builds up where each car's wheels
+pass, more under braking, in corners and on exits: after 3 laps the racing line is visible and after 10 it is quite
+black. The trees and the boards are sprites.
 
-## Los autos
+## The cars
 
-Los autos (el tuyo, los rivales y el fantasma) son **modelos 3D** de unas mil caras, armados en código con secciones
-redondeadas, tubos y cilindros (`src/render/carmodel.js`: trompa, pontones, alerones de varios elementos, halo,
-espejos, suspensión, piloto con casco, visera, alerón y collar HANS, y ruedas con llanta de rayos) y dibujados por
-un rasterizador propio dentro del mismo renderer: misma cámara, sombreado plano según el sol, z-buffer entre sus
-piezas y recorte contra el terreno, así las lomas y los muros los tapan.
+The cars (yours, the rivals and the ghost) are **3D models** of about a thousand faces, built in code from rounded
+sections, tubes and cylinders (`src/render/carmodel.js`: nose, sidepods, multi-element wings, halo, mirrors,
+suspension, driver with helmet, visor, spoiler and HANS collar, and wheels with spoked rims) and drawn by a custom
+rasterizer inside the same renderer: same camera, flat shading from the sun, z-buffer between its parts and clipping
+against the terrain, so hills and walls hide them.
 
-Tienen texturas con corrección de perspectiva: la decoración (`src/render/livery.js`: franja, número, sponsors,
-generada por código en un canvas) en la carrocería, fibra de carbono en los alerones, el piso, el halo y la
-suspensión, y el flanco de las gomas con la franja del compuesto y la marca FIRELLO que gira con la rueda. Cada cara
-toma sus coordenadas de textura proyectándose desde arriba o de costado.
+They have perspective-correct textures: the livery (`src/render/livery.js`: stripe, number, sponsors, generated in
+code on a canvas) on the bodywork, carbon fiber on the wings, the floor, the halo and the suspension, and the tyre
+sidewall with the compound stripe and the FIRELLO brand rotating with the wheel. Each face takes its texture
+coordinates by projecting from above or from the side.
 
-- **El piloto** gira la cabeza (`src/ui/pilot.js`): sigue al auto de adelante si está cerca y dentro de ±10° de su
-  rumbo; si no, mira el vértice de la próxima curva (el punto más lento de la trazada en los próximos 140 m); si no
-  hay curva, de frente.
-- **Las gomas** tienen los hombros redondeados (el perfil va de la banda plana al flanco en un cuarto de círculo) y
-  la banda lleva caucho gastado con marcas de goma arrastrada, que dejan ver que gira. Con WebGL se gastan durante
-  la carrera: largan lisas y brillantes, el brillo se va antes de terminar la primera vuelta y las marcas aparecen de
-  a poco hasta estar completas al empezar la última.
-- **La llanta** tiene un aro de metal que sobresale, la cara hundida con diez rayos de a pares y el disco de freno
-  ranurado detrás (dibujados en una textura que gira con la rueda) y la tuerca central del color de los detalles del
-  equipo.
-- **Los pontones** tienen las tomas con un labio redondeado alrededor de la abertura oscura, inclinadas hacia atrás.
-  Los brazos de la suspensión son perfiles ovalados y chatos; los espejos, una cáscara redondeada con el vidrio
-  hundido en un marco, que con WebGL refleja el entorno como un espejo convexo.
-- **Con WebGL** todo el auto se ilumina con normales suavizadas, así lo redondeado (halo, gomas, carrocería) no se ve
-  en facetas.
+- **The driver** turns his head (`src/ui/pilot.js`): he follows the car ahead if it is close and within ±10° of his
+  heading; otherwise he looks at the apex of the next corner (the slowest point of the racing line in the next
+  140 m); if there is no corner, straight ahead.
+- **The tyres** have rounded shoulders (the profile goes from the flat tread to the sidewall in a quarter circle) and
+  the tread has worn rubber with marks of picked-up rubber, which show that it is turning. With WebGL they wear during
+  the race: they start smooth and shiny, the shine is gone before the end of the first lap and the marks appear
+  gradually until they are complete at the start of the last lap.
+- **The rim** has a protruding metal ring, a recessed face with ten spokes in pairs and the slotted brake disc behind
+  it (drawn on a texture that rotates with the wheel), and the center nut in the team's detail color.
+- **The sidepods** have inlets with a rounded lip around the dark opening, tilted backwards. The suspension arms are
+  flat oval profiles; the mirrors are a rounded shell with the glass recessed in a frame, which with WebGL reflects
+  the surroundings like a convex mirror.
+- **With WebGL** the whole car is lit with smoothed normals, so the rounded parts (halo, tyres, bodywork) don't look
+  faceted.
 
-Las ruedas giran, las delanteras doblan lo que hace falta para el giro del auto (mucho despacio, apenas a fondo),
-todo el auto sigue la pendiente y la carrocería (no las ruedas, que quedan apoyadas) se mueve sobre la suspensión:
-se inclina hacia afuera en las curvas según la aceleración de costado (hasta 1,5°) y baja la trompa al frenar (hasta
-1,1°), con un resorte amortiguado; desde la cabina, el cabeceo mueve la vista, y el auto proyecta su sombra sobre el
-piso.
+The wheels spin, the front ones steer as much as the car's turn needs (a lot at low speed, barely at full speed), the
+whole car follows the slope, and the bodywork (not the wheels, which stay on the ground) moves on the suspension: it
+rolls outward in corners according to the lateral acceleration (up to 1.5°) and the nose dips under braking (up to
+1.1°), with a damped spring; from the cockpit, the pitch moves the view, and the car casts its shadow on the ground.
 
-La vista de cabina usa el mismo modelo, visto desde los ojos del piloto (sin el casco), con el volante dibujado
-encima (`src/render/cockpit.js`). Las cuentas de cámara usan una imagen virtual de 960×540. En el menú, el auto que
-se elige y los trazados de los circuitos los dibuja `src/ui/menuview.js`.
+The cockpit view uses the same model, seen from the driver's eyes (without the helmet), with the steering wheel drawn
+on top (`src/render/cockpit.js`). The camera math uses a virtual 960×540 image. In the menu, the car being chosen and
+the track layouts are drawn by `src/ui/menuview.js`.
 
-## Con WebGL y sin WebGL
+## With WebGL and without WebGL
 
-**Con WebGL** (`src/render/glrenderer.js`, lo normal): todo se dibuja en la placa de video, a la resolución de la
-pantalla (hasta 1440×810). El terreno es un *shader* que corre una vez por píxel: arma el rayo de la cámara, avanza
-sobre el mapa de alturas (un paso de unos píxeles, que cerca de los muros se achica según la distancia al borde, así
-no los saltea) y afina dónde choca; el color del piso es el mismo "shader" de `renderer.js` en GLSL. Autos, árboles,
-carteles y sombras son triángulos con la misma proyección y la misma profundidad, así el z-buffer de la placa
-resuelve qué tapa a qué. Los autos tienen **reflejos**: la pintura y el casco (y un poco el carbono) reflejan un
-entorno inventado (asfalto abajo, una franja de árboles en el horizonte y el cielo arriba), más de costado que de
-frente, con normales suavizadas para que el reflejo corra parejo, y un brillo donde rebota el sol. El volante y el
-semáforo van en un canvas 2D encima.
+**With WebGL** (`src/render/glrenderer.js`, the normal case): everything is drawn on the graphics card, at the
+screen resolution (up to 1440×810). The terrain is a *shader* that runs once per pixel: it builds the camera ray,
+steps over the height map (a step of a few pixels, which shrinks near the walls based on the distance to the edge, so
+it doesn't skip them) and refines where it hits; the ground color is the same "shader" from `renderer.js` in GLSL.
+Cars, trees, boards and shadows are triangles with the same projection and the same depth, so the card's z-buffer
+resolves what hides what. The cars have **reflections**: the paint and the helmet (and a little the carbon) reflect
+an invented environment (asphalt below, a strip of trees on the horizon and the sky above), more from the side than
+from the front, with smoothed normals so the reflection flows evenly, and a highlight where the sun bounces. The
+steering wheel and the start lights go on a 2D canvas on top.
 
-**Sin WebGL** (o agregando `?cpu` a la dirección) se usa el renderer de procesador: el cielo y el terreno se
-reparten entre varios **Web Workers** (uno por núcleo, hasta 6; `src/render/terrainworker.js`), cada uno dibuja una
-franja de columnas y el hilo principal arma la imagen y dibuja encima los sprites y los autos.
+**Without WebGL** (or adding `?cpu` to the URL) the CPU renderer is used: the sky and the terrain are split across
+several **Web Workers** (one per core, up to 6; `src/render/terrainworker.js`), each draws a strip of columns, and the
+main thread assembles the image and draws the sprites and the cars on top.
 
-## La trazada ideal
+## The racing line
 
-En el juego es una cinta semitransparente que flota un poco sobre el asfalto, con los bordes difusos (sin WebGL, se
-pinta sobre el piso), y cambia de color según tu velocidad: **verde** se puede acelerar, **amarillo** mantener o
-levantar, **rojo** hay que frenar. Cómo se calcula: [ai.md](ai.md#la-trazada-ideal).
+In the game it is a semi-transparent ribbon floating slightly above the asphalt, with soft edges (without WebGL, it is
+painted on the ground), and it changes color with your speed: **green** you can accelerate, **yellow** hold or lift,
+**red** you have to brake. How it is computed: [ai.md](ai.md#the-racing-line).
 
-## La repetición
+## The replay
 
-Durante la carrera se graba la posición, el rumbo, el volante y la velocidad de todos los autos 30 veces por segundo
-(`src/ui/replay.js`). Al terminar, después del resultado, se reproduce en loop interpolando entre muestras, con
-varias cámaras:
+During the race the position, heading, steering and speed of every car are recorded 30 times per second
+(`src/ui/replay.js`). At the end, after the result, it plays in a loop interpolating between samples, with several
+cameras:
 
-- **TV:** fijas al costado de la pista, en altura, cada ~230 m; sigue la más cercana al auto, con zoom según la
-  distancia (el renderer acepta un zoom: achica el campo de visión, como un teleobjetivo).
-- **Persecución**, **A bordo** (arriba de la toma de aire), **Helicóptero** y **Frontal** (mirando al auto de
-  frente).
-- **Automática:** un director que va alternando las tomas cada 5 s.
+- **TV** ("TV"): fixed at the side of the track, up high, every ~230 m; it follows the one closest to the car, with
+  zoom based on distance (the renderer accepts a zoom: it narrows the field of view, like a telephoto lens).
+- **Chase** ("Persecución"), **Onboard** ("A bordo", above the air intake), **Helicopter** ("Helicóptero") and
+  **Front** ("Frontal", looking at the car from the front).
+- **Automatic** ("Automática"): a director that switches shots every 5 s.

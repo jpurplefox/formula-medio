@@ -1,40 +1,42 @@
-// Goma sobre el asfalto: un mapa de la pista (filas a lo largo de la línea central, carriles de un borde al otro)
-// que se va oscureciendo por donde pasan las ruedas durante la carrera. Arranca con una franja tenue sobre la
-// trazada ideal, como si antes hubiera corrido otra categoría.
+// Rubber on the asphalt: a map of the track (rows along the centerline, lanes from one edge to the other) that
+// darkens wherever the wheels go during the race. It starts with a faint strip on the racing line, as if another
+// series had raced there before.
 //
-// Los renderers leen `bytes` (0..255 por casillero, filas × LANES) y `version`, que cambia cada vez que se
-// actualizan los bytes. side (de costado a la línea central) y st (sobre ella) van en celdas, como en el render.
+// The renderers read `bytes` (0..255 per cell, rows × LANES) and `version`, which changes every time the bytes are
+// updated. side (sideways from the centerline) and st (along it) are in cells, as in the renderer.
 //
-// La goma también agarra (gripAt, que car.js aplica a cada rueda sobre el asfalto): RUBBER_GRIP más de agarre de
-// la pista limpia a la negra del todo. El auto está calibrado con vueltas de clasificación, con la trazada como al
-// largar (la franja de la otra categoría), así que ahí da 1: fuera de la trazada se agarra un poco menos desde el
-// principio y, a medida que se marca, la trazada agarra cada vez más (y salirse para pasar cuesta más).
+// The rubber also grips (gripAt, which car.js applies to each wheel on the asphalt): RUBBER_GRIP more grip from the
+// clean track to fully black. The car is calibrated with qualifying laps, with the racing line as at the start (the
+// other series' strip), so it gives 1 there: off the racing line there is a little less grip from the beginning
+// and, as it gets marked, the racing line grips more and more (and going off line to overtake costs more).
 
 const RUBBER_LANES = 32;
-export const RUBBER_DARK = 0.4; // cuánto oscurece la goma al máximo (0..1)
-const BASE = 0.35; // la franja de la otra categoría: fracción del máximo en el centro de la trazada
-const BASE_W = 0.9; // medio ancho de esa franja (celdas)
-const WHEEL_M = 0.8; // de la línea del auto a cada rueda (m)
-const WHEEL_SPREAD_M = 0.35; // medio ancho de la marca de cada rueda (m)
-// cuánta goma deja una rueda por metro, sin exigir el agarre y al límite; la marca se ve
-// 1 - exp(-goma / SATURATION): con unas 3 vueltas de 22 autos la trazada ya está clara y a las 10, bien negra
+export const RUBBER_DARK = 0.4; // how much the rubber darkens at most (0..1)
+const BASE = 0.35; // the other series' strip: fraction of the maximum at the center of the racing line
+const BASE_W = 0.9; // half width of that strip (cells)
+const WHEEL_M = 0.8; // from the car's line to each wheel (m)
+const WHEEL_SPREAD_M = 0.35; // half width of each wheel's mark (m)
+// how much rubber a wheel leaves per meter, with the grip unused and at the limit; the mark shows as
+// 1 - exp(-rubber / SATURATION): after about 3 laps of 22 cars the racing line is already clear and after 10, quite
+// black
 const PER_M = 0.4,
   PER_M_LIMIT = 1.6,
   SATURATION = 25;
-const REFRESH = 0.5; // cada cuánto se recalculan los bytes (s)
-const MAX_ROWS = 4096; // las texturas no pueden ser más largas
-const RUBBER_GRIP = 0.06; // fuera de la trazada al largar, 2 % menos de agarre; con la trazada negra, 4 % más
+const REFRESH = 0.5; // how often the bytes are recomputed (s)
+const MAX_ROWS = 4096; // textures can't be longer
+const RUBBER_GRIP = 0.06; // off the racing line at the start, 2 % less grip; with the racing line black, 4 % more
 
 export class RubberMap {
-  // offset: por dónde pasa la trazada ideal en cada celda de la línea central (racingline.js)
+  // offset: where the racing line runs at each centerline cell (racingline.js)
   constructor(track, offset) {
     this.length = track.length;
     this.rows = Math.min(MAX_ROWS, Math.ceil(track.length));
-    this.span = Math.max(...track.halfWidths) + 0.6; // de la línea central al último carril (celdas), un poco más que la pista
+    // from the centerline to the last lane (cells), a little more than the track
+    this.span = Math.max(...track.halfWidths) + 0.6;
     this.lanes = RUBBER_LANES;
     this.meters = track.meters;
-    this.rubber = new Float32Array(this.rows * this.lanes); // la que dejaron los autos
-    this.base = new Float32Array(this.rows * this.lanes); // la de antes, 0..1
+    this.rubber = new Float32Array(this.rows * this.lanes); // the rubber the cars left
+    this.base = new Float32Array(this.rows * this.lanes); // the earlier one, 0..1
     for (let r = 0; r < this.rows; r++) {
       const off = offset[Math.min(offset.length - 1, Math.floor((r * this.length) / this.rows))];
       for (let l = 0; l < this.lanes; l++) {
@@ -45,7 +47,7 @@ export class RubberMap {
     this.bytes = new Uint8Array(this.rows * this.lanes);
     this.version = 0;
     this.clock = REFRESH;
-    this.prev = new Map(); // fila de la última pasada de cada auto
+    this.prev = new Map(); // row of each car's last pass
     this.refresh();
   }
 
@@ -53,17 +55,17 @@ export class RubberMap {
     return (((l + 0.5) / this.lanes) * 2 - 1) * this.span;
   }
 
-  // Lo que dejó cada auto en este cuadro. cars: [{ car, st, lat }] (st y lat en celdas, como carState)
+  // What each car left in this frame. cars: [{ car, st, lat }] (st and lat in cells, like carState)
   update(dt, cars) {
     for (const { car, st, lat } of cars) {
       const row = Math.floor((st / this.length) * this.rows) % this.rows;
       const last = this.prev.get(car);
       this.prev.set(car, row);
       if (last === undefined || car.onGrass || car.speed < 1) continue;
-      // las filas que cruzó desde el cuadro anterior (a fondo, puede saltear alguna)
+      // the rows it crossed since the previous frame (flat out, it can skip some)
       let steps = (row - last + this.rows) % this.rows;
       if (steps === 0 || steps > 8) continue;
-      // más goma cuanto más se exige el agarre: doblar, frenar o acelerar fuerte, y si desliza
+      // more rubber the harder the grip is used: turning, braking or accelerating hard, and if it slides
       const use = Math.min(1.5, (car.speed * Math.abs(car.omega) + Math.abs(car.aLon)) / 40 + Math.abs(car.slip) / 5);
       const amount = (car.speed * dt * (PER_M + (PER_M_LIMIT - PER_M) * use)) / steps;
       for (let k = 1; k <= steps; k++) this.deposit((last + k) % this.rows, lat, amount);
@@ -75,7 +77,7 @@ export class RubberMap {
     }
   }
 
-  // las dos ruedas: una marca de cada lado de la línea del auto, más fuerte en el centro
+  // the two wheels: one mark on each side of the car's line, stronger in the center
   deposit(row, lat, amount) {
     const laneW = (2 * this.span) / this.lanes,
       spread = WHEEL_SPREAD_M / this.meters;
@@ -90,9 +92,9 @@ export class RubberMap {
     }
   }
 
-  // Vuelve a la pista del principio de la carrera, con `amount` de goma ya puesta sobre la trazada (como si se
-  // hubieran corrido unas vueltas; SATURATION es una marca clara). Para entrenar con la pista en cualquier momento
-  // de la carrera sin armar el mapa de nuevo.
+  // Goes back to the track at the start of the race, with `amount` of rubber already laid on the racing line (as if
+  // a few laps had been run; SATURATION is a clear mark). To train with the track at any point of the race without
+  // rebuilding the map.
   reset(amount = 0) {
     const { rubber, base } = this;
     for (let i = 0; i < rubber.length; i++) rubber[i] = (amount * base[i]) / BASE;
@@ -110,7 +112,7 @@ export class RubberMap {
     this.version++;
   }
 
-  // 0..1 en un punto de la pista (para el render sin WebGL), interpolando entre carriles
+  // 0..1 at a point on the track (for the renderer without WebGL), interpolating between lanes
   static sample(map, st, side) {
     const { rows, lanes, span, bytes } = map;
     const row = Math.floor((st / map.length) * rows) % rows;
@@ -121,7 +123,7 @@ export class RubberMap {
     return (bytes[row * lanes + l] * (1 - f) + bytes[row * lanes + l + 1] * f) / 255;
   }
 
-  // agarre de una rueda en ese punto respecto del de la trazada al largar (1)
+  // grip of a wheel at that point relative to the racing line's at the start (1)
   static gripAt(map, st, side) {
     return 1 + RUBBER_GRIP * (RubberMap.sample(map, st, side) - BASE);
   }

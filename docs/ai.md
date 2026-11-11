@@ -1,121 +1,123 @@
-# Los rivales
+# The rivals
 
-Los rivales manejan con una red neuronal entrenada por refuerzo, la que diga `GAME_NET` en `src/drivers/policy.js`.
-La IA clásica (más abajo) es el piloto escrito a mano de antes de la red: queda sólo si la red no carga o con
-`?ia=clasica`, y como referencia para entrenar y medir. Las dos usan la trazada ideal.
+The rivals drive with a neural network trained with reinforcement learning, the one named by `GAME_NET` in
+`src/drivers/policy.js`. The classic AI (below) is the hand-written driver from before the network: it is only used if
+the network fails to load or with `?ai=classic`, and as a reference for training and measuring. Both use the racing
+line.
 
-## La trazada ideal
+## The racing line
 
-`src/sim/racingline.js` calcula, al cargar el circuito, la trazada curva por curva como la hacen los pilotos: se
-llega por el lado de afuera, se toca el vértice (el punto más cerrado) del lado de adentro y se sale abriendo de
-nuevo (en las eses, de vértice a vértice), con un suavizado final que saca los zigzags. Después calcula la velocidad
-máxima en cada punto con los límites del auto (`src/sim/lapsim.js`): lo que aguanta el agarre en la curva, cuánto
-hay que frenar antes y cuánto acelera el motor después. Cómo se ve en el juego: [render.md](render.md#la-trazada-ideal).
+`src/sim/racingline.js` computes the line corner by corner when the track loads, the way drivers take it: arrive
+from the outside, touch the apex (the tightest point) on the inside and exit wide again (in esses, from apex to
+apex), with a final smoothing pass that removes zigzags. Then it computes the maximum speed at each point from the
+car's limits (`src/sim/lapsim.js`): what the grip can hold in the corner, how much it has to brake before it and how
+much the engine accelerates after it. How it looks in the game: [render.md](render.md#the-racing-line).
 
-## La red, entrenada con aprendizaje por refuerzo (`rl/`)
+## The network, trained with reinforcement learning (`rl/`)
 
-Una red neuronal aprende a manejar sola, con la misma física del juego, por etapas:
+A neural network learns to drive by itself, with the same physics as the game, in stages:
 
-1. **Sola en pista** (contrarreloj): aprende a dar la vuelta lo más rápido posible en los 8 circuitos.
-2. **Contra otros autos** (`rl/race.js`): carreras de 4 autos que aprenden (la misma red, contra sí misma) y de 0 a
-   6 rivales con la IA clásica a ritmos variados; largan en grilla, en fila o repartidos por la pista. Además de
-   los metros, se castigan los toques entre autos (mucho más al que le pega al de adelante).
+1. **Alone on track** (time trial): it learns to lap as fast as possible on the 8 tracks.
+2. **Against other cars** (`rl/race.js`): races of 4 learning cars (the same network, against itself) and 0 to 6
+   rivals with the classic AI at varied paces; they start on a grid, in single file or spread around the track.
+   Besides the meters, contacts between cars are penalized (much more for the car that hits the one ahead).
 
-**Qué ve** (`src/drivers/sensors.js`, 98 números; las redes entrenadas antes del agarre por rueda usan los primeros
-94): su auto (velocidad, deslizamiento, giro, volante, pedales, marcha, rpm, agarre de cada eje, rebufo, cuánto
-mejor o peor es que el promedio y el desgaste de las gomas), su posición en la pista, cuánto dobla la pista a 20,
-40… 450 m (lo que un piloto sabe de memoria), 19 rayos que miden la distancia al borde de la pista de -90° a +90°, y
-los 6 rivales más cercanos (posición, velocidad relativa y hacia dónde apuntan; en la etapa 1 quedan en cero) y el
-agarre de cada rueda según lo que pisa (así sabe de qué lado se fue al pasto).
+**What it sees** (`src/drivers/sensors.js`, 98 numbers; networks trained before per-wheel grip use the first 94):
+its car (speed, slip, yaw rate, steering, pedals, gear, rpm, grip of each axle, slipstream, how much better or worse
+than average it is, and tyre wear), its position on the track, how much the track turns at 20, 40… 450 m (what a
+driver knows by heart), 19 rays that measure the distance to the track edge from -90° to +90°, the 6 nearest rivals
+(position, relative speed and where they point; zero in stage 1) and the grip of each wheel depending on what it is
+on (so it knows which side went onto the grass).
 
-**Qué decide**: volante y pedal (de frenar a fondo a acelerar a fondo), 20 veces por segundo, progresivos.
+**What it decides**: steering and pedal (from full brake to full throttle), 20 times per second, progressive.
 
-**Qué la premia** (`rl/env.js`): los metros que avanza sobre la línea central; la castigan el pasto, los golpes
-contra el muro y quedarse quieta o ir para atrás. Cada episodio larga en un punto cualquiera de un circuito al azar.
+**What rewards it** (`rl/env.js`): the meters it advances along the centerline; it is penalized for grass, hits
+against the wall and standing still or going backwards. Each episode starts at a random point of a random track.
 
-### Cómo se entrena
+### How it is trained
 
-Python con PyTorch y stable-baselines3 (algoritmo PPO) le pasa las acciones a varios procesos de Node
-(`rl/worker.js`) que simulan 128 autos a la vez; en una Mac M4 Pro van unos 30.000 pasos por segundo.
+Python with PyTorch and stable-baselines3 (PPO algorithm) passes the actions to several Node processes
+(`rl/worker.js`) that simulate 128 cars at once; on an M4 Pro Mac it runs at about 30,000 steps per second.
 
 ```bash
 python3 -m venv rl/.venv && rl/.venv/bin/pip install torch stable-baselines3 gymnasium tensorboard
 ```
 
-1. Los circuitos de F1 se arman en Node desde `tracks/*.layout.json`. Sólo los que salen de una imagen necesitan
-   exportarse antes (la parte que necesita el navegador): con `serve.py` corriendo, abrir
-   `http://localhost:8123/rl/bake.html` (guarda las máscaras en `rl/tracks/`).
-2. Entrenar: `rl/.venv/bin/python rl/train.py --steps 30000000 --name etapa1` (las curvas, con
+1. The F1 tracks are built in Node from `tracks/*.layout.json`. Only the ones that come from an image need to be
+   exported first (the part that needs the browser): with `serve.py` running, open
+   `http://localhost:8123/rl/bake.html` (it saves the masks in `rl/tracks/`).
+2. Train: `rl/.venv/bin/python rl/train.py --steps 30000000 --name etapa1` (the curves, with
    `rl/.venv/bin/tensorboard --logdir rl/runs`).
-3. Exportar la red a JSON: `rl/.venv/bin/python rl/export.py rl/runs/etapa1/model.zip models/etapa1.json`.
-4. Medirla contra la IA clásica: `node rl/eval.js models/etapa1.json`.
-5. Verla en el juego: `http://localhost:8123/?ia=models/etapa1.json` (los rivales manejan con esa red).
+3. Export the network to JSON: `rl/.venv/bin/python rl/export.py rl/runs/etapa1/model.zip models/etapa1.json`.
+4. Measure it against the classic AI: `node rl/eval.js models/etapa1.json`.
+5. Watch it in the game: `http://localhost:8123/?ai=models/etapa1.json` (the rivals drive with that network).
 
-Para que el entrenamiento no se desarme (PPO es inestable), la tasa de aprendizaje baja de a poco hasta 0, cada
-actualización usa 32.768 pasos y las recompensas se normalizan; conviene igual medir los puntos de control con
-`rl/eval.js` y quedarse con el mejor. Cada episodio larga en cualquier punto de la vuelta, a veces parado o cruzado
-y con ruedas afuera, para que aprenda también a largar y a volver a la pista.
+To keep training from falling apart (PPO is unstable), the learning rate decreases gradually to 0, each update uses
+32,768 steps and the rewards are normalized; it is still worth measuring the checkpoints with `rl/eval.js` and
+keeping the best one. Each episode starts at any point of the lap, sometimes stopped or sideways and with wheels off
+the track, so it also learns to start and to get back on the track.
 
-Para medir en carrera: `node rl/race_eval.js models/v22/fase18.json` (22 autos, la mitad con la red y la mitad con
-la IA clásica; con `CARS=8` delante, 8 autos): posición media, toques y pasto.
+To measure in a race: `node rl/race_eval.js models/v22/fase18.json` (22 cars, half with the network and half with the
+classic AI; with `CARS=8` in front, 8 cars): average position, contacts and grass.
 
-### Historia
+### History
 
-**Etapa 1** (`models/etapa1.json`, 60 millones de pasos, ~35 minutos): completa las vueltas en los 8 circuitos, en
-promedio un 7 % más rápido que la IA clásica a su mejor ritmo (de 1 % en Monza a 15 % en el Red Bull Ring; en
-Interlagos, 66,2 s contra 70,4 s).
+**Stage 1** (`models/etapa1.json`, 60 million steps, ~35 minutes): completes the laps on the 8 tracks, on average
+7 % faster than the classic AI at its best pace (from 1 % at Monza to 15 % at the Red Bull Ring; at Interlagos, 66.2 s
+against 70.4 s).
 
-**Etapa 2** (`models/etapa2.json`, 35 millones de pasos más):
+**Stage 2** (`models/etapa2.json`, 35 million more steps):
 
 ```bash
 rl/.venv/bin/python rl/train.py --race --envs 4 --steps 40000000 --name etapa2 --resume rl/runs/etapa1c/model.zip \
     --fresh-opponents --critic-warmup 3000000 --lr 1e-4
 ```
 
-Hicieron falta tres cosas para que la etapa 2 no desarmara lo aprendido:
+Three things were needed so that stage 2 would not undo what had been learned:
 
-- `--fresh-opponents`: los pesos que reciben los datos de los rivales nunca se entrenaron en la etapa 1 (siempre
-  eran cero) y quedaron al azar; en cero, la red arranca manejando exactamente igual.
-- `--critic-warmup`: con la recompensa nueva el crítico (la parte que estima cuánto va a ganar) está desajustado y
-  sus errores desarman la parte que maneja; los primeros 3 millones de pasos sólo aprende el crítico.
-- `--lr 1e-4` y pasos más cortos (`target_kl` 0,015).
+- `--fresh-opponents`: the weights that receive the rivals' data were never trained in stage 1 (they were always
+  zero) and were left random; set to zero, the network starts out driving exactly the same.
+- `--critic-warmup`: with the new reward the critic (the part that estimates how much it will earn) is off, and its
+  errors break the part that drives; for the first 3 million steps only the critic learns.
+- `--lr 1e-4` and shorter steps (`target_kl` 0.015).
 
-Un premio por pasar y por defender le enseñó a zigzaguear y a meterse aunque hubiera contacto: por ahora no se usa.
+A reward for overtaking and for defending taught it to zigzag and to dive in even when there was contact: it is not
+used for now.
 
-Contra la etapa 1, en carreras de 22 autos se toca un 18 % menos y pisa un 26 % menos el pasto, con el mismo ritmo
-(posición media 6,9 contra 7,2); con 8 autos, un 29 % menos de toques.
+Compared with stage 1, in 22-car races it has 18 % fewer contacts and 26 % less time on the grass, with the same pace
+(average position 6.9 against 7.2); with 8 cars, 29 % fewer contacts.
 
-**Currículum** (`models/fase1.json` a `models/fase7.json`): red más grande (política 384×384, crítico 512×512),
-autos con potencia, agarre y frenos algo distintos y gomas que se gastan, y fases que enseñan de a una cosa (manejar
-sola, no chocar, pasar, carreras completas) y después tres fases más dedicadas a manejar limpio. La fase 7 tocaba un
-44 % menos que la fase 1. Dos intentos más (`models/v3/`, `models/v4/`) priorizaron manejar limpio antes que rápido,
-y el quinto (`models/v5/`, con el agarre por rueda y el pasto que frena) sumó ritmo en las largadas y una fase
-contra rivales más rápidos: `models/v5/fase7.json` fue la red del juego, con un 36 % menos de toques que la v4, un
-tercio del pasto y algo más rápida (en el juego los rivales llevan menos agarre y potencia). Detalle, resultados y
-lo que salió mal en el camino: `rl/CURRICULUM.md`.
+**Curriculum** (`models/fase1.json` to `models/fase7.json`): a bigger network (policy 384×384, critic 512×512), cars
+with slightly different power, grip and brakes and tyres that wear, and phases that teach one thing at a time (drive
+alone, don't crash, overtake, full races) followed by three more phases dedicated to clean driving. Phase 7 had 44 %
+fewer contacts than phase 1. Two more attempts (`models/v3/`, `models/v4/`) put clean driving before speed, and the
+fifth (`models/v5/`, with per-wheel grip and grass that slows the car) added pace at the starts and a phase against
+faster rivals: `models/v5/fase7.json` was the game network, with 36 % fewer contacts than v4, a third of the grass
+and slightly faster (in the game the rivals have less grip and power). Details, results and what went wrong along the
+way: `rl/CURRICULUM.md`.
 
-Después vino el entrenamiento en manada (22 autos con la red, desde la v8; receta en `rl/curriculum.sh`, ~3 h:
-`NAME=v23 sh rl/curriculum.sh`). La red del juego hoy es la que diga `GAME_NET` en `src/drivers/policy.js`. En
-`models/` queda sólo esa: las redes de las etapas y de los intentos anteriores (`models/etapa1.json`,
-`models/fase1.json` a `fase7.json`, `models/v3/` a `models/v21/`) están en el historial de git, en el commit
-e9ff553.
+Then came herd training (22 cars with the network, from v8 on; recipe in `rl/curriculum.sh`, ~3 h:
+`NAME=v23 sh rl/curriculum.sh`). The game network today is the one named by `GAME_NET` in `src/drivers/policy.js`.
+Only that one is kept in `models/`: the networks from the stages and the earlier attempts (`models/etapa1.json`,
+`models/fase1.json` to `fase7.json`, `models/v3/` to `models/v21/`) are in the git history, in commit e9ff553.
 
-## La IA clásica
+## The classic AI
 
-Es el piloto automático escrito a mano que manejaba a los rivales antes de la red. Hoy queda para cuando la red no
-carga (o con `?ia=clasica`), y como vara: los entrenamientos y las mediciones de `rl/` la usan de rival o de
-referencia (cuando dicen "contra la IA clásica"). Cada rival (`src/drivers/ai.js`) es un auto con la misma física que
-el tuyo:
+It is the hand-written autopilot that drove the rivals before the network. Today it is kept for when the network
+fails to load (or with `?ai=classic`), and as a yardstick: the training runs and measurements in `rl/` use it as a
+rival or as a reference (when they say "against the classic AI"). Each rival (`src/drivers/ai.js`) is a car with the
+same physics as yours:
 
-- **Volante:** persigue un punto de la trazada ideal unos metros más adelante (*pure pursuit*) y gira lo justo para
-  llegar, dentro de lo que permite el agarre.
-- **Pedales:** acelera o frena para ir a la velocidad que la trazada indica en ese punto, multiplicada por su ritmo
-  (`pace`, según la dificultad: `DIFFICULTIES` en `src/race/teams.js`; en Interlagos, de vueltas de ~75–80 s en
-  Fácil a ~69–70 s en Experto), con pequeñas variaciones de ritmo y de línea. Su trazada es la misma que ves, pero
-  frenando más al límite (93 % en vez de 85 %), y en las curvas lentas no pasan de 0,975 de esa velocidad, porque
-  más rápido se abren y salen.
-- **Tráfico:** si alcanza a otro auto, se abre hacia el lado donde ya está (o donde hay más lugar) para pasarlo; a
-  la par, cada uno se queda de su lado (y si no entran los dos, el que va un poco atrás levanta); si no hay lugar
-  para pasar, se queda detrás guardando distancia.
-- **A la par:** si el otro le lleva más de media trompa y no lo está pasando, cede y se ubica detrás.
-- Si un rival se queda trabado, vuelve a la pista sobre la trazada.
+- **Steering:** it chases a point on the racing line a few meters ahead (*pure pursuit*) and turns just enough to
+  reach it, within what the grip allows.
+- **Pedals:** it accelerates or brakes to go at the speed the racing line gives at that point, multiplied by its
+  pace (`pace`, depending on the difficulty: `DIFFICULTIES` in `src/race/teams.js`; at Interlagos, from laps of
+  ~75–80 s on Easy to ~69–70 s on Expert), with small variations in pace and line. Its racing line is the same one
+  you see, but braking closer to the limit (93 % instead of 85 %), and in slow corners they don't go above 0.975 of
+  that speed, because faster they run wide and go off.
+- **Traffic:** if it catches another car, it moves toward the side where it already is (or where there is more room)
+  to overtake; side by side, each one stays on its side (and if both don't fit, the one slightly behind lifts); if
+  there is no room to overtake, it stays behind keeping its distance.
+- **Side by side:** if the other car is more than half a nose ahead and is not being overtaken, it yields and
+  slots in behind.
+- If a rival gets stuck, it goes back to the track onto the racing line.

@@ -1,19 +1,20 @@
-// Mide redes en las carreras en manada (rl/herd.js), siempre con las mismas carreras (misma semilla, circuitos y
-// autos): todos los autos con la red. Cada carrera es en otro circuito, en orden: con circuitos al azar, la misma
-// red medida con 3 o 6 carreras daba muy distinto (cada circuito tiene su nivel de vuelta y de toques). Informa:
-//   tiempo     la medida del entrenamiento: el tiempo con castigo contra el de la trazada arrancando igual (en solo y
-//              rolling cada vuelta; en grid las dos; en flying la vuelta; en chase la vuelta del de atrás; en start
-//              hasta donde llegó cada uno cuando el primero llegó a la frenada de la primera curva)
-// y para ver de dónde sale: la vuelta lanzada sin castigo (vuelta), la vuelta 1 de una largada (vuelta1) y en la
-// grilla la 2 (vuelta2), sin castigo; el castigo por vuelta (s, por auto) y sus partes: toques por km, segundos
-// encimados al lado de otro por vuelta (zona), segundos en el pasto por episodio con dos ruedas o más (pasto, como en
-// las tablas de antes) y el castigo por el pasto por vuelta (c.pasto); pasadas limpias por par en persecución y
-// rescates por episodio.
+// Measures networks in herd races (rl/herd.js), always with the same races (same seed, tracks and cars): every car
+// with the network. Each race is on a different track, in order: with random tracks, the same network measured with
+// 3 or 6 races gave very different results (each track has its own level of lap time and contacts). Reports:
+//   time       the training measure: the time with penalty against the racing line's starting the same way (in solo
+//              and rolling each lap; in grid both laps; in flying the lap; in chase the lap of the car behind; in
+//              start how far each one got when the first one reached the braking point of the first corner)
+// and, to see where it comes from: the flying lap without penalty (lap), lap 1 of a start (lap1) and, on the grid,
+// lap 2 (lap2), without penalty; the penalty per lap (s, per car) and its parts: contacts per km, seconds side by
+// side with another car per lap (zone), seconds on the grass per episode with two or more wheels (grass, as in the
+// older tables) and the grass penalty per lap (grass.pen); clean passes per pair in the chase and rescues per
+// episode.
 //
 //   node rl/herd_eval.js models/a.json [models/b.json ...]
 //
-// Variables: SCENARIOS (por ejemplo grid,chase; por defecto, todos), RACES (carreras por escenario, 8: una por circuito), DAMAGE (off, reduced o real; por defecto, off), AGENTS (autos por carrera, 22, como en el juego). Con JSON=1, para una sola red,
-// escribe el tiempo de cada escenario como lo usan los presupuestos del entrenamiento (Budgets, rl/train.py).
+// Variables: SCENARIOS (for example grid,chase; default, all), RACES (races per scenario, 8: one per track), DAMAGE
+// (off, reduced or real; default, off), AGENTS (cars per race, 22, as in the game). With JSON=1, for a single
+// network, writes the time of each scenario as the training budgets use it (Budgets, rl/train.py).
 
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -26,14 +27,14 @@ import { TRACK_IDS } from './tracks.js';
 
 const RACES = Number(process.env.RACES ?? 8),
   AGENTS = Number(process.env.AGENTS ?? 22);
-const PEN = ['castigo', 'toques', 'zona', 'pasto', 'c.pasto'];
+const PEN = ['penalty', 'contacts', 'zone', 'grass', 'grass.pen'];
 const SCENARIOS = {
-  solo: ['tiempo', 'vuelta', ...PEN],
-  grid: ['tiempo', 'vuelta1', 'vuelta2', ...PEN],
-  flying: ['tiempo', 'vuelta1', ...PEN],
-  rolling: ['tiempo', 'vuelta', ...PEN],
-  chase: ['tiempo', 'pasadas', ...PEN],
-  start: ['tiempo', ...PEN],
+  solo: ['time', 'lap', ...PEN],
+  grid: ['time', 'lap1', 'lap2', ...PEN],
+  flying: ['time', 'lap1', ...PEN],
+  rolling: ['time', 'lap', ...PEN],
+  chase: ['time', 'passes', ...PEN],
+  start: ['time', ...PEN],
 };
 
 function measure(policy, scenario) {
@@ -48,10 +49,10 @@ function measure(policy, scenario) {
   const eps = [];
   for (let race = 0; race < RACES; race++) {
     sim.trackIds = [TRACK_IDS[race % TRACK_IDS.length]];
-    // lo que es al azar dentro de la física (el giro de un auto que sale despedido en un choque) también con semilla:
-    // si no, la misma red medida dos veces daba hasta 15 % distinto en toques
+    // what is random inside the physics (the spin of a car thrown off in a crash) is also seeded: otherwise the same
+    // network measured twice gave up to 15 % different contacts
     Math.random = rng(9000 + race);
-    setDamageRandom(rng(9500 + race)); // los pinchazos, con su propio azar
+    setDamageRandom(rng(9500 + race)); // punctures, with their own randomness
 
     let obs = sim.reset();
     for (let done = false; !done;) {
@@ -71,32 +72,33 @@ function measure(policy, scenario) {
   const km = eps.reduce((a, e) => a + Math.max(0, e.dist), 0) / 1000;
   const laps = sum((e) => e.laps);
   return {
-    tiempo: mean((e) => e.time),
-    vuelta: mean((e) => e.pace),
-    vuelta1: mean((e) => e.launch),
-    vuelta2: mean((e) => e.lap2),
-    castigo: sum((e) => e.penalty) / laps,
-    toques: sum((e) => e.hits) / km,
-    zona: sum((e) => e.zone) / laps,
-    // pasto: segundos en el pasto por episodio (dos ruedas o más), como en las tablas de antes; c.pasto, su castigo por vuelta
-    pasto: mean((e) => e.grass),
-    'c.pasto': sum((e) => e.grassPen) / laps,
-    // cada pasada la cuenta el de atrás: por par, el promedio de los de atrás
-    pasadas: mean((e) => (e.front ? null : (e.passes ?? 0))),
-    rescates: mean((e) => e.rescues),
+    time: mean((e) => e.time),
+    lap: mean((e) => e.pace),
+    lap1: mean((e) => e.launch),
+    lap2: mean((e) => e.lap2),
+    penalty: sum((e) => e.penalty) / laps,
+    contacts: sum((e) => e.hits) / km,
+    zone: sum((e) => e.zone) / laps,
+    // grass: seconds on the grass per episode (two or more wheels), as in the older tables; grass.pen, its penalty
+    // per lap
+    grass: mean((e) => e.grass),
+    'grass.pen': sum((e) => e.grassPen) / laps,
+    // each pass is counted by the car behind: per pair, the mean of the cars behind
+    passes: mean((e) => (e.front ? null : (e.passes ?? 0))),
+    rescues: mean((e) => e.rescues),
   };
 }
 
 const files = process.argv.slice(2);
 const policies = files.map((f) => new Policy(JSON.parse(readFileSync(f, 'utf8'))));
 if (process.env.SCENARIO) {
-  // un escenario, para la medición en paralelo de abajo
+  // one scenario, for the parallel measurement below
   console.log(JSON.stringify(measure(policies[0], process.env.SCENARIO)));
   process.exit(0);
 }
 if (process.env.JSON === '1') {
-  // cada escenario en su proceso: con redes grandes, uno tras otro tardaba más que entrenar la fase. Da lo mismo
-  // (cada escenario tiene su propia semilla)
+  // each scenario in its own process: with large networks, one after another took longer than training the phase.
+  // The result is the same (each scenario has its own seed)
   const one = (scenario) =>
     new Promise((resolve, reject) =>
       execFile(
@@ -108,20 +110,20 @@ if (process.env.JSON === '1') {
     );
   const names = ['solo', 'grid', 'rolling', 'flying', 'chase', 'start'];
   const all = await Promise.all(names.map(one));
-  console.log(JSON.stringify({ time: Object.fromEntries(names.map((sc, i) => [sc, all[i].tiempo])) }));
+  console.log(JSON.stringify({ time: Object.fromEntries(names.map((sc, i) => [sc, all[i].time])) }));
   process.exit(0);
 }
 const fmt = {
-  tiempo: 3,
-  castigo: 2,
-  zona: 1,
-  pasto: 1,
-  'c.pasto': 2,
-  vuelta: 3,
-  vuelta1: 3,
-  vuelta2: 3,
-  toques: 2,
-  pasadas: 2,
+  time: 3,
+  penalty: 2,
+  zone: 1,
+  grass: 1,
+  'grass.pen': 2,
+  lap: 3,
+  lap1: 3,
+  lap2: 3,
+  contacts: 2,
+  passes: 2,
 };
 const only = process.env.SCENARIOS?.split(',');
 for (const [scenario, keys] of Object.entries(SCENARIOS)) {
@@ -131,8 +133,8 @@ for (const [scenario, keys] of Object.entries(SCENARIOS)) {
     const m = measure(p, scenario);
     const parts = keys.map(
       (k) =>
-        `${k} ${m[k].toFixed(fmt[k])}${k === 'toques' ? '/km' : k === 'pasto' ? ' s' : ['castigo', 'zona', 'c.pasto'].includes(k) ? ' s/v' : ''}`,
+        `${k} ${m[k].toFixed(fmt[k])}${k === 'contacts' ? '/km' : k === 'grass' ? ' s' : ['penalty', 'zone', 'grass.pen'].includes(k) ? ' s/lap' : ''}`,
     );
-    console.log(`  ${files[i].padEnd(28)} ${parts.join(' · ')} · rescates ${m.rescates.toFixed(2)}`);
+    console.log(`  ${files[i].padEnd(28)} ${parts.join(' · ')} · rescues ${m.rescues.toFixed(2)}`);
   });
 }

@@ -1,7 +1,7 @@
-# Revisa cada PR y cada push a main: ESLint y Prettier (npm run lint), los tests (npm test, en test/) y el chequeo
-# de regresión (tools/regress.js), que corre carreras con semilla fija y las compara con tools/regress.base.txt. Si
-# un cambio toca la física, la IA o los sensores a propósito, se actualiza la base con node tools/regress.js save
-# y se commitea con el cambio.
+# Checks every PR and every push to main: ESLint and Prettier (npm run lint), the tests (npm test, in test/) and the
+# regression check (tools/regress.js), which runs races with a fixed seed and compares them with
+# tools/regress.base.txt. If a change touches the physics, the AI or the sensors on purpose, update the baseline with
+# node tools/regress.js save and commit it with the change.
 name: Check
 
 on:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  lint-y-tests:
+  lint-and-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -25,8 +25,8 @@ jobs:
       - run: npm run lint
       - run: npm test
 
-  # En macOS con Apple Silicon (arm64), como la máquina donde se guarda la base: en x64 las funciones matemáticas
-  # (Math.sin, Math.exp...) pueden dar distinto en el último decimal y la carrera se separa.
+  # On macOS with Apple Silicon (arm64), like the machine where the baseline is saved: on x64 the math functions
+  # (Math.sin, Math.exp...) can differ in the last decimal and the race diverges.
   regress:
     runs-on: macos-latest
     steps:

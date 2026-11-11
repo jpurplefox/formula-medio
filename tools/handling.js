@@ -1,12 +1,13 @@
-// Prueba de manejo sin pantalla, para ajustar la física de las gomas (car.js):
-//   skidpad  en un círculo de radio fijo, sobre asfalto plano, el volante a fondo y la velocidad justa: cuánto dobla
-//            el auto (aceleración lateral) comparado con lo que dice dynamics.js (lim.lateral). Tiene que dar ~1.
-//   vueltas  la IA clásica (ai.js) solo en cada circuito, 3 vueltas: mejor vuelta, tiempo en el pasto, golpes y
-//            trompos (giro de más de 90° entre la trompa y para dónde va).
+// Headless driving test, to tune the tyre physics (car.js):
+//   skidpad  on a fixed-radius circle, on flat asphalt, at full lock and just the right speed: how much the car turns
+//            (lateral acceleration) compared with what dynamics.js says (lim.lateral). It should come out ~1.
+//   laps     the classic AI (ai.js) alone on each track, 3 laps: best lap, time on the grass, hits and spins (more
+//            than 90° between where the nose points and where the car is going).
 //
-//   node tools/handling.js [circuitos separados por coma | skidpad [volante 0..1]]
-//   KEYBOARD=1 (acelerador y freno todo o nada y volante con toques, como con teclado)  TC=off|low|high (control de tracción)  ABS=1
-//   PACE=1.06 (ritmo de la IA)  TUNE='{"front":10,"rear":1,"balance":5}' (puesta a punto)
+//   node tools/handling.js [comma-separated tracks | skidpad [steering 0..1]]
+//   KEYBOARD=1 (all-or-nothing throttle and brake and tapped steering, as with a keyboard)
+//   TC=off|low|high (traction control)  ABS=1
+//   PACE=1.06 (AI pace)  TUNE='{"front":10,"rear":1,"balance":5}' (setup)
 
 import { readFileSync } from 'node:fs';
 import { Driver } from '../src/drivers/ai.js';
@@ -21,7 +22,7 @@ const DT = 1 / 60,
   LAPS = 3,
   MAX_TIME = 400;
 
-// asfalto plano e infinito (para el skidpad)
+// flat, endless asphalt (for the skidpad)
 function flat() {
   const W = 64,
     H = 64,
@@ -38,10 +39,10 @@ function flat() {
   };
 }
 
-// Skidpad: a cada velocidad, con el volante a fondo, la aceleración lateral que logra en régimen
+// Skidpad: at each speed, at full lock, the steady-state lateral acceleration it reaches
 function skidpad(steer = 1) {
   const track = flat();
-  console.log('km/h   lateral  dynamics  razón   deriva°');
+  console.log('km/h   lateral  dynamics  ratio   slip°');
   for (const kmh of [60, 100, 150, 200, 250, 300]) {
     const v = kmh / 3.6;
     const car = new Car(32, 32, 0, profile);
@@ -50,7 +51,7 @@ function skidpad(steer = 1) {
       beta = 0,
       n = 0;
     for (let t = 0; t < 6; t += DT) {
-      car.speed = v; // velocidad fija: sólo interesa lo lateral
+      car.speed = v; // fixed speed: only the lateral part matters
       car.update(DT, { throttle: 0, brake: 0, steer }, track);
       if (t > 4) {
         ay += Math.abs(car.omega) * v;
@@ -71,7 +72,8 @@ function laps(track) {
   const car = new Car(slot.x, slot.y, slot.angle, profile);
   car.tc = TRACTION_CONTROL[process.env.TC ?? 'off'];
   car.abs = !!process.env.ABS;
-  if (process.env.TUNE) car.ownTune = JSON.parse(process.env.TUNE); // puesta a punto propia, p. ej. {"front":10,"rear":1,"balance":5}
+  // custom setup, e.g. {"front":10,"rear":1,"balance":5}
+  if (process.env.TUNE) car.ownTune = JSON.parse(process.env.TUNE);
   car.launch();
   car.throttle = 1;
   const driver = new Driver(+(process.env.PACE ?? 1.06), 1);
@@ -96,8 +98,8 @@ function laps(track) {
     if (s >= 0) st = s;
     const input = driver.drive(DT, track, line, { car, st, lat: sampleField(track.lat, track.W, car.x, car.y) }, []);
     if (process.env.KEYBOARD) {
-      // como con teclado: el acelerador todo o nada y el volante con toques (las teclas se aprietan y sueltan para
-      // promediar lo que pide la IA), que suben de a poco como en el juego
+      // as with a keyboard: all-or-nothing throttle and tapped steering (keys are pressed and released to average
+      // out what the AI asks for), which builds up gradually as in the game
       input.throttle = input.throttle > 0 ? 1 : 0;
       input.brake = input.brake > 0.15 ? 1 : 0;
       taps += input.steer;
@@ -143,8 +145,7 @@ function laps(track) {
   };
 }
 
-const tcNote = (tc) =>
-  process.env.TC && process.env.TC !== 'off' ? `  control de tracción ${tc.toFixed(1)} s/vuelta` : '';
+const tcNote = (tc) => (process.env.TC && process.env.TC !== 'off' ? `  traction control ${tc.toFixed(1)} s/lap` : '');
 const arg = process.argv[2];
 if (arg === 'skidpad') skidpad(+(process.argv[3] ?? 1));
 else {
@@ -152,12 +153,12 @@ else {
     const { times, grass, hits, spins, tc, locks, slides, temps } = laps(loadTrack(id));
     const best = times.length ? Math.min(...times).toFixed(2) : '—';
     console.log(
-      `${id.padEnd(12)} mejor ${best.padStart(7)}  vueltas ${times
+      `${id.padEnd(12)} best ${best.padStart(7)}  laps ${times
         .map((l) => l.toFixed(1))
         .join(' ')
         .padEnd(
           17,
-        )} pasto ${grass.toFixed(1)} s  golpes ${hits}  trompos ${spins}  bloqueos ${locks.toFixed(1)} s  patina ${slides.toFixed(1)} s  gomas °C media/máx ${temps.join(' ')}${tcNote(tc)}`,
+        )} grass ${grass.toFixed(1)} s  hits ${hits}  spins ${spins}  lockups ${locks.toFixed(1)} s  wheelspin ${slides.toFixed(1)} s  tyres °C mean/max ${temps.join(' ')}${tcNote(tc)}`,
     );
   }
 }

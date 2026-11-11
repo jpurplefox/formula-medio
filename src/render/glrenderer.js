@@ -1,12 +1,13 @@
-// Render con WebGL 2: lo mismo que renderer.js, pero en la placa de video.
-// - Cielo y terreno: un "shader" que corre una vez por píxel. Para cada píxel se arma el rayo de la cámara y se avanza
-//   sobre el mapa de alturas hasta chocar con el piso o un muro (paso a paso, y después afinando el punto exacto).
-//   El paso se achica cerca de los muros usando la distancia al borde de la pista, así ningún rayo los saltea.
-//   El color del piso (asfalto, pasto, pianos, trazada, goma) es el mismo "shader" de renderer.js, escrito en GLSL.
-// - Autos, árboles y carteles: triángulos con la misma proyección que el terreno (un horizonte que se corre en vez de
-//   inclinar la cámara) y la misma profundidad, así el z-buffer de la placa resuelve qué tapa a qué.
-// La resolución de la imagen es la de la pantalla (con un tope); las cuentas de cámara siguen en los mismos
-// "píxeles virtuales" de 960 de ancho que usa el resto del juego.
+// WebGL 2 rendering: the same as renderer.js, but on the graphics card.
+// - Sky and terrain: a "shader" that runs once per pixel. For each pixel it builds the camera ray and marches
+//   over the height map until it hits the ground or a wall (step by step, then refining the exact point).
+//   The step shrinks near the walls using the distance to the track edge, so no ray skips them.
+//   The ground color (asphalt, grass, kerbs, racing line, rubber) is the same "shader" as in renderer.js, written in
+//   GLSL.
+// - Cars, trees and boards: triangles with the same projection as the terrain (a horizon that shifts instead of
+//   tilting the camera) and the same depth, so the card's z-buffer resolves what covers what.
+// The image resolution is the screen's (with a cap); the camera math stays in the same
+// 960-wide "virtual pixels" the rest of the game uses.
 
 import {
   DEFAULT_KERB,
@@ -53,21 +54,21 @@ import {
 import { sampleField } from '../sim/track.js';
 import { lineFrame, pointAt } from '../sim/lineframe.js';
 
-const FAR = MAX_DIST + 10; // lo más lejos que se guarda en el z-buffer (en celdas)
-const MAX_SCALE = 1.5; // como mucho, 1,5 veces los píxeles virtuales (1440×810): más no se nota y calienta la máquina
-const LINE_TEX_W = 1024; // ancho de las texturas con datos por celda de la línea central
-const GUIDE_LIFT = 0.1; // cuánto flota la ayuda de trazada sobre la pista (celdas; el lomo de los pianos es KERB_H)
-const GUIDE_ALPHA = 0.6; // opacidad de la ayuda de trazada en el centro
+const FAR = MAX_DIST + 10; // the farthest stored in the z-buffer (in cells)
+const MAX_SCALE = 1.5; // at most 1.5× the virtual pixels (1440×810): more isn't noticeable and heats the machine
+const LINE_TEX_W = 1024; // width of the textures with per-cell centerline data
+const GUIDE_LIFT = 0.1; // how much the racing line guide floats above the track (cells; the kerb hump is KERB_H)
+const GUIDE_ALPHA = 0.6; // opacity of the racing line guide at its center
 const ATTRIBS = ['aPos', 'aUV', 'aNormal', 'aColor', 'aTex', 'aWheel', 'aSmooth', 'aGloss'];
-const STRIDE = 17; // floats por vértice de los autos
-const CREASE = 0.7; // coseno del ángulo hasta el que las caras vecinas se suavizan para el reflejo (~45°)
+const STRIDE = 17; // floats per car vertex
+const CREASE = 0.7; // cosine of the angle up to which neighboring faces are smoothed for the reflection (~45°)
 
 const glsl = (n) => (Number.isInteger(n) ? `${n}.0` : String(n));
 const rgbOf = (c) => [(c & 255) / 255, ((c >>> 8) & 255) / 255, ((c >>> 16) & 255) / 255];
 
-// proyección compartida: de un punto del mundo (celdas) a coordenadas de recorte. La profundidad es la de siempre
-// en las placas (proporcional a 1/distancia), que se interpola exacta dentro de cada triángulo; el terreno escribe
-// la misma (depthOf), así todo se tapa bien.
+// shared projection: from a world point (cells) to clip coordinates. The depth is the usual one
+// on graphics cards (proportional to 1/distance), which interpolates exactly inside each triangle; the terrain writes
+// the same (depthOf), so everything occludes correctly.
 const DEPTH = 'float depthOf(float d) { return FAR * (d - NEAR) / (d * (FAR - NEAR)); }';
 const PROJECT = `
 uniform vec3 uCam; uniform vec2 uDir; uniform float uP, uHorizon; uniform vec2 uView;
@@ -88,7 +89,7 @@ vec3 fog(vec3 c, float d) {
   return mix(c, FOG, t * t);
 }`;
 
-// ---------- cielo y terreno ----------
+// ---------- sky and terrain ----------
 const TERRAIN_VS = `#version 300 es
 in vec2 aPos;
 void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
@@ -97,13 +98,13 @@ const TERRAIN_FS = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 uniform sampler2D uField, uStation, uLine, uAsphalt, uGrass, uGravel, uWall, uMacro, uRubber;
-uniform sampler2D uSausage; // cuánta salchicha hay en cada celda (r, 0..1)
-uniform vec4 uKerbStyle; // ancho del piano, largo de cada franja, ancho del verde, línea blanca (1) o no (0)
+uniform sampler2D uSausage; // how much sausage kerb there is in each cell (r, 0..1)
+uniform vec4 uKerbStyle; // kerb width, length of each stripe, width of the green, white line (1) or not (0)
 uniform vec2 uMap;
 uniform int uLineN;
-uniform vec2 uRubberSize; // largo de la vuelta y de la línea central al último carril (celdas)
+uniform vec2 uRubberSize; // lap length and distance from the centerline to the last lane (cells)
 uniform float uRunoff;
-uniform vec3 uKerb[${MAX_KERB_COLORS}]; // colores de las franjas del piano, en orden (0..1)
+uniform vec3 uKerb[${MAX_KERB_COLORS}]; // kerb stripe colors, in order (0..1)
 uniform int uKerbN;
 uniform vec4 uStart;
 uniform float uStartHalf;
@@ -132,7 +133,7 @@ vec3 shade(vec3 c, float k) { return min(c * k, vec3(1.0)); }
 float hash(float i) { return fract(sin(i * 12.9898) * 43758.5453); }
 vec4 lineData(int i) { i = (i % uLineN + uLineN) % uLineN; return texelFetch(uLine, ivec2(i % ${LINE_TEX_W}, i / ${LINE_TEX_W}), 0); }
 
-// posición sobre la línea central (como stationAt de track.js): interpolada, salvo donde salta
+// position on the centerline (like stationAt in track.js): interpolated, except where it jumps
 float stationAt(vec2 p) {
   vec2 g = p - 0.5;
   ivec2 i = ivec2(floor(g));
@@ -144,8 +145,8 @@ float stationAt(vec2 p) {
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
-// lo que hay al costado de la pista (como edgeAt de track.js): el piano es un lomo por fuera del borde, con
-// serrucho a lo largo; detrás, el verde (plano) y, en algunas curvas, la salchicha, más alta y angosta
+// what is beside the track (like edgeAt in track.js): the kerb is a hump outside the edge, with
+// a sawtooth along it; behind it, the green (flat) and, in some corners, the sausage kerb, taller and narrower
 float edgeBump(vec4 f, vec2 p) {
   float k = f.w, s = f.y;
   if (k <= 0.02 || s >= 0.0) return 0.0;
@@ -162,7 +163,7 @@ float edgeBump(vec4 f, vec2 p) {
   return q > 0.02 && s > sb ? SAUSAGE_H * q * sin(3.14159265 * (s - sb) / (gb - sb)) : 0.0;
 }
 
-// bordes de las franjas del costado (de afuera hacia adentro): b = salchicha, verde, piano, línea blanca
+// edges of the roadside bands (from outside in): b = sausage kerb, green, kerb, white line
 vec3 zone(float s, vec4 b, vec3 grass, vec3 sausage, vec3 green, vec3 kerb, vec3 edge, vec3 road) {
   if (s < b.x) return grass;
   if (s < b.y) return sausage;
@@ -172,7 +173,7 @@ vec3 zone(float s, vec4 b, vec3 grass, vec3 sausage, vec3 green, vec3 kerb, vec3
   return road;
 }
 
-// el color del piso (lo mismo que groundColor de renderer.js); mat: qué hay en la escapatoria (RUNOFF de track.js)
+// the ground color (the same as groundColor in renderer.js); mat: what is in the runoff (RUNOFF in track.js)
 vec3 ground(vec2 p, float fw, float s, float k, float q, float st, float side, float lit, float mat) {
   float light = lit * (0.88 + 0.24 * texture(uMacro, p * MACRO_TPC / 64.0).r);
   bool isKerb = k > 0.02, isSausage = isKerb && q > 0.02;
@@ -183,7 +184,7 @@ vec3 ground(vec2 p, float fw, float s, float k, float q, float st, float side, f
   vec4 b = vec4(outer, gb, kb, lb);
   vec3 grass = vec3(0.0);
   if (s < outer + fw) {
-    // lo de afuera: pasto, leca o asfalto (más claro que el de la pista: no tiene goma)
+    // the outside: grass, gravel or asphalt (lighter than the track's: it has no rubber)
     if (mat > 1.5) {
       float ga = fw * ROAD_TPC / 256.0;
       grass = shade(textureGrad(uAsphalt, p * ROAD_TPC / 256.0, vec2(ga, 0.0), vec2(0.0, ga)).rgb, light * RUNOFF_LIGHT);
@@ -206,7 +207,7 @@ vec3 ground(vec2 p, float fw, float s, float k, float q, float st, float side, f
   vec3 road = asphalt;
   float dark = 0.0;
   if ((uFlags & 2) != 0 && st >= 0.0) {
-    // la goma del mapa (rubber.js): a lo largo según st, a lo ancho según de qué lado y cuánto
+    // the rubber from the map (rubber.js): along by st, across by which side and how far
     float v = (side / uRubberSize.y + 1.0) * 0.5;
     if (v > 0.0 && v < 1.0) dark = RUBBER_DARK * texture(uRubber, vec2(v, st / uRubberSize.x)).r;
   }
@@ -220,7 +221,7 @@ vec3 ground(vec2 p, float fw, float s, float k, float q, float st, float side, f
   if (s > lb + fw) return road;
   vec3 kerbC = EDGE_WHITE, greenC = KERB_GREEN, sausageC = SAUSAGE_YELLOW;
   if (isKerb) {
-    // franjas de los colores del circuito, en orden; en el borde entre franjas se mezcla con la vecina
+    // stripes in the track's colors, in order; at the edge between stripes it blends with the neighbor
     float stripe = uKerbStyle.y;
     float ph = st / stripe, fr = fract(ph);
     int i = int(floor(ph));
@@ -229,23 +230,23 @@ vec3 ground(vec2 p, float fw, float s, float k, float q, float st, float side, f
     int n = max(uKerbN, 1);
     int ci = ((i % n) + n) % n, oi = (((fr < e ? i - 1 : i + 1) % n) + n) % n;
     kerbC = mix(uKerb[ci], uKerb[oi], ow);
-    // desgaste: manchas de goma del lado de la pista y de tierra del lado del pasto (de lejos, el promedio)
+    // wear: rubber marks on the track side and dirt on the grass side (from afar, the average)
     float t = clamp((s - kb) / -kb, 0.0, 1.0);
     float fade = clamp(1.0 - fw / WEAR_CELL, 0.0, 1.0);
     float cell = floor(st / WEAR_CELL) + (side > 0.0 ? 7919.0 : 0.0);
     float n1 = 0.5 + (hash(cell) - 0.5) * fade, n2 = 0.5 + (hash(cell + 101.0) - 0.5) * fade;
     kerbC = mix(kerbC, KERB_RUBBER, KERB_RUBBER_MAX * smoothstep(0.35, 1.0, t) * n1);
     kerbC = mix(kerbC, DIRT, KERB_DIRT_MAX * (1.0 - smoothstep(0.0, 0.4, t)) * n2 * n2);
-    // serrucho: la cara empinada de cada escalón queda en sombra (de lejos no se distingue)
+    // sawtooth: the steep face of each step is in shadow (from afar it can't be told apart)
     float r = fract(st / RIDGE);
     float ridge = 1.0 + ((r < 0.8 ? 1.05 : 0.75) - 1.0) * clamp(1.0 - 2.0 * fw / RIDGE, 0.0, 1.0);
     kerbC = shade(kerbC, light * (1.0 - dark) * ridge);
-    // el verde: pintura sobre el asfalto (se ve el grano); la salchicha, amarilla
+    // the green: paint on the asphalt (the grain shows); the sausage kerb, yellow
     greenC = shade(mix(asphalt, KERB_GREEN, 0.75), light);
     if (isSausage) sausageC = shade(SAUSAGE_YELLOW, lit);
   }
   vec3 edgeC = shade(EDGE_WHITE, lit);
-  // antialiasing: cerca de un cambio de zona, mezclamos los dos colores
+  // antialiasing: near a zone change, we blend the two colors
   float edge = outer;
   if (isKerb) {
     if (abs(s - gb) < abs(s - edge)) edge = gb;
@@ -259,13 +260,13 @@ vec3 ground(vec2 p, float fw, float s, float k, float q, float st, float side, f
 }
 
 void main() {
-  // píxel virtual (y desde arriba, como en el resto del juego)
+  // virtual pixel (and from the top, as in the rest of the game)
   vec2 px = gl_FragCoord.xy / uScale;
   float x = px.x, y = uView.y - px.y;
   float cx = 2.0 * x / uView.x - 1.0;
   vec2 rd = uDir + vec2(-uDir.y, uDir.x) * uPlane * cx;
   float rdl = length(rd);
-  float drop = (y - uHorizon) / uP; // cuánto baja el rayo por cada celda de distancia
+  float drop = (y - uHorizon) / uP; // how much the ray drops per cell of distance
   float invCP = 1.0 / (max(0.3, uCam.z - uGround) * uP);
   float wallIn = -uRunoff, wallOut = wallIn - WALL_T;
 
@@ -275,7 +276,7 @@ void main() {
     vec4 f = field(uCam.xy + rd * d);
     float top = f.x + (f.y < wallIn && f.y > wallOut ? WALL_H : edgeBump(f, uCam.xy + rd * d));
     if (uCam.z - drop * d <= top) { hit = true; break; }
-    // paso: unos píxeles de pantalla, y nunca más que la distancia a la franja del muro
+    // step: a few screen pixels, and never more than the distance to the wall band
     float band = f.y > wallIn ? f.y - wallIn : (f.y < wallOut ? wallOut - f.y : 0.0);
     float step = min(clamp(d * d * invCP * 2.0, 0.015, 0.2 + 0.025 * d), max(0.03, band / rdl));
     prev = d;
@@ -284,7 +285,7 @@ void main() {
   }
 
   if (!hit) {
-    // cielo con montañas lejanas, o niebla debajo del horizonte
+    // sky with distant mountains, or fog below the horizon
     vec3 c = FOG;
     if (y < uHorizon) {
       float a = uAngle + atan(cx * uPlane);
@@ -296,7 +297,7 @@ void main() {
     gl_FragDepth = 1.0;
     return;
   }
-  // afinamos dónde choca el rayo
+  // refine where the ray hits
   float a = prev, b = d;
   for (int k = 0; k < 7; k++) {
     float m = (a + b) * 0.5;
@@ -313,18 +314,18 @@ void main() {
   if (wall) {
     float top = f.x + WALL_H;
     if (top - zr > 0.01) {
-      // cara del guardrail, con su textura: a lo largo según la posición sobre la línea central, a lo alto desde arriba
+      // barrier face, with its texture: along by position on the centerline, vertically from the top
       float st = max(0.0, stationAt(p));
       c = texture(uWall, vec2(st / (2.0 * WALL_STRIPE), (top - zr) / WALL_H)).rgb;
     } else c = WALL_TOP;
   } else {
-    // luz por pendiente: las laderas que miran al sol se aclaran
+    // slope lighting: slopes facing the sun get lighter
     float gx = (field(p + vec2(1.0, 0.0)).x - field(p - vec2(1.0, 0.0)).x) * 0.5;
     float gy = (field(p + vec2(0.0, 1.0)).x - field(p - vec2(0.0, 1.0)).x) * 0.5;
     float lit = clamp(1.0 - (gx * -0.6 + gy * -0.8) * 4.0, 0.65, 1.3);
     float st = stationAt(p), side = f.z, k = f.w, q = 0.0;
     if (k > 0.0 && s < 0.0) {
-      // los lomos del piano y de la salchicha: la cara que mira a la pista, más iluminada
+      // the kerb and sausage kerb humps: the face toward the track, more brightly lit
       float kb = -uKerbStyle.x * k, gb = kb - uKerbStyle.z * k;
       q = texture(uSausage, p / uMap).r;
       float sb = gb - SAUSAGE_W * q;
@@ -332,8 +333,8 @@ void main() {
       else if (q > 0.02 && s < gb && s > sb) lit *= 1.0 - 0.3 * cos(3.14159265 * (s - sb) / (gb - sb));
     }
     float fw = max(0.03, d * uPlane / uView.x);
-    // escapatoria de este lado en este tramo (hasta el muro; más allá, pasto): en la 4.ª componente de la línea
-    // central, izquierda + 4 · derecha
+    // runoff on this side in this segment (up to the wall; beyond it, grass): in the 4th component of the
+    // centerline, left + 4 · right
     float mat = 0.0;
     if (s < 0.0 && s > -uRunoff && st >= 0.0) {
       float w = lineData(int(floor(st))).w;
@@ -345,20 +346,20 @@ void main() {
   gl_FragDepth = clamp(depthOf(d), 0.0, 1.0);
 }`;
 
-// ---------- autos ----------
+// ---------- cars ----------
 const MODEL_VS = `#version 300 es
 in vec3 aPos, aNormal, aColor, aSmooth;
 in vec2 aUV;
 in float aTex, aWheel, aGloss;
 uniform vec4 uWheels[4];
-uniform vec2 uSpin, uSteer, uHead; // coseno y seno
-uniform vec3 uNeck; // pivote de la cabeza
-uniform vec4 uHeadTilt; // la cabeza se inclina: coseno y seno hacia el costado (como uBody) y hacia adelante
-uniform vec2 uPaddle; // cuánto tira el piloto de cada leva, izquierda y derecha (m, hacia él)
-uniform vec3 uColumn, uColumnAxis; // el volante gira alrededor de su columna
-uniform vec2 uTurn; // coseno y seno de cuánto gira el volante
+uniform vec2 uSpin, uSteer, uHead; // cosine and sine
+uniform vec3 uNeck; // head pivot
+uniform vec4 uHeadTilt; // the head tilts: cosine and sine sideways (like uBody) and forward
+uniform vec2 uPaddle; // how much the driver pulls each paddle, left and right (m, toward him)
+uniform vec3 uColumn, uColumnAxis; // the steering wheel turns around its column
+uniform vec2 uTurn; // cosine and sine of how much the steering wheel turns
 uniform vec3 uPos, uF, uR, uU;
-uniform vec4 uBody; // carrocería: coseno y seno del rolido (+: el costado derecho sube) y del cabeceo (+: la trompa baja)
+uniform vec4 uBody; // bodywork: cosine and sine of roll (+: the right side rises) and pitch (+: the nose drops)
 uniform float uK;
 ${PROJECT}
 out vec3 vColor;
@@ -373,10 +374,10 @@ vec3 tilt(vec3 n) {
   n = vec3(n.x, n.y * uHeadTilt.x - n.z * uHeadTilt.y, n.y * uHeadTilt.y + n.z * uHeadTilt.x);
   return vec3(n.x * uHeadTilt.z + n.z * uHeadTilt.w, n.y, n.z * uHeadTilt.z - n.x * uHeadTilt.w);
 }
-// giro alrededor del eje de la columna (Rodrigues)
+// rotation around the column axis (Rodrigues)
 vec3 turnBy(vec3 n, vec2 t) { return n * t.x + cross(uColumnAxis, n) * t.y + uColumnAxis * dot(uColumnAxis, n) * (1.0 - t.x); }
 vec3 turn(vec3 n) { return turnBy(n, uTurn); }
-// la carrocería rola sobre el eje largo y cabecea sobre el eje de costado, a la altura del centro de rolido
+// the bodywork rolls on the long axis and pitches on the lateral axis, at the height of the roll center
 vec3 lean(vec3 n) {
   n = vec3(n.x, n.y * uBody.x - n.z * uBody.y, n.y * uBody.y + n.z * uBody.x);
   return vec3(n.x * uBody.z + n.z * uBody.w, n.y, n.z * uBody.z - n.x * uBody.w);
@@ -384,25 +385,27 @@ vec3 lean(vec3 n) {
 const vec3 BODY_PIVOT = vec3(0.0, 0.0, ${glsl(BODY_PIVOT_Z)});
 void main() {
   vec3 p = aPos, n = aNormal, sm = aSmooth;
-  // el vidrio de los espejos es convexo: la normal se abre hacia los bordes (aUV va de -1 a 1 sobre el vidrio),
-  // así el reflejo cambia de un lado al otro y abarca más
+  // the mirror glass is convex: the normal spreads toward the edges (aUV goes from -1 to 1 across the glass),
+  // so the reflection changes from one side to the other and covers more
   if (aGloss > 1.5 && aGloss < 2.5) sm = normalize(sm + vec3(0.0, aUV.x, aUV.y) * 0.45);
   if (aWheel > 12.5) {
-    // las levas y las manos: giran con el volante y, al cambiar, se acercan al piloto sobre la columna (que no cambia
-    // al girar); izquierda de 13 a 14, derecha de 15 a 16, según cuánto acompaña cada pieza el tirón
+    // the paddles and hands: they turn with the steering wheel and, when shifting, move toward the driver along the
+    // column (which doesn't change when turning); left from 13 to 14, right from 15 to 16, by how much each piece
+    // follows the pull
     float c = aWheel - 13.0, side = c > 1.5 ? 1.0 : 0.0;
     p = uColumn + turn(p - uColumn) + uColumnAxis * mix(uPaddle.x, uPaddle.y, side) * (c - 2.0 * side);
     n = turn(n);
     sm = turn(sm);
   } else if (aWheel > 10.5) {
-    // los antebrazos del piloto: siguen al volante de a poco, de la muñeca (aWheel 12: entera) al codo (11: nada)
+    // the driver's forearms: they follow the wheel gradually, from the wrist (aWheel 12: fully) to the elbow (11: not
+    // at all)
     float a = atan(uTurn.y, uTurn.x) * (aWheel - 11.0);
     vec2 t = vec2(cos(a), sin(a));
     p = uColumn + turnBy(p - uColumn, t);
     n = turnBy(n, t);
     sm = turnBy(sm, t);
   } else if (aWheel > 6.5) {
-    // montado en la mangueta (el tambor del freno): no gira con la rueda, pero dobla con la dirección
+    // mounted on the upright (the brake drum): it doesn't spin with the wheel, but steers with it
     vec4 wh = uWheels[int(aWheel + 0.5) - 7];
     if (wh.w != 0.0) {
       vec3 kp = wh.xyz + vec3(0.0, wh.w, 0.0);
@@ -411,17 +414,17 @@ void main() {
       sm = steer(sm);
     }
   } else if (aWheel > 5.5) {
-    // el volante gira sobre su columna
+    // the steering wheel turns on its column
     p = uColumn + turn(p - uColumn);
     n = turn(n);
     sm = turn(sm);
   } else if (aWheel > 4.5) {
-    // la cabeza del piloto gira alrededor del cuello y se inclina con las fuerzas de las curvas y las frenadas
+    // the driver's head turns around the neck and tilts with cornering and braking forces
     p = uNeck + tilt(look(p - uNeck));
     n = tilt(look(n));
     sm = tilt(look(sm));
   } else if (aWheel > 0.5) {
-    // la rueda gira sobre su eje y, si es delantera, dobla con la dirección
+    // the wheel spins on its axis and, if it is a front one, steers
     vec4 wh = uWheels[int(aWheel + 0.5) - 1];
     p = wh.xyz + spin(p - wh.xyz);
     n = spin(n);
@@ -433,7 +436,7 @@ void main() {
       sm = steer(sm);
     }
   }
-  // todo menos las ruedas (que quedan apoyadas en el piso) se mueve con la suspensión
+  // everything except the wheels (which stay on the ground) moves with the suspension
   if (aWheel < 0.5 || (aWheel > 4.5 && aWheel < 6.5) || aWheel > 10.5) {
     p = BODY_PIVOT + lean(p - BODY_PIVOT);
     n = lean(n);
@@ -441,15 +444,15 @@ void main() {
   }
   vec3 world = uPos + (uF * p.x + uR * p.y + uU * p.z) * uK;
   vNormal = uF * sm.x + uR * sm.y + uU * sm.z;
-  // se ilumina con la normal suavizada, así lo redondeado (halo, gomas, carrocería) no se ve en facetas;
-  // las aristas marcadas siguen marcadas (CREASE)
+  // lit with the smoothed normal, so rounded parts (halo, tyres, bodywork) don't look faceted;
+  // sharp edges stay sharp (CREASE)
   vec3 face = uF * n.x + uR * n.y + uU * n.z;
   vec3 nw = vNormal;
   vView = world - uCam;
   vGloss = aGloss;
   float sun = -nw.x * ${glsl(SUN[0])} - nw.y * ${glsl(SUN[1])} + nw.z * ${glsl(SUN[2])};
   vLight = 0.5 + 0.6 * max(0.0, sun) + 0.12 * nw.z;
-  vBack = dot(face, world - uCam) >= 0.0 ? 1.0 : 0.0; // cara que mira para el otro lado
+  vBack = dot(face, world - uCam) >= 0.0 ? 1.0 : 0.0; // face pointing the other way
   vColor = aColor;
   vUV = aUV;
   vTex = int(aTex + 0.5);
@@ -459,8 +462,8 @@ void main() {
 const MODEL_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uLivery, uCarbon, uSidewall, uTread, uRim, uScreen;
-uniform float uAlpha, uWear, uShine; // gomas: cuánto se gastaron y cuánto brillo de nuevas les queda (0..1)
-uniform float uGlossK; // cuánto del brillo de la pintura y el carbono (el auto propio visto desde la cabina, menos)
+uniform float uAlpha, uWear, uShine; // tyres: how worn they are and how much new-tyre shine they have left (0..1)
+uniform float uGlossK; // how much of the paint and carbon gloss (less for the player's own car seen from the cockpit)
 in vec3 vColor;
 in vec2 vUV;
 flat in int vTex;
@@ -471,11 +474,11 @@ ${FOG}
 const vec3 SKY_TOP = vec3(70.0, 130.0, 210.0) / 255.0;
 const vec3 SUN_DIR = normalize(vec3(${glsl(-SUN[0])}, ${glsl(-SUN[1])}, ${glsl(SUN[2])}));
 const vec3 ASPHALT = vec3(0.17, 0.18, 0.19), TREES = vec3(0.2, 0.3, 0.19);
-const vec3 NEW_TREAD = vec3(0.15, 0.15, 0.17); // banda de una goma nueva: lisa, sin marcas
+const vec3 NEW_TREAD = vec3(0.15, 0.15, 0.17); // tread of a new tyre: smooth, no marks
 
-// Lo que se refleja en la dirección r: un entorno inventado pero parecido al del circuito. Abajo asfalto que se
-// aclara hacia el horizonte; en el horizonte una franja de árboles de alto irregular; arriba el cielo con el mismo
-// degradé que el de fondo. Al doblar, la franja de árboles corre sobre los costados del auto.
+// What is reflected in direction r: a made-up environment, but similar to the track's. Below, asphalt that gets
+// lighter toward the horizon; at the horizon a band of trees of uneven height; above, the sky with the same
+// gradient as the background. When turning, the band of trees slides along the sides of the car.
 vec3 env(vec3 r) {
   if (r.z < 0.0) return mix(ASPHALT, FOG * 0.8, pow(1.0 + r.z, 8.0));
   float az = atan(r.y, r.x);
@@ -483,8 +486,8 @@ vec3 env(vec3 r) {
   if (r.z < trees) return TREES * (0.8 + 2.0 * r.z);
   return mix(FOG, SKY_TOP, pow(r.z, 0.5));
 }
-// Lo que refleja la visera del casco: el mismo entorno pero borroso, un degradé de oscuro abajo a cielo arriba.
-// Como la visera se curva hacia los dos lados, un horizonte nítido se vería como un anillo alrededor.
+// What the helmet visor reflects: the same environment but blurred, a gradient from dark below to sky above.
+// Since the visor curves both ways, a sharp horizon would look like a ring around it.
 const vec3 VISOR_LOW = vec3(0.05, 0.06, 0.08);
 vec3 visorEnv(vec3 r) {
   return mix(VISOR_LOW, mix(FOG, SKY_TOP, 0.6), smoothstep(-0.5, 0.6, r.z));
@@ -495,17 +498,18 @@ void main() {
   vec3 c = vTex == 1 ? texture(uLivery, vUV).rgb : vTex == 2 ? texture(uCarbon, vUV).rgb
     : vTex == 3 ? texture(uSidewall, vUV).rgb : vTex == 4 ? mix(NEW_TREAD, texture(uTread, vUV).rgb, uWear) : vTex == 5 ? texture(uRim, vUV).rgb : vColor;
   c = min(c * vLight, vec3(1.0));
-  // la pantalla del volante tiene luz propia
+  // the steering wheel display has its own light
   if (vTex == 6) c = texture(uScreen, vUV).rgb;
-  // la banda de las gomas nuevas brilla hasta que se gasta un poco
+  // the tread of new tyres shines until it wears a little
   float gloss = vTex == 4 ? 0.5 * uShine : vGloss;
-  if (gloss <= 1.0) gloss *= uGlossK; // los espejos y la visera, igual
+  if (gloss <= 1.0) gloss *= uGlossK; // the mirrors and the visor, the same
   if (gloss > 0.0) {
-    // barniz: refleja poco de frente y mucho de costado (Fresnel), y un brillo chico y fuerte donde rebota el sol
+    // clear coat: reflects little head-on and a lot at grazing angles (Fresnel), and a small, strong highlight where
+    // the sun bounces
     vec3 v = normalize(vView), n = normalize(vNormal);
     float facing = clamp(-dot(n, v), 0.0, 1.0);
     vec3 r = reflect(v, n);
-    // espejo (gloss 2) y visera (gloss 3): reflejan casi todo, también de frente
+    // mirror (gloss 2) and visor (gloss 3): they reflect almost everything, also head-on
     float k = gloss > 1.5 ? 0.85 : gloss * min(0.75, 0.12 + 0.88 * pow(1.0 - facing, 5.0));
     float sun = pow(max(dot(r, SUN_DIR), 0.0), 150.0) * 1.4 * min(gloss, 1.0);
     c = mix(c, gloss > 2.5 ? visorEnv(r) : env(r), k) + vec3(1.0, 0.97, 0.9) * sun;
@@ -513,7 +517,7 @@ void main() {
   outColor = vec4(fog(min(c, vec3(1.0)), vDepth), uAlpha);
 }`;
 
-// ---------- sprites (árboles, carteles) y sombras ----------
+// ---------- sprites (trees, boards) and shadows ----------
 const FLAT_VS = `#version 300 es
 in vec3 aPos;
 in vec2 aUV;
@@ -535,13 +539,13 @@ void main() {
   outColor = vec4(fog(c.rgb, vDepth), 1.0);
 }`;
 
-// ---------- ayuda de trazada ----------
-// Una cinta que flota un poco sobre la pista, a lo largo de la trazada ideal. Cada vértice toma su color (verde,
-// amarillo o rojo según haga falta frenar) de la textura de la guía, que se actualiza en cada cuadro;
-// el color se interpola entre celdas y los bordes se desvanecen, así no se ve pixelada.
+// ---------- racing line guide ----------
+// A ribbon that floats a little above the track, along the racing line. Each vertex takes its color (green,
+// yellow or red depending on the braking needed) from the guide texture, which is updated every frame;
+// the color is interpolated between cells and the edges fade out, so it doesn't look pixelated.
 const GUIDE_VS = `#version 300 es
 in vec3 aPos;
-in vec2 aUV; // x: posición sobre la línea central (celda); y: de -1 a 1, de un borde al otro
+in vec2 aUV; // x: position on the centerline (cell); y: from -1 to 1, from one edge to the other
 uniform sampler2D uGuide;
 uniform int uLineN;
 ${PROJECT}
@@ -572,14 +576,14 @@ out vec4 outColor;
 void main() { outColor = vec4(0.0, 0.0, 0.0, uAlpha); }`;
 
 export class GLRenderer {
-  // devuelve null si el navegador no tiene WebGL 2 (o algo falla): ahí se usa el renderer de siempre.
-  // modelsOnly: sólo para mostrar autos sueltos (showcase), sin circuito y con el fondo transparente
+  // returns null if the browser has no WebGL 2 (or something fails): then the CPU renderer (renderer.js) is used.
+  // modelsOnly: only to show individual cars (showcase), with no track and a transparent background
   static create(canvas, w, h, { modelsOnly = false } = {}) {
     try {
       const gl = canvas.getContext('webgl2', { antialias: true, alpha: modelsOnly, depth: true });
       return gl ? new GLRenderer(canvas, gl, w, h, modelsOnly) : null;
     } catch (err) {
-      console.warn('WebGL no disponible:', err);
+      console.warn('WebGL not available:', err);
       return null;
     }
   }
@@ -593,7 +597,7 @@ export class GLRenderer {
       this.models = this.program(MODEL_VS, MODEL_FS);
       return;
     }
-    // píxeles virtuales (los del resto del juego) y la resolución real de la imagen
+    // virtual pixels (the ones the rest of the game uses) and the real image resolution
     this.w = w;
     this.h = h;
     this.scale = Math.min(
@@ -614,13 +618,13 @@ export class GLRenderer {
     this.guideMeshes = new WeakMap();
     this.aniso = gl.getExtension('EXT_texture_filter_anisotropic');
 
-    // un triángulo que cubre toda la pantalla, para el terreno
+    // a triangle covering the whole screen, for the terrain
     this.screen = gl.createVertexArray();
     gl.bindVertexArray(this.screen);
     this.buffer(new Float32Array([-1, -1, 3, -1, -1, 3]));
     this.attrib(this.terrain, 'aPos', 2, 2, 0);
 
-    // geometría que cambia en cada cuadro (sprites, sombras)
+    // geometry that changes every frame (sprites, shadows)
     this.dynamic = gl.createBuffer();
     this.flatVao = gl.createVertexArray();
     gl.bindVertexArray(this.flatVao);
@@ -653,7 +657,7 @@ export class GLRenderer {
     this.P = this.w / 2 / this.planeLen;
   }
 
-  // ---------- utilidades de WebGL ----------
+  // ---------- WebGL utilities ----------
   program(vs, fs) {
     const gl = this.gl;
     const shader = (type, src) => {
@@ -666,7 +670,7 @@ export class GLRenderer {
     const p = gl.createProgram();
     gl.attachShader(p, shader(gl.VERTEX_SHADER, vs));
     gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
-    // los atributos siempre en el mismo lugar, así varios programas pueden usar la misma geometría
+    // attributes always in the same location, so several programs can use the same geometry
     ATTRIBS.forEach((name, i) => gl.bindAttribLocation(p, i, name));
     gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
@@ -694,7 +698,7 @@ export class GLRenderer {
     gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride * 4, offset * 4);
   }
 
-  // formatos: RGBA8 (por defecto), R8, RGBA16F (con filtro), R32F y RGBA32F (sin filtro, se leen con texelFetch)
+  // formats: RGBA8 (default), R8, RGBA16F (filtered), R32F and RGBA32F (unfiltered, read with texelFetch)
   texture(data, w, h, { format = 'RGBA8', mip = false, nearest = false, clamp = false } = {}) {
     const gl = this.gl,
       t = gl.createTexture();
@@ -722,8 +726,8 @@ export class GLRenderer {
     return t;
   }
 
-  // la goma (rubber.js) en una textura de carriles (ancho) × filas (alto), como están los bytes: se vuelve a subir
-  // cuando el mapa cambia
+  // the rubber (rubber.js) in a texture of lanes (width) × rows (height), as the bytes are laid out: it is uploaded
+  // again when the map changes
   rubberTexture(map) {
     const gl = this.gl;
     if (this.rubberMap !== map) {
@@ -748,7 +752,7 @@ export class GLRenderer {
     gl.uniform1i(prog.u[name], unit);
   }
 
-  // ---------- datos del circuito, en texturas ----------
+  // ---------- track data, in textures ----------
   trackTextures(track) {
     let t = this.trackData.get(track);
     if (!t) {
@@ -767,8 +771,8 @@ export class GLRenderer {
         runoffRight,
       } = track;
       const reach = edgeReach(track.kerbStyle ?? KERB_STYLE);
-      // por celda: altura, distancia al borde, distancia de costado a la línea central y cuánto piano hay (0..1);
-      // aparte, cuánta salchicha
+      // per cell: height, distance to the edge, lateral distance to the centerline and how much kerb there is (0..1);
+      // separately, how much sausage kerb
       const f = new Float32Array(W * H * 4),
         sq = new Float32Array(W * H * 4);
       for (let i = 0; i < W * H; i++) {
@@ -801,7 +805,7 @@ export class GLRenderer {
       };
       this.trackData.set(track, t);
     }
-    // por celda de la línea central: pianos a cada lado, por dónde pasa la trazada (para la guía) y las escapatorias
+    // per centerline cell: kerbs on each side, where the racing line runs (for the guide) and the runoffs
     const offset = (this.guide && this.guide.offset) || null;
     if (t.offset !== offset) {
       const d = new Float32Array(LINE_TEX_W * t.rows * 4);
@@ -827,8 +831,8 @@ export class GLRenderer {
     return t;
   }
 
-  // texturas de los autos y de los sprites (se suben una vez)
-  // la pantalla del volante: el canvas que dibuja el juego en cada cuadro (sin canvas, apagada)
+  // car and sprite textures (uploaded once)
+  // the steering wheel display: the canvas the game draws every frame (without a canvas, off)
   screenTexture(canvas) {
     const gl = this.gl;
     if (!this.screenTex) {
@@ -861,10 +865,10 @@ export class GLRenderer {
     return t;
   }
 
-  // ---------- geometría de un auto, armada una vez ----------
-  // cada cara (un polígono convexo) se parte en triángulos; cada vértice lleva posición, normal, color, coordenadas
-  // de textura, qué textura usa (0 ninguna, 1 decoración, 2 carbono, 3 flanco, 4 banda, 5 llanta), a qué rueda pertenece, una normal
-  // suavizada (para que el reflejo corra parejo sobre las curvas y no se vean las facetas) y cuánto brilla
+  // ---------- a car's geometry, built once ----------
+  // each face (a convex polygon) is split into triangles; each vertex carries position, normal, color, texture
+  // coordinates, which texture it uses (0 none, 1 livery, 2 carbon, 3 sidewall, 4 tread, 5 rim), which wheel it belongs
+  // to, a smoothed normal (so the reflection flows evenly over curves and the facets don't show) and how much it shines
   modelGeometry(model) {
     let g = this.modelCache.get(model);
     if (g) return g;
@@ -878,9 +882,10 @@ export class GLRenderer {
     const parts = [...model.filter((p) => p.tag !== 'helmet'), ...model.filter((p) => p.tag === 'helmet')];
     for (const part of parts) {
       if (part.tag === 'helmet' && helmetStart < 0) helmetStart = data.length / STRIDE;
-      // a qué rueda pertenece (1 a 4), 5 si es la cabeza del piloto y 6 si es el volante; lo que va montado en la
-      // mangueta (fixed: dobla con la rueda pero no gira), 7 a 10; lo que sigue al volante de a poco (follow: los
-      // antebrazos), de 11 a 12 en cada vértice; las levas y las manos (que se mueven al cambiar), de 13 a 16
+      // which wheel it belongs to (1 to 4), 5 if it is the driver's head and 6 if it is the steering wheel; what is
+      // mounted on the upright (fixed: steers with the wheel but doesn't spin), 7 to 10; what follows the steering
+      // wheel gradually (follow: the forearms), 11 to 12 at each vertex; the paddles and hands (which move when
+      // shifting), 13 to 16
       let w = 0;
       if (part.wheel) {
         let k = wheels.indexOf(part.wheel);
@@ -893,13 +898,13 @@ export class GLRenderer {
         w = part.pull !== undefined ? 13 + part.side * 2 + part.pull : 6;
         column = part.column;
       }
-      // caras de la pieza que tocan cada vértice
+      // faces of the piece touching each vertex
       const touching = part.verts.map(() => []);
       for (const face of part.faces) for (const i of face.idx) touching[i].push(face.n);
       for (const face of part.faces) {
         const [r, gg, b] = rgbOf(face.color);
-        // normal suavizada en cada esquina: el promedio de las caras vecinas que no doblan demasiado (las aristas
-        // marcadas, como las de una caja, quedan marcadas)
+        // smoothed normal at each corner: the average of the neighboring faces that don't bend too much (sharp
+        // edges, like those of a box, stay sharp)
         const smooth = face.idx.map((i) => {
           const s = [0, 0, 0];
           for (const m of touching[i]) {
@@ -912,7 +917,7 @@ export class GLRenderer {
           return s.map((c) => c / l);
         });
         const gloss = face.gloss ?? 0;
-        // qué textura es lo dice el modelo (slot: 1 decoración, 2 carbono, 3 flanco, 4 banda, 5 llanta)
+        // the model says which texture it is (slot: 1 livery, 2 carbon, 3 sidewall, 4 tread, 5 rim)
         let tid = 0;
         if (face.tex) {
           tid = face.slot || 0;
@@ -967,7 +972,7 @@ export class GLRenderer {
     return g;
   }
 
-  // uniforms de la cámara, iguales en todos los programas que proyectan
+  // camera uniforms, the same in every program that projects
   camera(prog, cam, dirX, dirY, horizon) {
     const gl = this.gl;
     gl.uniform3f(prog.u.uCam, cam.x, cam.y, cam.z);
@@ -990,11 +995,12 @@ export class GLRenderer {
     gl.depthMask(true);
     gl.disable(gl.BLEND);
 
-    // 1) cielo y terreno (escribe la profundidad de cada píxel)
+    // 1) sky and terrain (writes each pixel's depth)
     const tp = this.terrain;
     gl.useProgram(tp.p);
     gl.depthFunc(gl.ALWAYS);
-    // la goma se sube antes de enganchar las demás: subirla usa la unidad activa y pisaría la última
+    // the rubber is uploaded before binding the others: uploading it uses the active unit and would overwrite the last
+    // one
     const rubber = this.rubber && this.rubberTexture(this.rubber);
     this.bind(0, t.field, tp, 'uField');
     this.bind(1, t.station, tp, 'uStation');
@@ -1041,7 +1047,7 @@ export class GLRenderer {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.depthFunc(gl.LEQUAL);
 
-    // 2) sombras de los autos sobre el piso
+    // 2) car shadows on the ground
     const shadowModels = models.filter((m) => m.shadow);
     if (shadowModels.length) {
       const sp = this.shadows;
@@ -1075,7 +1081,7 @@ export class GLRenderer {
       gl.depthMask(true);
     }
 
-    // 3) autos: primero los sólidos y al final los semitransparentes (el fantasma)
+    // 3) cars: first the solid ones and at the end the semi-transparent ones (the ghost)
     const mp = this.models;
     gl.useProgram(mp.p);
     this.camera(mp, cam, dirX, dirY, horizon);
@@ -1094,7 +1100,7 @@ export class GLRenderer {
       }
     }
 
-    // 4) árboles y carteles: rectángulos de frente a la cámara, agrupados por textura
+    // 4) trees and boards: rectangles facing the camera, grouped by texture
     const sprp = this.sprites;
     gl.useProgram(sprp.p);
     this.camera(sprp, cam, dirX, dirY, horizon);
@@ -1155,7 +1161,7 @@ export class GLRenderer {
     }
     gl.bindVertexArray(null);
 
-    // 5) ayuda de trazada, semitransparente, al final
+    // 5) racing line guide, semi-transparent, at the end
     if (this.guide) {
       const gp = this.guides,
         mesh = this.guideMesh(track, this.guide);
@@ -1174,8 +1180,8 @@ export class GLRenderer {
     }
   }
 
-  // un auto (m: { model, x, y, z, angle, pitch, roll, ... } como en render), con el programa de los autos ya en uso.
-  // basis: [F, R, U] para orientarlo de cualquier forma (si no, sale de angle y pitch)
+  // a car (m: { model, x, y, z, angle, pitch, roll, ... } as in render), with the car program already in use.
+  // basis: [F, R, U] to orient it any way (otherwise it comes from angle and pitch)
   drawModel(m, alpha = 1, basis = null) {
     const gl = this.gl,
       mp = this.models;
@@ -1202,7 +1208,7 @@ export class GLRenderer {
     );
     gl.uniform1f(mp.u.uK, 1 / m.meters);
     gl.uniform2f(mp.u.uSpin, Math.cos(m.spin || 0), Math.sin(m.spin || 0));
-    const st = m.steer || 0; // ángulo de las ruedas delanteras (rad)
+    const st = m.steer || 0; // front wheel angle (rad)
     gl.uniform2f(mp.u.uSteer, Math.cos(st), Math.sin(st));
     gl.uniform2f(mp.u.uHead, Math.cos(m.head || 0), Math.sin(m.head || 0));
     gl.uniform3f(mp.u.uNeck, g.neck.x, g.neck.y, g.neck.z);
@@ -1219,7 +1225,7 @@ export class GLRenderer {
     gl.uniform1f(mp.u.uWear, m.wear ?? 1);
     gl.uniform1f(mp.u.uShine, m.shine ?? 0);
     gl.uniform1f(mp.u.uGlossK, m.gloss ?? 1);
-    // primero se crean todas (crear una la deja atada a la unidad activa) y después se atan
+    // first create them all (creating one leaves it bound to the active unit) and then bind them
     const texs = [1, 2, 3, 4, 5].map((k) => g.texs[k] && this.glTexture(g.texs[k]));
     if (g.texs[6]) texs.push(this.screenTexture(m.screen));
     ['uLivery', 'uCarbon', 'uSidewall', 'uTread', 'uRim', 'uScreen'].forEach((name, i) => {
@@ -1229,10 +1235,10 @@ export class GLRenderer {
     gl.drawArrays(gl.TRIANGLES, 0, m.hide === 'helmet' ? g.helmetStart : g.count);
   }
 
-  // Un auto solo, como en una vitrina (el menú): ocupa todo el canvas (de w × h píxeles), sobre fondo transparente.
-  // La cámara queda quieta, mirando hacia +x a la altura del auto; el auto gira (yaw) y se inclina hacia la cámara
-  // (pitch), así se lo ve desde arriba sin cambiar la proyección del juego (que no cabecea). dist: de la cámara al
-  // auto (m); P: distancia focal (píxeles). Devuelve cómo se proyecta un punto del auto, para dibujar su sombra.
+  // A single car, as in a showcase (the menu): it fills the whole canvas (w × h pixels), on a transparent background.
+  // The camera stays still, looking toward +x at car height; the car turns (yaw) and tilts toward the camera
+  // (pitch), so it is seen from above without changing the game's projection (which doesn't pitch). dist: from the
+  // camera to the car (m); P: focal length (pixels). Returns how a point of the car is projected, to draw its shadow.
   showcase(model, { yaw = 0, pitch = 0, dist = 14, P, z0 = 0.45 }, w, h) {
     const gl = this.gl,
       mp = this.models;
@@ -1250,7 +1256,7 @@ export class GLRenderer {
     gl.uniform1f(mp.u.uP, P);
     gl.uniform1f(mp.u.uHorizon, h / 2);
     gl.uniform2f(mp.u.uView, w, h);
-    // girar alrededor del eje vertical y después inclinar la parte de arriba hacia la cámara (alrededor de y)
+    // turn around the vertical axis and then tilt the top toward the camera (around y)
     const cy = Math.cos(yaw),
       sy = Math.sin(yaw),
       cp = Math.cos(pitch),
@@ -1261,7 +1267,7 @@ export class GLRenderer {
       [-sy, cy, 0],
       [0, 0, 1],
     ].map(tilt);
-    // el punto z0 del auto (sobre su centro) queda en el centro de la imagen
+    // the car's point z0 (above its center) ends up at the center of the image
     const c = tilt([0, 0, z0]);
     const pos = [dist - c[0], -c[1], -c[2]];
     this.drawModel({ model, x: pos[0], y: pos[1], z: pos[2], meters: 1 }, 1, basis);
@@ -1275,7 +1281,7 @@ export class GLRenderer {
     };
   }
 
-  // cinta de la ayuda de trazada: dos vértices por celda de la línea central, uno a cada lado de la trazada
+  // racing line ribbon: two vertices per centerline cell, one on each side of the racing line
   guideMesh(track, line) {
     let mesh = this.guideMeshes.get(line);
     if (mesh) return mesh;

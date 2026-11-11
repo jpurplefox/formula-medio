@@ -1,45 +1,49 @@
-// Carreras en manada (currículo v8, rl/CURRICULUM.md): todos los autos de la carrera son agentes con la misma red,
-// que aprende. Así se entrena el comportamiento de grupo que se ve en el juego (21 redes iguales), por ejemplo la
-// fila india en la largada, que con rivales de la IA clásica no aparecía.
+// Herd races (curriculum v8, rl/CURRICULUM.md): every car in the race is an agent with the same network, which is
+// learning. This trains the group behavior seen in the game (21 identical networks), for example the single file at
+// the start, which did not appear with classic AI opponents.
 //
-// Escenarios (cuánto duran sale de la vuelta de la trazada del circuito):
-//   solo     agentes repartidos por la pista, lanzados, dos vueltas (repaso de la fase 1)
-//   grid     largada desde parado con semáforo (src/sim/lights.js), dos vueltas: la grilla del circuito o una al azar
-//            antes de una curva. Con las luces prendidas la red sube y baja las vueltas con sus dos salidas de rpm
-//            (car.revBy); al apagarse, si viene acelerando suelta el embrague con las que tenga (car.launch: ahogado o
-//            patinando si no están en la ventana) o, si no, cuando acelere
-//   start    arranque: como grid (semáforo, la grilla del circuito o una al azar), pero termina cuando el primero
-//            llega a START_MARGIN m del comienzo de la frenada de la primera curva: hasta ahí lo correcto es ir a
-//            fondo, así que no premia llegar pasado de velocidad (lo que sigue lo estima el crítico, como en un corte
-//            por tiempo). Corto: muchas más largadas por paso que en grid (en grid, unas 280 cada 3,5 M de pasos)
-//   flying   largada en movimiento: dos filas alternadas a FLYING_GAP m, todos a la misma fracción de la velocidad
-//            de la trazada (±3 %), antes de una curva, una vuelta. Para aprender a ir a la par y en grupo apretado
-//   rolling  en fila, lanzados, a distancias distintas, dos vueltas
-//   chase    de a pares: el de adelante con menos motor, una vuelta. Se mide sólo al de atrás; el de adelante maneja
-//            con el premio de siempre (su tiempo): si aflojar para que lo pasen le cuesta, no aprende a aflojar
+// Scenarios (their length comes from the racing line lap of the track):
+//   solo     agents spread around the track, at speed, two laps (a review of phase 1)
+//   grid     standing start with start lights (src/sim/lights.js), two laps: the track's grid or a random one
+//            before a corner. With the lights on the network raises and lowers the revs with its two rpm outputs
+//            (car.revBy); when they go out, if it is already accelerating it releases the clutch at whatever revs
+//            it has (car.launch: bogged down or with wheelspin if they are outside the window) or, if not, when it
+//            accelerates
+//   start    launch: like grid (start lights, the track's grid or a random one), but it ends when the first car
+//            reaches START_MARGIN m from the start of the braking zone of the first corner: up to there the right
+//            thing is to go flat out, so it does not reward arriving too fast (what follows is estimated by the
+//            critic, as in a time cutoff). Short: many more starts per step than in grid (in grid, about 280 every
+//            3.5 M steps)
+//   flying   flying start: two staggered rows FLYING_GAP m apart, all at the same fraction of the racing line speed
+//            (±3 %), before a corner, one lap. To learn to run side by side and in a tight group
+//   rolling  in single file, at speed, at different gaps, two laps
+//   chase    in pairs: the car ahead with less engine, one lap. Only the car behind is measured; the car ahead drives
+//            with the usual reward (its time): if easing off to let the other pass costs it, it doesn't learn to
+//            ease off
 //
-// Una sola medida, en todos los escenarios: el tiempo con castigo (las mismas reglas para premiar y para medir; ver
-// Budgets en rl/train.py), contra el de la trazada para su auto arrancando igual (1,05: 5 % más lento):
-//   solo, rolling  cada vuelta
-//   grid           las dos vueltas, contra la trazada desde parado más una lanzada
-//   start          hasta donde llegó cada uno cuando el primero cruzó la línea, contra la trazada desde parado
-//   flying         la vuelta, contra la trazada arrancando a su velocidad
-//   chase          la vuelta del de atrás
-// El castigo, en segundos que se le suman al tiempo:
-//   - ZONE_TIME por cada segundo con otro auto en la zona de al lado (el auto con ZONE_MARGIN m más de cada costado,
-//     del mismo largo: a la par a menos de ese margen, o encimados). No es más larga que el auto: venir atrás no
-//     cuesta (con un castigo por peligro de alcanzar a otro, en el pelotón de la largada convenía levantar y que te
-//     pegaran de atrás, v10 y v11). No se distingue culpa: entre iguales, los dos pagan
-//   - HIT_TIME por cada toque: un contacto que empieza después de CONTACT_GAP sin tocarse (un roce largo, uno solo)
-//   - GRASS_TIME por cada segundo y cada rueda en el pasto
-// Lo que se rompe ya cuesta por sí solo: ir con el auto roto es más lento.
+// A single measure, in every scenario: the time with penalty (the same rules for rewarding and for measuring; see
+// Budgets in rl/train.py), against the racing line's time for its car starting the same way (1.05: 5 % slower):
+//   solo, rolling  each lap
+//   grid           both laps, against the racing line from a standstill plus a flying lap
+//   start          how far each one got when the first one crossed the line, against the racing line from a
+//                  standstill
+//   flying         the lap, against the racing line starting at its speed
+//   chase          the lap of the car behind
+// The penalty, in seconds added to the time:
+//   - ZONE_TIME for each second with another car in the zone alongside (the car plus ZONE_MARGIN m on each side,
+//     the same length: side by side within that margin, or overlapping). It is no longer than the car: following
+//     behind costs nothing (with a penalty for the danger of catching another car, in the pack at the start it paid
+//     to lift and get hit from behind, v10 and v11). Fault is not assigned: between equals, both pay
+//   - HIT_TIME for each contact: a contact that starts after CONTACT_GAP without touching (a long rub counts once)
+//   - GRASS_TIME for each second and each wheel on the grass
+// Whatever breaks already costs on its own: driving a broken car is slower.
 //
-// Premio de cada agente, × la escala de su escenario (scales; la fija el entrenamiento: el escenario que la fase
-// premia con un peso fijo y los demás ajustados solos para que no empeoren, presupuestos):
-//   + metros avanzados (también en el pasto: lo cobra su castigo por rueda; si llega a convenir cortar camino, se
-//     sube GRASS_TIME)
-//   - el castigo, como lo que avanzaría en esos segundos a la velocidad media de la trazada
-// Y sin escala: - muro, quedarse quieto, rescate, abandono, ir lento con la pista libre (piso de ritmo)
+// Reward of each agent, × the scale of its scenario (scales; set by training: the scenario the phase rewards with a
+// fixed weight and the others adjusted on their own so they don't get worse, budgets):
+//   + meters advanced (also on the grass: its per-wheel penalty charges for it; if cutting corners ever pays off,
+//     raise GRASS_TIME)
+//   - the penalty, as the distance it would cover in those seconds at the racing line's average speed
+// And without scale: - wall, standing still, rescue, retirement, driving slowly with a clear track (pace floor)
 
 import { gridSlots } from '../src/race/grid.js';
 import { stepCars } from '../src/sim/traffic.js';
@@ -53,9 +57,9 @@ import { RubberMap } from '../src/sim/rubber.js';
 
 const DT = 1 / 60,
   SUBSTEPS = 3,
-  DECISIONS = 20; // decisiones por segundo
-// goma ya puesta sobre la trazada al empezar cada episodio: entre nada (recién largada) y esto (rubber.js: 25 es una
-// marca clara; 75, casi negra), así la red corre con la pista en cualquier momento de la carrera
+  DECISIONS = 20; // decisions per second
+// rubber already laid on the racing line at the start of each episode: between none (race just started) and this
+// (rubber.js: 25 is a clear mark; 75, almost black), so the network races with the track at any point of the race
 const RUBBER_LAID = 75;
 const PROGRESS_REWARD = 0.02,
   WALL_PENALTY = 1;
@@ -66,26 +70,26 @@ const GRASS_LIMIT = 6,
   STALL_PENALTY = 1,
   RETIRE_PENALTY = 10;
 const FLYING_GAP = 6,
-  FLYING_SPEED = [0.6, 0.8]; // largada en movimiento: m entre autos y fracción de la trazada
-const PASS_HOLD = 2.5; // s que el de atrás tiene que seguir adelante, sin tocarse, para contar la pasada
-const CONTACT_GAP = 0.5; // s sin tocarse para que el siguiente contacto sea otro toque
-// castigo, en segundos: por cada segundo con otro auto en la zona de al lado, por cada toque y por cada segundo y
-// rueda en el pasto
+  FLYING_SPEED = [0.6, 0.8]; // flying start: m between cars and fraction of the racing line
+const PASS_HOLD = 2.5; // s the car behind has to stay ahead, without touching, for the pass to count
+const CONTACT_GAP = 0.5; // s without touching for the next contact to count as a new one
+// penalty, in seconds: for each second with another car in the zone alongside, for each contact and for each second
+// and wheel on the grass
 const ZONE_TIME = 0.4,
   HIT_TIME = 2.5,
   GRASS_TIME = 0.8;
-// desventaja de motor del de adelante en las persecuciones, al principio y al final de la fase
+// engine handicap of the car ahead in chases, at the start and at the end of the phase
 const CHASE_HANDICAP = [0.2, 0.08];
-// vueltas de cada escenario y margen de tiempo (la vuelta de la trazada × SLACK, más unos segundos)
-// (start: lo que suele durar, en vueltas, para repartir los pasos de la mezcla y cortar si nadie llega)
+// laps of each scenario and time margin (the racing line lap × SLACK, plus a few seconds)
+// (start: how long it usually lasts, in laps, to share out the mix steps and to cut it off if nobody gets there)
 export const HERD_SCENARIOS = { solo: 2, grid: 2, rolling: 2, chase: 1, flying: 1, start: 0.25 };
-const START_MARGIN = 10; // m antes del comienzo de la frenada donde termina el arranque
+const START_MARGIN = 10; // m before the start of the braking zone where the launch ends
 const SLACK = 1.25,
-  EXTRA = 25; // con una grilla de 16 los últimos tardan en completar las dos vueltas
+  EXTRA = 25; // with a grid of 16 the last cars take a while to complete the two laps
 const DAMAGE_LEVELS = ['off', 'reduced', 'real'];
 
-// Comienzo de la frenada de cada curva (celdas): desde el vértice (corners, rl/race.js), hacia atrás mientras la
-// trazada viene más rápida
+// Start of the braking zone of each corner (cells): from the apex (corners, rl/race.js), backwards while the racing
+// line is faster
 const brakeCache = new WeakMap();
 function brakePoints(track, line, corners) {
   if (brakeCache.has(track)) return brakeCache.get(track);
@@ -116,7 +120,7 @@ export class HerdSim extends RaceSim {
     super({ trackIds, agents, seed, mix: {}, spread, rewards, progress, damage, tuneSpread });
     this.rewards = { paceFloor: 1, ...rewards };
     this.scales = Object.fromEntries(Object.keys(HERD_SCENARIOS).map((k) => [k, 1]));
-    // el peso es la parte de los pasos: cada escenario se elige según su peso dividido sus vueltas
+    // the weight is the share of steps: each scenario is picked by its weight divided by its laps
     this.mix = Object.entries(mix)
       .filter(([, w]) => w > 0)
       .map(([k, w]) => [k, w / HERD_SCENARIOS[k]]);
@@ -131,8 +135,8 @@ export class HerdSim extends RaceSim {
     const damage = this.damage === 'mix' ? DAMAGE_LEVELS[Math.floor(r() * 3)] : this.damage;
     const lap = clock[clock.length - 1];
     const length = Math.ceil((HERD_SCENARIOS[scenario] * lap * SLACK + EXTRA) * DECISIONS);
-    // en la grilla, el semáforo: el tiempo cuenta desde que se apaga (antes, negativo). Se arranca en algún momento
-    // del primer segundo, antes de la primera luz
+    // on the grid, the start lights: time counts from when they go out (before that, negative). It begins at some
+    // point in the first second, before the first light
     const lights = scenario === 'grid' || scenario === 'start';
     const lightsTotal = lights ? lightsDuration(randomHold(r)) : 0;
     const time = lights ? r() * LIGHT_FIRST - lightsTotal : 0;
@@ -163,13 +167,13 @@ export class HerdSim extends RaceSim {
         spots.push({ u, side: (r() - 0.5) * half, v: (0.6 + 0.3 * r()) * this.lineSpeed(u) });
       }
     } else if (scenario === 'grid') {
-      // la mitad de las veces la grilla del circuito (como en el juego); si no, 250-500 m antes de una curva
+      // half the time the track's grid (as in the game); otherwise, 250-500 m before a corner
       const first = gridSlots(track, 1)[0];
       const line0 = r() < 0.5 ? stationAt(track, first.x, first.y) : corner() - (250 + 250 * r()) / M;
       for (let k = 0; k < A; k++)
         spots.push({ u: line0 - (k * 8) / M, side: (k % 2 ? -1 : 1) * Math.min(3, half * 0.5), v: 0 });
     } else if (scenario === 'start') {
-      // la mitad de las veces la grilla del circuito y su primera frenada; si no, 300-700 m antes de una frenada
+      // half the time the track's grid and its first braking zone; otherwise, 300-700 m before a braking zone
       const brakes = brakePoints(track, line, corners);
       const first = gridSlots(track, 1)[0];
       let line0, brake;
@@ -187,8 +191,8 @@ export class HerdSim extends RaceSim {
       for (let k = 0; k < A; k++)
         spots.push({ u: line0 - (k * 8) / M, side: (k % 2 ? -1 : 1) * Math.min(3, half * 0.5), v: 0 });
     } else if (scenario === 'flying') {
-      // 150-400 m antes de una curva, en dos filas como la grilla pero más juntos, todos a la misma fracción de la
-      // velocidad de la trazada donde está el primero (±3 % cada uno)
+      // 150-400 m before a corner, in two rows like the grid but closer together, all at the same fraction of the
+      // racing line speed where the first car is (±3 % each)
       const line0 = corner() - (150 + 250 * r()) / M;
       const v = (FLYING_SPEED[0] + (FLYING_SPEED[1] - FLYING_SPEED[0]) * r()) * this.lineSpeed(line0);
       for (let k = 0; k < A; k++) {
@@ -205,14 +209,14 @@ export class HerdSim extends RaceSim {
         u -= (8 + r() * 35) / M;
       }
     } else {
-      // de a pares repartidos por la pista: en recta saliendo de una curva o antes de una curva
+      // in pairs spread around the track: on a straight coming out of a corner or before a corner
       const [h0, h1] = CHASE_HANDICAP;
       const pairs = Math.floor(A / 2);
       const front = r() * L;
       for (let p = 0; p < pairs; p++) {
         const straight = r() < 0.5;
         const base = front + (p * L) / pairs;
-        // la curva más cercana a su lugar de la pista
+        // the corner closest to its place on the track
         const c = corners.reduce(
           (a, x) => (Math.abs(wrap(x - base, L)) < Math.abs(wrap(a - base, L)) ? x : a),
           corners[0] ?? base,
@@ -241,7 +245,7 @@ export class HerdSim extends RaceSim {
       randomTune(car, r, track, this.tuneSpread);
       randomTyres(car, r, track);
       car.damageLevel = damage;
-      // offset: dónde arrancó respecto del primero (m), para saber quién va adelante
+      // offset: where it started relative to the first car (m), to know who is ahead
       const e = {
         kind: 'agent',
         car,
@@ -253,25 +257,25 @@ export class HerdSim extends RaceSim {
         lastGrass: -1e9,
       };
       this.newEpisode(e);
-      e.front = !!s.handicap; // el de adelante en una persecución
+      e.front = !!s.handicap; // the car ahead in a chase
       e.standing = !s.v;
-      // la primera vuelta es de largada (no lanzada): se mide contra la trazada arrancando igual
+      // the first lap is a start lap (not a flying lap): it is measured against the racing line starting the same way
       e.startLap = scenario === 'grid' || scenario === 'flying' || scenario === 'start';
       if (e.startLap) {
         e.startClock = this.launchClock(car, e.u, car.speed);
         e.startIdeal = e.startClock[e.startClock.length - 1];
       }
-      // arranque: cuánto tiene que recorrer hasta la línea (antes de la frenada)
+      // launch: how far it has to go to the line (before the braking zone)
       if (scenario === 'start') e.finishDist = mod(this.finish - e.u, L) * M;
       if (lights) {
-        // quieto en la grilla en ralentí, sin el embrague suelto (place lo suelta): se suelta al apagarse las luces
+        // standing on the grid at idle, clutch not released (place releases it): released when the lights go out
         Object.assign(car, { launchTime: 0, throttle: 0 });
         e.marks = [0];
       }
       return e;
     });
     this.cars.forEach((e, k) => (e.partner = spots[k].partner === undefined ? null : this.cars[spots[k].partner]));
-    // la goma de la pista (un mapa por circuito, que se vuelve a usar): agarra según cuánta haya y los autos la marcan
+    // the track rubber (one map per track, reused): grip depends on how much there is and the cars lay it down
     this.rubberMaps ??= new Map();
     if (!this.rubberMaps.has(id)) this.rubberMaps.set(id, new RubberMap(track, line.offset));
     this.rubber = this.rubberMaps.get(id);
@@ -282,16 +286,16 @@ export class HerdSim extends RaceSim {
     return this.cars.map((e) => this.observe(e));
   }
 
-  // cómo ve cada auto el semáforo (sólo en la grilla; sin, apagado)
+  // how each car sees the start lights (only on the grid; without them, off)
   setLights() {
     if (!this.lightsTotal) return;
     const lights = lightsAt(this.time + this.lightsTotal, this.lightsTotal);
     for (const e of this.cars) e.car.lights = lights;
   }
 
-  // Con el semáforo prendido: quietos; las dos salidas de rpm suben y bajan las vueltas (el pedal no: con la red
-  // saturada a fondo nunca probaba otra cosa que el corte). Al apagarse, el que viene acelerando suelta el embrague con
-  // las que tenga; el que no, cuando acelere (waiting)
+  // With the start lights on: standing still; the two rpm outputs raise and lower the revs (not the pedal: with the
+  // network saturated flat out it never tried anything but the rev limiter). When they go out, a car that is
+  // accelerating releases the clutch at whatever revs it has; one that isn't, when it accelerates (waiting)
   countdown(actions) {
     const { cars } = this;
     cars.forEach((e, k) => {
@@ -341,7 +345,7 @@ export class HerdSim extends RaceSim {
       const { wall, hit } = stepCars(track, all, DT, (k) => {
         const e = cars[k];
         if (e.waiting) {
-          // se apagaron las luces y no venía acelerando: larga cuando acelera
+          // the lights went out and it wasn't accelerating: it starts when it accelerates
           if (e.input.throttle <= 0) {
             e.car.rev(DT, 0);
             return null;
@@ -373,19 +377,19 @@ export class HerdSim extends RaceSim {
         const m = du * M;
         e.dist += m;
         rewards[k] += PROGRESS_REWARD * (m < 0 ? 1 : (this.rewards.progress ?? 1)) * m * scale;
-        // pasto: por cada rueda (car.grass: la fracción de las ruedas que lo pisan)
+        // grass: per wheel (car.grass: the fraction of the wheels on it)
         const grassPen = GRASS_TIME * 4 * (e.car.grass ?? (e.car.onGrass ? 1 : 0)) * DT;
         penalty[k] += grassPen;
         e.grassPen += grassPen;
         e.epDist += m;
         e.back = m < 0 ? e.back - m : Math.max(0, e.back - m);
-        // vueltas contadas desde donde arrancó el episodio (y el castigo que llevaba en cada una)
+        // laps counted from where the episode started (and the penalty it had at each one)
         while (e.dist - e.lapFrom >= e.marks.length * lapM) {
           e.marks.push(this.time);
           e.penMarks.push(e.penalty + penalty[k]);
           const t = e.marks.at(-1) - e.marks.at(-2);
           laps[k] = t;
-          // la primera de una largada no es lanzada
+          // the first lap of a start is not a flying lap
           if (!(e.startLap && e.marks.length === 2)) {
             const ratio = t / this.idealLap(e);
             e.paceLaps.push(ratio);
@@ -399,7 +403,7 @@ export class HerdSim extends RaceSim {
       );
     }
     const dt = DT * SUBSTEPS;
-    // la zona de al lado (inZone, src/drivers/sensors.js: la misma que ve la red)
+    // the zone alongside (inZone, src/drivers/sensors.js: the same one the network sees)
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
         const [ahead, side] = this.rel(cars[i], cars[j]);
@@ -414,14 +418,14 @@ export class HerdSim extends RaceSim {
     cars.forEach((e, k) => {
       if (penalty[k]) {
         e.penalty += penalty[k];
-        // el castigo como tiempo: lo que avanzaría en esos segundos a la velocidad media de la trazada
+        // the penalty as time: the distance it would cover in those seconds at the racing line's average speed
         rewards[k] -= PROGRESS_REWARD * ((track.length * M) / this.idealLap(e)) * penalty[k] * scale;
       }
       if (this.rewards.paceFloor) rewards[k] -= this.slow(e, dt) * this.rewards.paceFloor;
-      if (e.partner) this.chasePass(e); // sólo se cuentan, sin premio
+      if (e.partner) this.chasePass(e); // only counted, no reward
     });
 
-    // arranque: termina cuando el primero llega a la línea, antes de la frenada
+    // launch: ends when the first car reaches the line, before the braking zone
     if (this.scenario === 'start' && cars.some((e) => e.dist >= e.finishDist)) this.length = this.steps + 1;
     this.steps++;
     const truncated = this.steps >= this.length;
@@ -457,8 +461,8 @@ export class HerdSim extends RaceSim {
         retired,
       };
     });
-    // rescatados: vuelven a la pista donde estaban, a un costado y despacio; los que abandonaron, arreglados y con un
-    // episodio nuevo (sin medir más su largada)
+    // rescued cars: back on the track where they were, to one side and slowly; retired ones, repaired and with a
+    // new episode (their start is no longer measured)
     for (const r of results) {
       const e = r.e;
       if (r.retired) r.obs = this.observe(e);
@@ -492,7 +496,7 @@ export class HerdSim extends RaceSim {
 
   newEpisode(e) {
     super.newEpisode(e);
-    // marks: cuándo completó cada vuelta, contando desde lapFrom (donde arrancó el episodio)
+    // marks: when it completed each lap, counting from lapFrom (where the episode started)
     Object.assign(e, {
       penalty: 0,
       penMarks: [0],
@@ -508,19 +512,19 @@ export class HerdSim extends RaceSim {
     });
   }
 
-  // Pasada en la persecución: el de atrás pasa al de adelante y sigue adelante PASS_HOLD s sin que se toquen. Sólo se
-  // cuenta (una vez por par), para ver: lo que se mide es el tiempo del de atrás
+  // Pass in the chase: the car behind passes the car ahead and stays ahead PASS_HOLD s without them touching. It is
+  // only counted (once per pair), for reference: what is measured is the time of the car behind
   chasePass(e) {
     const p = e.partner;
     if (e.front || e.passDone) return;
-    const ahead = e.offset + e.dist > p.offset + p.dist; // e: el de atrás, que arrancó sin desventaja
+    const ahead = e.offset + e.dist > p.offset + p.dist; // e: the car behind, which started without a handicap
     if (!ahead) {
       e.passFrom = null;
       return;
     }
     e.passFrom ??= this.time;
     if (Math.max(e.lastTouch, p.lastTouch) >= e.passFrom) {
-      e.passFrom = this.time; // se tocaron: cuenta desde ahora
+      e.passFrom = this.time; // they touched: count from now
       return;
     }
     if (this.time - e.passFrom < PASS_HOLD) return;
@@ -529,8 +533,9 @@ export class HerdSim extends RaceSim {
     p.passed++;
   }
 
-  // Lo que se informa al terminar el episodio: la medida (time: el tiempo con castigo contra el de la trazada, null si
-  // no hubo con qué medirla) y, para ver, el tiempo sin castigo y el castigo por partes
+  // What is reported at the end of the episode: the measure (time: the time with penalty against the racing line's,
+  // null if there was nothing to measure it with) and, for reference, the time without penalty and the penalty by
+  // parts
   episodeInfo(e, retired) {
     const lapTimes = e.marks.slice(1).map((t, i) => t - e.marks[i]);
     const withPen = lapTimes.map((t, i) => t + e.penMarks[i + 1] - e.penMarks[i]);
@@ -540,7 +545,8 @@ export class HerdSim extends RaceSim {
     if (this.scenario === 'grid') {
       if (withPen.length >= 2) time = (withPen[0] + withPen[1]) / (e.startIdeal + ideal);
     } else if (this.scenario === 'start') {
-      // hasta donde llegó, contra la trazada desde parado hasta ahí (si casi no avanzó, no hay con qué medir)
+      // how far it got, against the racing line from a standstill up to there (if it barely moved, there is nothing
+      // to measure with)
       const at = Math.min(e.startClock.length - 1, Math.floor(e.dist / this.track.meters));
       if (e.dist > 50 && !e.rescues) time = (this.time + e.penalty) / e.startClock[at];
     } else if (this.scenario === 'flying') {
@@ -548,7 +554,8 @@ export class HerdSim extends RaceSim {
     } else if (this.scenario === 'chase') {
       if (!e.front && withPen.length >= 1) time = withPen[0] / ideal;
     } else if (withPen.length) time = mean(withPen) / ideal;
-    // para ver: la vuelta 1 de una largada contra la trazada arrancando igual y, en la grilla, la 2 (sin castigo)
+    // for reference: lap 1 of a start against the racing line starting the same way and, on the grid, lap 2 (without
+    // penalty)
     const launch = e.startLap && lapTimes.length >= 1 ? lapTimes[0] / e.startIdeal : null;
     const lap2 = e.standing && lapTimes.length >= 2 ? lapTimes[1] / ideal : null;
     return {

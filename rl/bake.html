@@ -1,9 +1,9 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>Exportar circuitos</title>
-<!-- Arma la máscara de cada circuito (la parte que necesita el navegador) y la guarda en rl/tracks/,
-     para que el entorno de entrenamiento arme los circuitos en Node. Abrir con serve.py corriendo. -->
-<pre id="log">Exportando…</pre>
+<title>Export tracks</title>
+<!-- Builds the mask of each track (the part that needs the browser) and saves it in rl/tracks/, so the training
+     environment can build the tracks in Node. Open with serve.py running. -->
+<pre id="log">Exporting…</pre>
 <script type="module">
   import { TRACKS } from '../tracks/index.js';
   import { imageMask, loadImage } from '../src/load/trackimage.js';
@@ -11,11 +11,11 @@
 
   const log = document.getElementById('log');
   const lines = [];
-  for (const def of TRACKS.filter((d) => d.image)) { // los que salen de la telemetría no necesitan máscara
+  for (const def of TRACKS.filter((d) => d.image)) { // tracks built from telemetry don't need a mask
     const mask = imageMask(await loadImage('../' + def.image), def);
     const res = await fetch(`tracks/${def.id}.mask`, { method: 'PUT', body: packMask(mask) });
     lines.push(`${def.id}: ${mask.W}×${mask.H} ${res.ok ? 'ok' : 'error ' + res.status}`);
     log.textContent = lines.join('\n');
   }
-  log.textContent += '\nListo';
+  log.textContent += '\nDone';
 </script>
