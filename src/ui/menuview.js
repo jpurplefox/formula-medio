@@ -1,7 +1,7 @@
 // Vistas del menú: el auto elegido, con su decoración, y el trazado de un circuito.
 
-import { GLRenderer } from './glrenderer.js';
-import { SHADOW } from './renderer.js';
+import { GLRenderer } from '../render/glrenderer.js';
+import { SHADOW } from '../render/renderer.js';
 
 // ---------- el auto ----------
 // El mismo modelo que se ve en la carrera (carmodel.js), dibujado con la placa de video y el mismo programa que en

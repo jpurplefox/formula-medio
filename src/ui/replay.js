@@ -1,8 +1,8 @@
 // Repetición de la carrera: se graba la posición de todos los autos 30 veces por segundo y después se reproduce
 // (interpolando entre muestras) con distintas cámaras, como en una transmisión de TV.
 
-import { lineFrame, pointAt } from './ai.js';
-import { halfWidthAt, sampleField } from './track.js';
+import { lineFrame, pointAt } from '../sim/lineframe.js';
+import { halfWidthAt, sampleField } from '../sim/track.js';
 
 const REPLAY_STEP = 1 / 30;
 const FIELDS = 10; // por auto y por muestra: x, y, angle, steer, speed, slope, dist (metros recorridos), rpm, throttle, gear

@@ -1,7 +1,7 @@
 # Plan: red más grande y entrenamiento por currículum
 
 Plan para la ronda de la IA por refuerzo que vino después de la etapa 2, con cinco intentos de currículum. La red
-del juego de ese plan fue `models/v5/fase7.json` (quinto intento); hoy es la que diga `GAME_NET` en `src/policy.js`,
+del juego de ese plan fue `models/v5/fase7.json` (quinto intento); hoy es la que diga `GAME_NET` en `src/drivers/policy.js`,
 entrenada en manada (`rl/curriculum.sh`). Las redes de acá ya no están en `models/`: quedan en el historial de git
 (commit e9ff553).
 
@@ -266,12 +266,12 @@ Carrera tipo juego (`JUEGO=1`, Difícil de entonces, con el rescate en el pasto 
 - **La fase 1 sola ya es más rápida** que la v4 y la IA de siempre: 1 a 5 s por vuelta según el circuito.
 - **Las fases 5–7 cambian limpieza por ritmo**: la 4 es la que menos toca; la 7 la más rápida (6–8 s por carrera
   más que la v4 con el mismo auto), con los mismos toques que la 6. En el juego se compensa con menos agarre y
-  potencia para los rivales (`setups` en `src/teams.js`, de 0,83 en Fácil a 1,02 en Experto).
+  potencia para los rivales (`setups` en `src/race/teams.js`, de 0,83 en Fácil a 1,02 en Experto).
 - **Largadas**: la fase 6 avanza un 8 % más que la v4 con los mismos toques provocados; la 7 vuelve a tocar algo más.
 - **Lo que salió mal: autos perdidos en el pasto.** Medido sin cambios, la v5 pasaba 23–27 s por auto en el pasto,
   pero no por cortar curvas (con una sola rueda afuera casi nunca va): 2 a 6 autos por carrera se quedaban minutos
   dando vueltas ahí. Al entrenar se la rescata a los 6 s en el pasto, así que nunca aprendió a volver de lejos, y
-  en el juego sólo se la rescataba quieta (en el pasto anda a ~90 km/h). Ahora `NeuralDriver` (`src/policy.js`)
+  en el juego sólo se la rescataba quieta (en el pasto anda a ~90 km/h). Ahora `NeuralDriver` (`src/drivers/policy.js`)
   también la rescata a los 6 s en el pasto, igual que al entrenar.
 
 ## Métricas por fase
@@ -295,7 +295,7 @@ NOMBRE=v5 sh rl/curriculum.sh 5      # rehace desde la fase 5 (usa rl/runs/v5fas
 
 Cada fase parte del modelo final de la anterior y se exporta a `models/$NOMBRE/faseN.json`. Al continuar un modelo,
 la tasa de aprendizaje de cada fase va de su valor inicial (`--lr`) a 0 dentro de esa fase. Al terminar mide la
-nueva contra la del juego en la carrera tipo juego; si es mejor, se cambia `GAME_NET` en `src/policy.js`.
+nueva contra la del juego en la carrera tipo juego; si es mejor, se cambia `GAME_NET` en `src/drivers/policy.js`.
 
 Para cambiar la receta, lo que más pesa:
 - `--contact-budget` (fracción de los toques provocados de la fase 7 que se permiten) y `--contact-scale`.
@@ -303,7 +303,7 @@ Para cambiar la receta, lo que más pesa:
   `rl/env.js`). `paceCrowd` (desde el quinto intento de la receta, 0,6): el piso de ritmo también amontonado, más
   bajo, para que en las largadas meterse en fila levantando el pie cueste tiempo y convenga seguir a la par.
 - `--spread`: cuánto varían los autos (de −15 % a +20 % hoy). Pasar de ±20 % obliga a cambiar `SETUP_SPREAD` en
-  `src/sensors.js` y a reescalar las redes viejas con `rl/rescale_setup.py`.
+  `src/drivers/sensors.js` y a reescalar las redes viejas con `rl/rescale_setup.py`.
 - La desventaja del de adelante en las persecuciones: `CHASE_HANDICAP` en `rl/race.js`.
 
 Los scripts de los intentos anteriores (`curriculum.sh` de 7 fases, `curriculum3.sh`, `curriculum4.sh`) están en

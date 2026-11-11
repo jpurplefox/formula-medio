@@ -10,9 +10,9 @@
 <div id="ui"></div>
 <canvas id="c"></canvas>
 <script type="module">
-// Visor del modelo del auto (src/carmodel.js) para revisar la forma: arrastrar para girar, rueda para acercar.
+// Visor del modelo del auto (src/render/carmodel.js) para revisar la forma: arrastrar para girar, rueda para acercar.
 // Dibuja las caras con su color plano y la luz del sol, de atrás para adelante (sin texturas).
-import { carModel } from '../src/carmodel.js';
+import { carModel } from '../src/render/carmodel.js';
 
 const q = new URLSearchParams(location.search);
 const model = carModel(q.get('color') ?? '#d8261c');

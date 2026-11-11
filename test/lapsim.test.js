@@ -1,11 +1,11 @@
 // lapsim.js y racingline.js: la velocidad más alta en cada punto de una trazada, y la trazada sobre un circuito real.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { limitsOn } from '../src/car.js';
-import { carLimits } from '../src/dynamics.js';
-import { cornerSpeed, lapSim, pathFromPoints } from '../src/lapsim.js';
-import { racingLine } from '../src/racingline.js';
-import { halfWidthAt } from '../src/track.js';
+import { limitsOn } from '../src/sim/car.js';
+import { carLimits } from '../src/sim/dynamics.js';
+import { cornerSpeed, lapSim, pathFromPoints } from '../src/sim/lapsim.js';
+import { racingLine } from '../src/sim/racingline.js';
+import { halfWidthAt } from '../src/sim/track.js';
 import { kmh, PROFILE, track } from './helpers.js';
 
 const lim = carLimits(PROFILE);

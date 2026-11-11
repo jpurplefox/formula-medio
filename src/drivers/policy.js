@@ -18,7 +18,7 @@ import {
   TYRE_VALUES,
   WHEEL_VALUES,
 } from './sensors.js';
-import { stationAt } from './track.js';
+import { stationAt } from '../sim/track.js';
 
 // La red con la que manejan los rivales en el juego (rl/CURRICULO.md). Es la única referencia: la usan también el
 // chequeo de regresión, la calibración y rl/curriculum.sh, así que para cambiar de red alcanza con cambiarla acá.

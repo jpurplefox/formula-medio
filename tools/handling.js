@@ -9,10 +9,11 @@
 //   PACE=1.06 (ritmo de la IA)  TUNE='{"front":10,"rear":1,"balance":5}' (puesta a punto)
 
 import { readFileSync } from 'node:fs';
-import { Driver, gridSlots } from '../src/ai.js';
-import { Car, keyboardSteer, limitsOn, TRACTION_CONTROL } from '../src/car.js';
-import { racingLine } from '../src/racingline.js';
-import { sampleField, stationAt } from '../src/track.js';
+import { Driver } from '../src/drivers/ai.js';
+import { gridSlots } from '../src/race/grid.js';
+import { Car, keyboardSteer, limitsOn, TRACTION_CONTROL } from '../src/sim/car.js';
+import { racingLine } from '../src/sim/racingline.js';
+import { sampleField, stationAt } from '../src/sim/track.js';
 import { loadTrack, TRACK_IDS } from '../rl/tracks.js';
 
 const profile = JSON.parse(readFileSync(new URL('../cars/f1-2025.json', import.meta.url), 'utf8'));

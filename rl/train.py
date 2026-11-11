@@ -32,10 +32,10 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def opponent_columns() -> list[tuple[int, int]]:
-    """Dónde están los valores de los rivales en la observación (src/sensors.js), como (comienzo, cuántos): sus
+    """Dónde están los valores de los rivales en la observación (src/drivers/sensors.js), como (comienzo, cuántos): sus
     posiciones y velocidades (después vienen ruedas, límites y daños, así que no son los últimos) y, al final, sus
     pedales y volante."""
-    code = ("import('./src/sensors.js').then((m) => console.log(m.OPPONENT_START, m.OPPONENT_SIZE, "
+    code = ("import('./src/drivers/sensors.js').then((m) => console.log(m.OPPONENT_START, m.OPPONENT_SIZE, "
             "m.OPPONENT_INPUT_START, m.OPPONENT_INPUT_SIZE))")
     out = subprocess.run(["node", "--input-type=module", "-e", code], cwd=ROOT, capture_output=True, text=True, check=True)
     a, b, c, d = map(int, out.stdout.split())
@@ -421,7 +421,7 @@ def main():
     p.add_argument("--rivals-boost", type=float, default=0,
                    help="rivales más rápidos: esta fracción más de agarre y potencia (p. ej. 0.08), y la IA de siempre a más ritmo")
     p.add_argument("--damage", default="off", choices=["off", "reduced", "real", "mix"],
-                   help="daños en las carreras (src/damage.js); mix: cada escenario con uno de los tres al azar")
+                   help="daños en las carreras (src/sim/damage.js); mix: cada escenario con uno de los tres al azar")
     p.add_argument("--damaged-starts", type=float, default=0,
                    help="parte de los agentes que arranca con algo roto (con daños prendidos), p. ej. 0.15")
     p.add_argument("--tune-spread", type=int, default=3,

@@ -41,15 +41,15 @@
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Driver } from '../src/ai.js';
-import { Car, DEFAULT_PROFILE, isSolid, limitsOn, RIVAL_AIDS, SAME_SETUP, slipstream } from '../src/car.js';
-import { collideCars } from '../src/collision.js';
-import { NeuralDriver, Policy } from '../src/policy.js';
-import { racingLine } from '../src/racingline.js';
-import { ACTIONS, OBS_SIZE, observe, stationAt, trackHeading } from '../src/sensors.js';
-import { halfWidthAt, sampleField } from '../src/track.js';
+import { Driver } from '../src/drivers/ai.js';
+import { Car, DEFAULT_PROFILE, isSolid, limitsOn, RIVAL_AIDS, SAME_SETUP, slipstream } from '../src/sim/car.js';
+import { collideCars } from '../src/sim/collision.js';
+import { NeuralDriver, Policy } from '../src/drivers/policy.js';
+import { racingLine } from '../src/sim/racingline.js';
+import { ACTIONS, OBS_SIZE, observe, stationAt, trackHeading } from '../src/drivers/sensors.js';
+import { halfWidthAt, sampleField } from '../src/sim/track.js';
 import { pointOnCenter, randomSetup, randomTune, randomTyres, rng, TUNE_SPREAD } from './env.js';
-import { NO_DAMAGE, randomDamage } from '../src/damage.js';
+import { NO_DAMAGE, randomDamage } from '../src/sim/damage.js';
 import { loadTrack } from './tracks.js';
 
 const DT = 1 / 60;

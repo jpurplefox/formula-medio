@@ -1,7 +1,7 @@
 // car.js: el auto andando sobre un circuito real (Monza, desde la grilla, sobre la recta), y las ayudas del teclado.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { keyboardBrake, keyboardSteer, LAUNCH_WINDOW, slipstream } from '../src/car.js';
+import { keyboardBrake, keyboardSteer, LAUNCH_WINDOW, slipstream } from '../src/sim/car.js';
 import { carOnGrid, DT, drive, kmh, PROFILE, track } from './helpers.js';
 
 const t = track('monza');

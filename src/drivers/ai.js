@@ -3,7 +3,8 @@
 // para ir a la velocidad que la trazada indica en cada punto, multiplicada por su ritmo (pace).
 // Si alcanza a otro auto, se abre hacia el lado donde hay lugar para pasarlo; si no hay lugar, se queda detrás.
 
-import { halfWidthAt } from './track.js';
+import { lineFrame, pointAt } from '../sim/lineframe.js';
+import { halfWidthAt } from '../sim/track.js';
 
 const LOOK_BASE = 6; // distancia mínima al punto que persigue el volante (m)
 const LOOK_TIME = 0.35; // más la distancia que recorre en este tiempo (s)
@@ -33,59 +34,10 @@ const CHORD_MAX = 1; // m: lo más que corrige el corte de la curva
 const BRAKE_USE = 0.93; // parte de lo que aguantan las gomas que usa para frenar
 const MAX_YAW = 1.6; // igual que en car.js: giro máximo a baja velocidad (rad/s)
 
-// Por cada celda de la línea central: el punto de la línea central y la normal hacia la derecha.
-// (La trazada ideal está guardada como desplazamiento de costado respecto de esa línea.)
-const frames = new WeakMap();
-export function lineFrame(track) {
-  if (frames.has(track)) return frames.get(track);
-  const { n, x, y, st } = track.path;
-  const L = Math.ceil(st[n]) + 1;
-  const cx = new Float32Array(L),
-    cy = new Float32Array(L),
-    nx = new Float32Array(L),
-    ny = new Float32Array(L);
-  const wrap = (b) => ((b % n) + n) % n;
-  let b = 0;
-  for (let u = 0; u < L; u++) {
-    while (b < n - 1 && st[b + 1] <= u) b++;
-    const t = Math.min(1, Math.max(0, (u - st[b]) / (st[b + 1] - st[b] || 1)));
-    const c = wrap(b + 1);
-    cx[u] = x[b] + (x[c] - x[b]) * t;
-    cy[u] = y[b] + (y[c] - y[b]) * t;
-    const dx = x[wrap(b + 2)] - x[wrap(b - 2)],
-      dy = y[wrap(b + 2)] - y[wrap(b - 2)];
-    const len = Math.hypot(dx, dy) || 1;
-    nx[u] = -dy / len;
-    ny[u] = dx / len;
-  }
-  const f = { L, length: st[n], cx, cy, nx, ny };
-  frames.set(track, f);
-  return f;
-}
-
-// Punto de la pista a una posición sobre la línea central (celdas) y a un desplazamiento de costado (celdas)
-export function pointAt(f, u, side) {
-  const i = ((Math.round(u) % f.L) + f.L) % f.L;
-  return { x: f.cx[i] + f.nx[i] * side, y: f.cy[i] + f.ny[i] * side, angle: Math.atan2(-f.nx[i], f.ny[i]) };
-}
-
 // Vuelve a poner un auto trabado en la pista, sobre la trazada y un poco más adelante (u: posición en celdas)
 export function rescue(track, line, car, u) {
   const spot = pointAt(lineFrame(track), u + 4 / track.meters, line.offset[u | 0]);
   Object.assign(car, { x: spot.x, y: spot.y, angle: spot.angle, speed: 0, steer: 0, slip: 0, omega: 0 });
-}
-
-// Grilla de largada detrás de la línea: de a dos, alternando de costado, cada puesto 8 m más atrás
-export function gridSlots(track, count) {
-  const f = lineFrame(track),
-    M = track.meters;
-  const slots = [];
-  for (let i = 0; i < count; i++) {
-    const back = (12 + i * 8) / M;
-    const side = ((i % 2 ? -1 : 1) * 3) / M;
-    slots.push({ ...pointAt(f, f.length - back, side), back: back * M }); // back: metros detrás de la línea
-  }
-  return slots;
 }
 
 export class Driver {

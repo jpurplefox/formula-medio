@@ -1,7 +1,8 @@
 import { TRACKS } from '../tracks/index.js';
-import { loadImage, buildTrack, buildTrackFromLayout, sampleField, stationAt, RIDGE, T } from './track.js';
-import { Renderer, rgb } from './renderer.js';
-import { GLRenderer } from './glrenderer.js';
+import { buildTrackFromLayout, sampleField, stationAt, RIDGE, T } from './sim/track.js';
+import { loadImage, buildTrack } from './load/trackimage.js';
+import { Renderer, rgb } from './render/renderer.js';
+import { GLRenderer } from './render/glrenderer.js';
 import {
   Car,
   cornerGrip,
@@ -19,14 +20,16 @@ import {
   TEMP_LOW,
   TRACTION_CONTROL,
   wheelAngle,
-} from './car.js';
-import { racingLine } from './racingline.js';
-import { boardTexture, treeTexture } from './sprites.js';
-import { carModel, STEERING, TCAM, WHEEL_R } from './carmodel.js';
-import { Driver, gridSlots, lineFrame, pointAt } from './ai.js';
-import { collideCars } from './collision.js';
-import { Cockpit } from './cockpit.js';
-import { CAMERA_MODES, CAMERA_NAMES, Recorder, replayCamera, tvCameras } from './replay.js';
+} from './sim/car.js';
+import { racingLine } from './sim/racingline.js';
+import { boardTexture, treeTexture } from './render/sprites.js';
+import { carModel, STEERING, TCAM, WHEEL_R } from './render/carmodel.js';
+import { Driver } from './drivers/ai.js';
+import { lineFrame, pointAt } from './sim/lineframe.js';
+import { gridSlots } from './race/grid.js';
+import { collideCars } from './sim/collision.js';
+import { Cockpit } from './render/cockpit.js';
+import { CAMERA_MODES, CAMERA_NAMES, Recorder, replayCamera, tvCameras } from './ui/replay.js';
 import {
   DEFAULT_RIVALS,
   DIFFICULTIES,
@@ -38,15 +41,15 @@ import {
   rivalCars,
   rivalPaces,
   rivalSetups,
-} from './teams.js';
-import { EngineAudio } from './audio.js';
-import { GAME_NET, NeuralDriver, Policy } from './policy.js';
-import { LIGHTS_OUT, lightsAt, lightsDuration, randomHold } from './lights.js';
-import { RubberMap } from './rubber.js';
-import { DESIGNS } from './teamliveries.js';
-import { airDensity, carLimits, DEFAULT_TUNE, GRAVITY } from './dynamics.js';
-import { DAMAGE_LEVELS, damaged, NO_DAMAGE } from './damage.js';
-import { drawCar, drawShape, trackShape } from './menuview.js';
+} from './race/teams.js';
+import { EngineAudio } from './audio/audio.js';
+import { GAME_NET, NeuralDriver, Policy } from './drivers/policy.js';
+import { LIGHTS_OUT, lightsAt, lightsDuration, randomHold } from './sim/lights.js';
+import { RubberMap } from './sim/rubber.js';
+import { DESIGNS } from './render/teamliveries.js';
+import { airDensity, carLimits, DEFAULT_TUNE, GRAVITY } from './sim/dynamics.js';
+import { DAMAGE_LEVELS, damaged, NO_DAMAGE } from './sim/damage.js';
+import { drawCar, drawShape, trackShape } from './ui/menuview.js';
 
 const VIEW_W = 960;
 const VIEW_H = 540;

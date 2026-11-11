@@ -2,7 +2,7 @@
 // tracción) para que, con la puesta a punto y la altura de cada circuito (tracks/index.js), las vueltas se parezcan
 // a las poles reales de 2025 (tools/openf1.js): la velocidad a lo largo de la vuelta y la punta de las trampas.
 //
-// Cada vuelta se calcula como en un simulador de vuelta (src/lapsim.js) sobre una trazada fija: la que hace la red
+// Cada vuelta se calcula como en un simulador de vuelta (src/sim/lapsim.js) sobre una trazada fija: la que hace la red
 // del juego (se graba una vez en tools/.cache/paths/; borrarla para regrabarla con la física de ese momento).
 //
 //   node tools/calibrate.js            mide el auto como está
@@ -10,13 +10,13 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Car, limitsOn } from '../src/car.js';
-import { racingLine } from '../src/racingline.js';
-import { GAME_NET, Policy, NeuralDriver } from '../src/policy.js';
-import { stationAt } from '../src/track.js';
-import { gridSlots } from '../src/ai.js';
-import { carLimits, airDensity } from '../src/dynamics.js';
-import { pathFromPoints, lapSim } from '../src/lapsim.js';
+import { Car, limitsOn } from '../src/sim/car.js';
+import { racingLine } from '../src/sim/racingline.js';
+import { GAME_NET, Policy, NeuralDriver } from '../src/drivers/policy.js';
+import { stationAt } from '../src/sim/track.js';
+import { gridSlots } from '../src/race/grid.js';
+import { carLimits, airDensity } from '../src/sim/dynamics.js';
+import { pathFromPoints, lapSim } from '../src/sim/lapsim.js';
 import { loadTrack, TRACK_IDS } from '../rl/tracks.js';
 import { TRACKS } from '../tracks/index.js';
 import { realLap } from './openf1.js';

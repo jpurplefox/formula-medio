@@ -4,7 +4,7 @@
 //
 // Escenarios (cuánto duran sale de la vuelta de la trazada del circuito):
 //   solo     agentes repartidos por la pista, lanzados, dos vueltas (repaso de la fase 1)
-//   grid     largada desde parado con semáforo (src/lights.js), dos vueltas: la grilla del circuito o una al azar
+//   grid     largada desde parado con semáforo (src/sim/lights.js), dos vueltas: la grilla del circuito o una al azar
 //            antes de una curva. Con las luces prendidas la red sube y baja las vueltas con sus dos salidas de rpm
 //            (car.revBy); al apagarse, si viene acelerando suelta el embrague con las que tenga (car.launch: ahogado o
 //            patinando si no están en la ventana) o, si no, cuando acelere
@@ -41,16 +41,16 @@
 //   - el castigo, como lo que avanzaría en esos segundos a la velocidad media de la trazada
 // Y sin escala: - muro, quedarse quieto, rescate, abandono, ir lento con la pista libre (piso de ritmo)
 
-import { gridSlots } from '../src/ai.js';
-import { isSolid, slipstream } from '../src/car.js';
-import { collideCars } from '../src/collision.js';
-import { ACTIONS, inZone, stationAt } from '../src/sensors.js';
-import { halfWidthAt, sampleField } from '../src/track.js';
-import { NO_DAMAGE } from '../src/damage.js';
+import { gridSlots } from '../src/race/grid.js';
+import { isSolid, slipstream } from '../src/sim/car.js';
+import { collideCars } from '../src/sim/collision.js';
+import { ACTIONS, inZone, stationAt } from '../src/drivers/sensors.js';
+import { halfWidthAt, sampleField } from '../src/sim/track.js';
+import { NO_DAMAGE } from '../src/sim/damage.js';
 import { randomSetup, randomTune, randomTyres, TUNE_SPREAD } from './env.js';
 import { getTrack, mod, RaceSim, recordPace, wrap } from './race.js';
-import { LIGHT_FIRST, lightsAt, lightsDuration, randomHold } from '../src/lights.js';
-import { RubberMap } from '../src/rubber.js';
+import { LIGHT_FIRST, lightsAt, lightsDuration, randomHold } from '../src/sim/lights.js';
+import { RubberMap } from '../src/sim/rubber.js';
 
 const DT = 1 / 60,
   SUBSTEPS = 3,
@@ -406,7 +406,7 @@ export class HerdSim extends RaceSim {
       );
     }
     const dt = DT * SUBSTEPS;
-    // la zona de al lado (inZone, src/sensors.js: la misma que ve la red)
+    // la zona de al lado (inZone, src/drivers/sensors.js: la misma que ve la red)
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
         const [ahead, side] = this.rel(cars[i], cars[j]);

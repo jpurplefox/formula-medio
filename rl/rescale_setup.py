@@ -1,5 +1,5 @@
 """Reescala los pesos de entrada de la variación del auto (motor, punta, agarre, frenos) cuando cambia cómo se
-normalizan en src/sensors.js (SETUP_SPREAD). Si la entrada se divide por un número `factor` veces más grande, los
+normalizan en src/drivers/sensors.js (SETUP_SPREAD). Si la entrada se divide por un número `factor` veces más grande, los
 pesos que la reciben se multiplican por `factor`: la red maneja exactamente igual.
 
     rl/.venv/bin/python rl/rescale_setup.py 4 models/fase7.json models/v3/*.json      (en el lugar)
@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-SETUP_START, COLUMNS = 12, 4  # en src/sensors.js: después de los 12 valores del auto; motor, punta, agarre, frenos
+SETUP_START, COLUMNS = 12, 4  # en src/drivers/sensors.js: después de los 12 valores del auto; motor, punta, agarre, frenos
 OBS_SIZE = 94
 
 

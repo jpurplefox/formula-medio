@@ -12,7 +12,7 @@
 // Con JUEGO=1 es la carrera del juego: todos los autos con la red salvo uno, la IA de siempre al ritmo más alto de
 // Difícil, que hace de jugador (largando del medio). Informa toques por auto de la red, cuántos provocó, pasto y en
 // cuánto tiempo terminó el primero las vueltas (el ritmo). Con DIFICULTAD (facil, normal, dificil, experto) las redes
-// llevan el agarre y la potencia de esa dificultad en el juego (src/teams.js) y el jugador, su ritmo más alto.
+// llevan el agarre y la potencia de esa dificultad en el juego (src/race/teams.js) y el jugador, su ritmo más alto.
 //
 // Con DANOS (reduced o real) los golpes rompen (damage.js): informa además abandonos y piezas rotas por carrera.
 // Con TOQUES=1 informa dónde se dan los toques de la red: en qué vuelta (la suya), en los primeros segundos de la
@@ -24,22 +24,23 @@
 // suerte con los autos. Las gomas se gastan como en el juego (del todo al terminar la carrera).
 
 import { readFileSync } from 'node:fs';
-import { Driver, gridSlots } from '../src/ai.js';
-import { Car, FUEL_PER_KM, isSolid, LAUNCH_WINDOW, limitsOn, slipstream, TRACTION_CONTROL } from '../src/car.js';
+import { Driver } from '../src/drivers/ai.js';
+import { gridSlots } from '../src/race/grid.js';
+import { Car, FUEL_PER_KM, isSolid, LAUNCH_WINDOW, limitsOn, slipstream, TRACTION_CONTROL } from '../src/sim/car.js';
 
 const NET_TC = TRACTION_CONTROL[process.env.TC ?? 'low']; // TC=off|low|high: control de tracción de los autos de la red
 const NET_ABS = process.env.ABS !== '0'; // ABS=0: sin ABS
-import { LIGHTS_OUT, lightsAt, lightsDuration, randomHold } from '../src/lights.js';
+import { LIGHTS_OUT, lightsAt, lightsDuration, randomHold } from '../src/sim/lights.js';
 import { randomSetup, rng } from './env.js';
-import { collideCars, logHits } from '../src/collision.js';
-import { NeuralDriver, Policy } from '../src/policy.js';
-import { racingLine } from '../src/racingline.js';
-import { trackHeading } from '../src/sensors.js';
-import { sampleField, stationAt } from '../src/track.js';
+import { collideCars, logHits } from '../src/sim/collision.js';
+import { NeuralDriver, Policy } from '../src/drivers/policy.js';
+import { racingLine } from '../src/sim/racingline.js';
+import { trackHeading } from '../src/drivers/sensors.js';
+import { sampleField, stationAt } from '../src/sim/track.js';
 import { loadTrack, TRACK_IDS } from './tracks.js';
-import { RubberMap } from '../src/rubber.js';
-import { DIFFICULTIES, rivalSetups } from '../src/teams.js';
-import { damaged, setDamageRandom, zoneAt } from '../src/damage.js';
+import { RubberMap } from '../src/sim/rubber.js';
+import { DIFFICULTIES, rivalSetups } from '../src/race/teams.js';
+import { damaged, setDamageRandom, zoneAt } from '../src/sim/damage.js';
 
 const [file, ids, lapsArg] = process.argv.slice(2);
 const policy = new Policy(JSON.parse(readFileSync(file, 'utf8')));

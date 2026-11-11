@@ -18,7 +18,7 @@ Antes de largar hay un **menú** (que se acuerda de lo último que elegiste). La
 modo, el **auto** elegido (el modelo 3D con su decoración) y el **circuito** (su trazado); tocando cada uno se abre su
 pantalla para cambiarlo (con ← → o las flechas, y el auto se puede girar arrastrándolo). La **puesta a punto** y las
 **opciones** (dificultad, rivales, vueltas, cámara, daños, ayudas y sonido) van en pantallas aparte; Enter o Esc vuelven a la principal
-(`src/menuview.js` dibuja el auto y los trazados):
+(`src/ui/menuview.js` dibuja el auto y los trazados):
 - **Modo:** **Carrera** (por defecto, vos y un auto de cada equipo rival; con la grilla completa, 22 autos; con tabla
   de posiciones y repetición al final) o **Contrarreloj**
   (solo en pista, vueltas sin límite y un **fantasma** semitransparente que repite tu mejor vuelta, para ver
@@ -26,10 +26,10 @@ pantalla para cambiarlo (con ← → o las flechas, y el auto se puede girar arr
 - **Equipo:** Hierrari, Merchoedes, Red Toro, McLarrón, Austin Martini, Allpain, Willyams, Audiós, Haash,
   AlfaTorito o Cadillaque, cada uno con sus colores (carrocería, detalles de la decoración y casco) y sus dos
   pilotos, inventados a partir de la grilla de 2026, con sus números (Jorge Rústico y Kimi Antojo en Merchoedes,
-  Carlos Le Clic y Luis Jamónton en Hierrari, Max Verstapón, Lando Nórdico, Franco Colapuntos…; `src/teams.js`). Como en la F1, la cámara de arriba (la "T") es negra en el primer auto de cada equipo y
+  Carlos Le Clic y Luis Jamónton en Hierrari, Max Verstapón, Lando Nórdico, Franco Colapuntos…; `src/race/teams.js`). Como en la F1, la cámara de arriba (la "T") es negra en el primer auto de cada equipo y
   amarilla en el segundo, como en la grilla de 2026. Al elegir el auto elegís también cuál de los dos pilotos sos. Por
   defecto corrés contra 10 rivales, el primer piloto de cada uno de los otros equipos; con 21, la grilla completa: los
-  dos autos de cada uno de los otros equipos y tu compañero. Los equipos que mejor vienen en el campeonato (`STANDINGS` en `src/teams.js`,
+  dos autos de cada uno de los otros equipos y tu compañero. Los equipos que mejor vienen en el campeonato (`STANDINGS` en `src/race/teams.js`,
   hoy Merchoedes primero) suelen largar adelante (con algo de azar, como en una clasificación) y tienen los mejores
   autos dentro de la dificultad elegida. La tabla muestra la sigla de cada piloto y el resultado, su nombre.
 - **Dificultad:** Fácil, Normal, Difícil o Experto. Con la red entrenada (la de por defecto) cambia el agarre y la
@@ -70,7 +70,7 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
 
 ## Cómo funciona
 
-1. **Trazado → mapa** (`src/track.js`): los circuitos de F1 traen la línea central en metros
+1. **Trazado → mapa** (`src/sim/track.js`): los circuitos de F1 traen la línea central en metros
    (`tracks/<id>.layout.json`, ver "Trazados reales desde la telemetría de F1") y se dibujan en una grilla de
    celdas de 2 m. Un circuito sin telemetría sale de una imagen, que se reduce a una grilla (1 celda = `scale` píxeles):
    los píxeles oscuros son pista, se queda con el trazado más grande (descarta números y textos), tapa huecos
@@ -86,21 +86,21 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
    - los **carteles de frenada** (200, 150, 100 y 50 m): antes de cada curva cerrada (radio < 110 m) que venga
      después de una recta de al menos 250 m, del lado de afuera. Se ajusta con las constantes `BOARD_*`,
    - la **altura**, a partir del perfil de elevación.
-2. **Render Voxel Space** (`src/renderer.js`), la técnica de *Comanche* (1992), primo del raycasting de
+2. **Render Voxel Space** (`src/render/renderer.js`), la técnica de *Comanche* (1992), primo del raycasting de
    *Wolfenstein 3D*: por cada columna se recorre el mapa con un rayo de cerca hacia lejos, se lee la altura del
    terreno y se pinta lo que todavía no estaba tapado. El color de cada punto lo decide una función tipo
    *fragment shader* (asfalto, pianos, pasto, línea a cuadros) con sombreado según la pendiente.
-   Las texturas (asfalto, césped, muros) se generan por código en `src/textures.js`, con *mipmaps* para que no
-   titilen a lo lejos; el césped tiene franjas de corte. La goma sobre el asfalto (`src/rubber.js`) arranca como una
+   Las texturas (asfalto, césped, muros) se generan por código en `src/render/textures.js`, con *mipmaps* para que no
+   titilen a lo lejos; el césped tiene franjas de corte. La goma sobre el asfalto (`src/sim/rubber.js`) arranca como una
    franja tenue sobre la trazada ideal (como si antes hubiera corrido otra categoría) y se va marcando por donde pasan
    las ruedas de cada auto, más en frenadas, curvas y salidas: a las 3 vueltas ya se ve la línea de carrera y a las
    10 está bien negra.
    Los árboles y los carteles son sprites. Los autos (el tuyo, los rivales y el fantasma) son **modelos 3D** de unas mil caras,
-   armados en código con secciones redondeadas, tubos y cilindros (`src/carmodel.js`: trompa, pontones, alerones
+   armados en código con secciones redondeadas, tubos y cilindros (`src/render/carmodel.js`: trompa, pontones, alerones
    de varios elementos, halo, espejos, suspensión, piloto con casco, visera, alerón y collar HANS, y ruedas con llanta de rayos) y dibujados por un rasterizador propio
    dentro del mismo renderer: misma cámara, sombreado plano según el sol, z-buffer entre sus piezas y recorte contra
    el terreno, así las lomas y los muros los tapan. Tienen texturas con corrección de perspectiva: la decoración
-   (`src/livery.js`: franja, número, sponsors, generada por código en un canvas) en la carrocería, fibra de carbono
+   (`src/render/livery.js`: franja, número, sponsors, generada por código en un canvas) en la carrocería, fibra de carbono
    en los alerones, el piso, el halo y la suspensión, y el flanco de las gomas con la franja del compuesto y la marca FIRELLO
    que gira con la rueda. El piloto gira la cabeza: sigue al auto de adelante si está cerca y dentro de ±10° de su
    rumbo; si no, mira el vértice de la próxima curva (el punto más lento de la trazada en los próximos 140 m);
@@ -115,7 +115,7 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
    sobresale, la cara hundida con diez rayos de a pares y el disco de freno ranurado detrás (dibujados en una
    textura que gira con la rueda) y la tuerca central del color de los detalles del equipo. Cada cara toma sus coordenadas de textura proyectándose desde arriba o de costado. La vista de cabina usa el mismo modelo, visto desde los ojos del
    piloto (sin el casco), con el volante dibujado encima. Las cuentas de cámara usan una imagen virtual de 960×540.
-   **Con WebGL** (`src/glrenderer.js`, lo normal): todo se dibuja en la placa de video, a la resolución de la
+   **Con WebGL** (`src/render/glrenderer.js`, lo normal): todo se dibuja en la placa de video, a la resolución de la
    pantalla (hasta 1440×810). El terreno es un *shader* que corre una vez por píxel: arma el rayo de la cámara,
    avanza sobre el mapa de alturas (un paso de unos píxeles, que cerca de los muros se achica según la distancia al
    borde, así no los saltea) y afina dónde choca; el color del piso es el mismo "shader" de `renderer.js` en GLSL.
@@ -125,20 +125,20 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
    costado que de frente, con normales suavizadas para que el reflejo corra parejo, y un brillo donde rebota el sol.
    El volante y el semáforo van en un canvas 2D encima.
    **Sin WebGL** (o agregando `?cpu` a la dirección) se usa el renderer de procesador: el cielo y el terreno se
-   reparten entre varios **Web Workers** (uno por núcleo, hasta 6; `src/terrainworker.js`), cada uno dibuja una
+   reparten entre varios **Web Workers** (uno por núcleo, hasta 6; `src/render/terrainworker.js`), cada uno dibuja una
    franja de columnas y el hilo principal arma la imagen y dibuja encima los sprites y los autos. Las ruedas giran,
    las delanteras doblan lo que hace falta para el giro del auto (mucho despacio, apenas a fondo), todo el auto sigue la pendiente y la carrocería (no las ruedas, que quedan apoyadas) se mueve sobre la
    suspensión: se inclina hacia afuera en las curvas según la aceleración de costado (hasta 1,5°) y baja la trompa
    al frenar (hasta 1,1°), con un resorte amortiguado; desde la cabina, el cabeceo mueve la vista, y el auto
    proyecta su sombra sobre el piso.
-3. **Escala y física** (`src/car.js`): cada circuito tiene una escala real en metros por celda, calculada con el
+3. **Escala y física** (`src/sim/car.js`): cada circuito tiene una escala real en metros por celda, calculada con el
    largo real de la vuelta (de la telemetría, o `lengthMeters`). Lo que puede hacer el auto sale de un **modelo
-   físico calibrado con vueltas reales** (`src/dynamics.js`, ver abajo): carga y resistencia aerodinámicas que
+   físico calibrado con vueltas reales** (`src/sim/dynamics.js`, ver abajo): carga y resistencia aerodinámicas que
    crecen con v² y con la densidad del aire (la altura del circuito), dos alerones y un balance mecánico que elige
    cada uno (**puesta a punto**), agarre por eje según la carga, potencia y tracción; y una caja de 8 marchas con
    RPM, corte y luces de cambio.
    **Superficie por rueda**: cada rueda mira qué pisa (asfalto, piano, pasto, leca o escapatoria asfaltada;
-   `SURFACES` en `src/car.js` y `surfaceAt` en `src/track.js`). Cada eje agarra según sus dos ruedas (una trasera
+   `SURFACES` en `src/sim/car.js` y `surfaceAt` en `src/sim/track.js`). Cada eje agarra según sus dos ruedas (una trasera
    en el pasto suelta la cola, una delantera quita dirección), cada rueda en el pasto frena y, si frena más de un
    lado, el auto tira para ese lado; con las dos traseras en el pasto el motor no empuja más de ~90 km/h. La leca
    frena más y casi no deja doblar; la escapatoria asfaltada agarra casi como la pista. Para el entrenamiento, las
@@ -190,10 +190,10 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
    medido; lo que cambia es frenar fuerte doblando (la cola se pone liviana), soltar el freno de a poco al entrar
    (la trompa muerde y el auto rota) y pisar a fondo en una curva lenta (la cola se abre). El traslado de peso de
    costado también resta agarre, pero eso ya está dentro del agarre lateral medido.
-4. **Choques** (`src/collision.js`): con impulsos, como un motor de física 2D. Además de la velocidad de marcha,
+4. **Choques** (`src/sim/collision.js`): con impulsos, como un motor de física 2D. Además de la velocidad de marcha,
    cada auto tiene una velocidad de costado y un giro que le dejan los golpes, y que las gomas van frenando (más
    rápido cuanto más agarre). Entre autos, cada uno es un juego de piezas de 5,6 × 2 m en total (alerón
-   delantero, trompa, las cuatro ruedas asomadas, pontones, caja y alerón trasero; `ZONES` en `src/damage.js`): se
+   delantero, trompa, las cuatro ruedas asomadas, pontones, caja y alerón trasero; `ZONES` en `src/sim/damage.js`): se
    detecta el choque pieza contra pieza con el test de ejes separadores, el punto de contacto es el promedio de las
    esquinas que quedaron dentro de la otra pieza, y el impulso depende de con qué velocidad se acercan ahí (con un
    poco de rebote y rozamiento). **Rueda contra rueda** es distinto: la goma agarra mucho más y la parte que se
@@ -202,7 +202,7 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
    a alguien, sale empujado; si el golpe es desplazado del centro, los autos giran, y uno fuerte te hace trompear.
    Contra los muros, el auto son tres círculos a lo largo: un roce en ángulo casi no frena y lo endereza contra el
    muro; de frente, frena y rebota. Apoyados sin acercarse, se deslizan sin frenarse.
-5. **Daños** (`src/damage.js`, en el menú: no, reducidos o reales): cada golpe rompe la pieza donde pega según qué
+5. **Daños** (`src/sim/damage.js`, en el menú: no, reducidos o reales): cada golpe rompe la pieza donde pega según qué
    tan fuerte es (desde unos m/s de cambio de velocidad en el punto de contacto; los golpes se suman), con su lado
    (izquierda o derecha) para cuando haya que dibujarlos:
    - **alerón delantero:** los flaps primero, después entero. Se pierde su apoyo: en curva lenta casi no se nota y
@@ -228,7 +228,7 @@ Las teclas se reconocen por la letra y por su posición, así funcionan con cual
 
 ## Sonido
 
-Los motores se sintetizan con Web Audio, sin archivos de sonido (`src/audio.js`). Un V6 de 4 tiempos hace 3
+Los motores se sintetizan con Web Audio, sin archivos de sonido (`src/audio/audio.js`). Un V6 de 4 tiempos hace 3
 explosiones por vuelta, así que el tono es rpm / 20 Hz (200 Hz en ralentí, 600 Hz a 12.000 rpm). Cada motor mezcla:
 ese tono con muchos armónicos, el giro del cigüeñal (un tercio) y medio tono (ninguna explosión es igual a otra),
 ruido que late al ritmo de las explosiones (la aspereza del escape), un temblor mínimo del tono y el soplido del
@@ -242,7 +242,7 @@ desde la cámara: más bajo cuanto más lejos, a la izquierda o a la derecha seg
 detrás y con efecto Doppler. En la repetición suenan igual, desde la cámara que se esté viendo. **N** silencia.
 
 En el menú suena **"Gran Premio"**, un tema original de estilo cinematográfico, también sintetizado
-(`src/music.js`): Re menor, 140 bpm, 16 compases. Arranca con una introducción de cuerdas en ostinato "al galope",
+(`src/audio/music.js`): Re menor, 140 bpm, 16 compases. Arranca con una introducción de cuerdas en ostinato "al galope",
 timbales y un coro que crece; sigue el tema, con la melodía en los metales, taikos y platillo; y cierra con golpes
 de metales y un redoblante que crece hasta volver a empezar. Todo pasa por una reverberación de sala. Las notas se programan con el reloj del audio un poquito antes de que suenen,
 así no se atrasan aunque el juego esté ocupado. Se apaga de a poco al largar y vuelve al volver al menú.
@@ -250,7 +250,7 @@ así no se atrasan aunque el juego esté ocupado. Se apaga de a poco al largar y
 ## Repetición
 
 Durante la carrera se graba la posición, el rumbo, el volante y la velocidad de todos los autos 30 veces por
-segundo (`src/replay.js`). Al terminar, después del resultado, se reproduce en loop interpolando entre muestras,
+segundo (`src/ui/replay.js`). Al terminar, después del resultado, se reproduce en loop interpolando entre muestras,
 con varias cámaras:
 - **TV:** fijas al costado de la pista, en altura, cada ~230 m; sigue la más cercana al auto, con zoom según la
   distancia (el renderer acepta un zoom: achica el campo de visión, como un teleobjetivo).
@@ -262,7 +262,7 @@ Controles: **C** cambia la cámara, **←/→** (o J/L) el auto que se sigue, **
 ## Rivales
 
 Los rivales manejan con la red entrenada por refuerzo (ver "IA por refuerzo"). La IA de siempre, que sigue
-disponible con `?ia=clasica`, se describe acá: cada rival (`src/ai.js`) es un auto con la misma física que el tuyo, manejado por un piloto automático:
+disponible con `?ia=clasica`, se describe acá: cada rival (`src/drivers/ai.js`) es un auto con la misma física que el tuyo, manejado por un piloto automático:
 - **Volante:** persigue un punto de la trazada ideal unos metros más adelante (*pure pursuit*) y gira lo
   justo para llegar, dentro de lo que permite el agarre.
 - **Pedales:** acelera o frena para ir a la velocidad que la trazada indica en ese punto, multiplicada por su
@@ -283,7 +283,7 @@ Una red neuronal aprende a manejar sola, con la misma física del juego, por eta
    rivales con la IA de siempre a ritmos variados; largan en grilla, en fila o repartidos por la pista. Además de
    los metros, se castigan los toques entre autos (mucho más al que le pega al de adelante).
 
-**Qué ve** (`src/sensors.js`, 98 números; las redes entrenadas antes del agarre por rueda usan los primeros 94): su auto (velocidad, deslizamiento, giro, volante, pedales, marcha,
+**Qué ve** (`src/drivers/sensors.js`, 98 números; las redes entrenadas antes del agarre por rueda usan los primeros 94): su auto (velocidad, deslizamiento, giro, volante, pedales, marcha,
 rpm, agarre de cada eje, rebufo, cuánto mejor o peor es que el promedio y el desgaste de las gomas), su posición en la pista, cuánto dobla la pista a 20, 40… 450 m (lo que un piloto
 sabe de memoria), 19 rayos que miden la distancia al borde de la pista de -90° a +90°, y los 6 rivales más
 cercanos (posición, velocidad relativa y hacia dónde apuntan; en la etapa 1 quedan en cero) y el agarre de cada
@@ -307,8 +307,8 @@ python3 -m venv rl/.venv && rl/.venv/bin/pip install torch stable-baselines3 gym
 3. Exportar la red a JSON: `rl/.venv/bin/python rl/export.py rl/runs/etapa1/model.zip models/etapa1.json`.
 4. Medirla contra la IA de siempre: `node rl/eval.js models/etapa1.json`.
 5. Verla en el juego: `http://localhost:8123/?ia=models/etapa1.json` (los rivales manejan con esa red). Sin `?ia`
-   manejan con la red del juego (`GAME_NET` en `src/policy.js`); con `?ia=clasica`,
-   con la IA de siempre (`src/ai.js`), que es también la que queda si la red no carga.
+   manejan con la red del juego (`GAME_NET` en `src/drivers/policy.js`); con `?ia=clasica`,
+   con la IA de siempre (`src/drivers/ai.js`), que es también la que queda si la red no carga.
 
 Para que el entrenamiento no se desarme (PPO es inestable), la tasa de aprendizaje baja de a poco hasta 0, cada
 actualización usa 32.768 pasos y las recompensas se normalizan; conviene igual medir los puntos de control con
@@ -349,23 +349,23 @@ Para volver a entrenarla desde cero: `NOMBRE=v6 sh rl/curriculum.sh` (~3 h). Det
 mal en el camino: `rl/CURRICULO.md`.
 
 Después vino el entrenamiento en manada (22 autos con la red, desde la v8; receta en `rl/curriculum.sh`).
-La red del juego hoy es la que diga `GAME_NET` en `src/policy.js`. En `models/` queda sólo esa: las redes de las
+La red del juego hoy es la que diga `GAME_NET` en `src/drivers/policy.js`. En `models/` queda sólo esa: las redes de las
 etapas y de los intentos anteriores (`models/etapa1.json`, `models/fase1.json` a `fase7.json`, `models/v3/` a
 `models/v21/`) están en el historial de git, en el commit e9ff553.
 
 ## Trazada ideal
 
-`src/racingline.js` calcula, al cargar el circuito, la trazada curva por curva como la hacen los pilotos: se llega
+`src/sim/racingline.js` calcula, al cargar el circuito, la trazada curva por curva como la hacen los pilotos: se llega
 por el lado de afuera, se toca el vértice (el punto más cerrado) del lado de adentro y se sale abriendo de nuevo
 (en las eses, de vértice a vértice), con un suavizado final que saca los zigzags. Después calcula la velocidad
-máxima en cada punto con los límites del auto (`src/lapsim.js`): lo que aguanta el agarre en la curva, cuánto hay que frenar antes y cuánto acelera el motor después.
+máxima en cada punto con los límites del auto (`src/sim/lapsim.js`): lo que aguanta el agarre en la curva, cuánto hay que frenar antes y cuánto acelera el motor después.
 En el juego es una cinta semitransparente que flota un poco sobre el asfalto, con los bordes difusos (sin WebGL,
 se pinta sobre el piso), y cambia de color según tu velocidad: **verde** se puede acelerar,
 **amarillo** mantener o levantar, **rojo** hay que frenar. **G** la muestra u oculta.
 
 ## Física calibrada con vueltas reales
 
-`src/dynamics.js` es un modelo chico, el de un simulador de vuelta:
+`src/sim/dynamics.js` es un modelo chico, el de un simulador de vuelta:
 
 - **Aerodinámica:** carga y resistencia = ½·ρ·C·v². Con los alerones al mínimo el auto tiene la carga del piso y
   la carrocería (`clMin`) y con los dos al máximo, ~45 % más (`clMax`). Cada alerón cobra en resistencia su carga

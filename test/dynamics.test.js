@@ -2,8 +2,16 @@
 // siguen valiendo después de recalibrar el auto.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { applyHit, NO_DAMAGE } from '../src/damage.js';
-import { airDensity, brakeBias, carLimits, DEFAULT_TUNE, SEA_AIR, tyreCurve, weightShift } from '../src/dynamics.js';
+import { applyHit, NO_DAMAGE } from '../src/sim/damage.js';
+import {
+  airDensity,
+  brakeBias,
+  carLimits,
+  DEFAULT_TUNE,
+  SEA_AIR,
+  tyreCurve,
+  weightShift,
+} from '../src/sim/dynamics.js';
 import { kmh, PROFILE } from './helpers.js';
 
 const base = carLimits(PROFILE);

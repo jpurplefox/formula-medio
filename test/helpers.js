@@ -1,8 +1,8 @@
 // Lo que comparten los tests: el auto de verdad (cars/f1-2025.json), un circuito armado en Node como en el juego y
 // un auto puesto en la grilla para manejarlo.
 import { readFileSync } from 'node:fs';
-import { gridSlots } from '../src/ai.js';
-import { Car } from '../src/car.js';
+import { gridSlots } from '../src/race/grid.js';
+import { Car } from '../src/sim/car.js';
 import { loadTrack } from '../rl/tracks.js';
 
 export const PROFILE = JSON.parse(readFileSync(new URL('../cars/f1-2025.json', import.meta.url), 'utf8'));

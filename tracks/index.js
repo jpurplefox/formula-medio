@@ -3,7 +3,7 @@
 //   layout     → trazado generado con tools/layout.py
 //   circuit    → nombre corto del circuito en OpenF1 (tools/layout.py, tools/lapcompare.js)
 //   altitude   → metros sobre el nivel del mar: más arriba el aire es menos denso (menos apoyo y menos resistencia)
-//   tune       → puesta a punto por defecto (src/dynamics.js): alerones de 1 a 10 y balance mecánico de -5 a 5,
+//   tune       → puesta a punto por defecto (src/sim/dynamics.js): alerones de 1 a 10 y balance mecánico de -5 a 5,
 //                como la llevan los equipos ahí (poco alerón donde importa la recta, mucho donde hay curvas)
 //   rotate     → (opcional) grados para girar el trazado (la telemetría viene en otra orientación que los dibujos)
 //   widthMeters → ancho de la pista en metros
@@ -15,7 +15,7 @@
 //                material 'grass', 'gravel' (leca) o 'asphalt'
 //   kerb       → (opcional) colores [r, g, b] de las franjas de los pianos, que se repiten en orden (hasta 4);
 //                si no, blanco y rojo
-//   kerbStyle  → (opcional) cómo son los pianos (KERB_STYLE de src/track.js): stripe (largo de cada franja, celdas),
+//   kerbStyle  → (opcional) cómo son los pianos (KERB_STYLE de src/sim/track.js): stripe (largo de cada franja, celdas),
 //                width (ancho del piano, celdas), line (línea blanca entre la pista y el piano), green (ancho de la
 //                franja verde abrasiva detrás del piano, 0 = sin verde), sausage (salchichas en las curvas más cerradas)
 // Un circuito propio (o uno sin telemetría) sale de una imagen; las coordenadas (start, towards) están en píxeles

@@ -17,9 +17,9 @@ import {
   kerbAmount,
   runoffAt,
   sampleField,
-} from './track.js';
+} from '../sim/track.js';
 import { asphaltTexture, grassTexture, gravelTexture, macroNoise, sample, wallTexture } from './textures.js';
-import { RUBBER_DARK, RubberMap } from './rubber.js';
+import { RUBBER_DARK, RubberMap } from '../sim/rubber.js';
 
 export const MAX_DIST = 140;
 export const FOG_START = 25;
@@ -933,7 +933,7 @@ function scan(pts, w, h, plot) {
   }
 }
 
-// Reparte el cielo y el terreno entre varios workers (src/terrainworker.js): cada uno dibuja una franja de
+// Reparte el cielo y el terreno entre varios workers (src/render/terrainworker.js): cada uno dibuja una franja de
 // columnas de la pantalla en su propio núcleo y devuelve sus píxeles y sus marcas de profundidad.
 // Si algo falla (el navegador no tiene workers de módulos, por ejemplo), se vuelve a dibujar todo acá.
 class TerrainPool {

@@ -1,4 +1,4 @@
-"""Exporta la red de un modelo entrenado a JSON, para correrla en JavaScript (src/policy.js).
+"""Exporta la red de un modelo entrenado a JSON, para correrla en JavaScript (src/drivers/policy.js).
 
     rl/.venv/bin/python rl/export.py rl/runs/etapa1/model.zip models/etapa1.json
     rl/.venv/bin/python rl/export.py rl/runs/etapa2/model.zip models/etapa2.json rivales
