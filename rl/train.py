@@ -419,7 +419,7 @@ def main():
     p.add_argument("--contact-keep", action="store_true",
                    help="el castigo por toque no baja de con el que arranca la fase (ver ContactBudget)")
     p.add_argument("--rivals-boost", type=float, default=0,
-                   help="rivales más rápidos: esta fracción más de agarre y potencia (p. ej. 0.08), y la IA de siempre a más ritmo")
+                   help="rivales más rápidos: esta fracción más de agarre y potencia (p. ej. 0.08), y la IA clásica a más ritmo")
     p.add_argument("--damage", default="off", choices=["off", "reduced", "real", "mix"],
                    help="daños en las carreras (src/sim/damage.js); mix: cada escenario con uno de los tres al azar")
     p.add_argument("--damaged-starts", type=float, default=0,

@@ -1,5 +1,5 @@
 // Mide una red exportada (rl/export.py): larga desde la grilla de cada circuito y da 3 vueltas, como en una
-// contrarreloj. Para comparar, también corre la IA de siempre (ai.js) con el ritmo de Difícil más rápido.
+// contrarreloj. Para comparar, también corre la IA clásica (ai.js) con el ritmo de Difícil más rápido.
 //
 //   node rl/eval.js models/v22/fase18.json [circuitos separados por coma]
 

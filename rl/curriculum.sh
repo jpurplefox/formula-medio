@@ -27,7 +27,7 @@
 #   NOMBRE=v9 sh rl/curriculum.sh           (carpeta de los modelos y prefijo de rl/runs; por defecto "nueva")
 #
 # Hace falta rl/.venv (docs/ia.md, "Cómo se entrena"); los circuitos de F1 salen de tracks/*.layout.json. El currículo
-# anterior, con rivales de la IA de siempre (rl/race.js), está en el historial de git (commit 47f1b3f).
+# anterior, con rivales de la IA clásica (rl/race.js), está en el historial de git (commit 47f1b3f).
 set -e
 cd "$(dirname "$0")/.."
 PY=rl/.venv/bin/python

@@ -213,7 +213,7 @@ let game = null;
 let lastGame = null; // la última carrera, para conservar el mejor tiempo y el fantasma al volver del menú
 let carProfile = DEFAULT_PROFILE;
 // Los rivales manejan con la red del juego (GAME_NET en policy.js); con ?ia=models/otra.json, con otra, y con
-// ?ia=clasica, con la IA de siempre (ai.js), que es también la que queda si la red no carga
+// ?ia=clasica, con la IA clásica (ai.js), que es también la que queda si la red no carga
 const IA_PARAM = new URLSearchParams(location.search).get('ia') || GAME_NET;
 const NEURAL_URL = IA_PARAM === 'clasica' ? null : IA_PARAM;
 let neuralPolicy = null;

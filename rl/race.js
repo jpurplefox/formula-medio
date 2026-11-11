@@ -1,5 +1,5 @@
 // Fases 2 a 4: carreras con varios autos. Algunos autos aprenden (los "agentes", todos con la misma red: compite
-// contra sí misma) y los demás son rivales que no aprenden: la IA de siempre (ai.js) con ritmos distintos o redes
+// contra sí misma) y los demás son rivales que no aprenden: la IA clásica (ai.js) con ritmos distintos o redes
 // ya entrenadas (versiones anteriores).
 //
 // Cada carrera es un escenario (rl/CURRICULO.md), elegido al azar según la mezcla de la fase:
@@ -209,7 +209,7 @@ export class RaceSim {
     this.tuneSpread = tuneSpread;
     this.damage = damage;
     this.damagedStarts = damagedStarts;
-    // boost: los rivales con esa fracción más de agarre y potencia, y la IA de siempre a más ritmo (de 1 a 1,1):
+    // boost: los rivales con esa fracción más de agarre y potencia, y la IA clásica a más ritmo (de 1 a 1,1):
     // para seguir mejorando el ritmo detrás de autos más rápidos que uno mismo
     this.boost = boost;
     this.rewards = { progress: 1, pass: 1, paceFloor: 0, paceAlways: 0, paceCrowd: 0, crowd: 1, launch: 0, ...rewards };
@@ -255,7 +255,7 @@ export class RaceSim {
     return v[Math.floor(mod(u, this.track.length)) % v.length];
   }
 
-  // rival de la IA de siempre (pace: fracción de la trazada ideal) o, a veces, una red ya entrenada
+  // rival de la IA clásica (pace: fracción de la trazada ideal) o, a veces, una red ya entrenada
   bot(k, pace = this.boost ? 1 + 0.1 * this.rand() : 0.9 + 0.18 * this.rand(), neural = 0) {
     if (this.opponents.length && this.rand() < neural)
       return new NeuralDriver(this.opponents[Math.floor(this.rand() * this.opponents.length)]);
@@ -406,7 +406,7 @@ export class RaceSim {
       };
       if (s.kind === 'bot') {
         e.driver = s.driver;
-        // la IA de siempre no sabe de su auto: con menos agarre, menos ritmo (la velocidad en curva va con su raíz)
+        // la IA clásica no sabe de su auto: con menos agarre, menos ritmo (la velocidad en curva va con su raíz)
         if (e.driver.pace) e.driver.pace *= Math.sqrt(Math.min(1, car.setup.grip));
       } else {
         this.newEpisode(e);

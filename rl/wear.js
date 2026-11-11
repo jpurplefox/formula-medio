@@ -1,4 +1,4 @@
-// Calibra el desgaste de las gomas (WEAR_USE en src/sim/car.js): la IA de siempre da una vuelta en cada circuito
+// Calibra el desgaste de las gomas (WEAR_USE en src/sim/car.js): la IA clásica da una vuelta en cada circuito
 // con wearRate = 1 / largo de la vuelta; si la calibración está bien, termina cada vuelta con desgaste ≈ 1.
 //
 //   node rl/wear.js

@@ -1,7 +1,7 @@
 // Prueba de manejo sin pantalla, para ajustar la física de las gomas (car.js):
 //   skidpad  en un círculo de radio fijo, sobre asfalto plano, el volante a fondo y la velocidad justa: cuánto dobla
 //            el auto (aceleración lateral) comparado con lo que dice dynamics.js (lim.lateral). Tiene que dar ~1.
-//   vueltas  la IA de siempre (ai.js) solo en cada circuito, 3 vueltas: mejor vuelta, tiempo en el pasto, golpes y
+//   vueltas  la IA clásica (ai.js) solo en cada circuito, 3 vueltas: mejor vuelta, tiempo en el pasto, golpes y
 //            trompos (giro de más de 90° entre la trompa y para dónde va).
 //
 //   node tools/handling.js [circuitos separados por coma | skidpad [volante 0..1]]

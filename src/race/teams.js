@@ -144,9 +144,9 @@ export const TEAMS = [
 // Con la red entrenada (rl/) el ritmo no se elige: lo da el auto. setups: agarre y potencia del más rápido y del más
 // lento (1 = el tuyo). La red (v5) se entrenó con autos de 0,85 a 1,2; un poco más abajo sigue sin pisar el pasto.
 // Medido con JUEGO=1 DIFICULTAD=… node rl/race_eval.js: el ganador tarda 260 s (Fácil), 251 s (Normal), 243 s
-// (Difícil) y 237 s (Experto), y un jugador al ritmo más rápido de la IA de siempre en esa dificultad termina
+// (Difícil) y 237 s (Experto), y un jugador al ritmo más rápido de la IA clásica en esa dificultad termina
 // 5.º, 4.º, 6.º y 9.º.
-// Con la IA de siempre, en Interlagos: vueltas de ~75 a 80 s (Fácil), ~71,5 a 74 s (Normal), ~69,5 a 72 s (Difícil)
+// Con la IA clásica, en Interlagos: vueltas de ~75 a 80 s (Fácil), ~71,5 a 74 s (Normal), ~69,5 a 72 s (Difícil)
 // y ~69 a 70 s (Experto).
 export const DIFFICULTIES = [
   { id: 'facil', name: 'Fácil', paces: [0.93, 0.87], setups: [0.83, 0.78] },
@@ -167,7 +167,7 @@ export const rivalSetups = (difficulty, count) =>
 export const LAP_OPTIONS = [1, 3, 5, 10];
 
 // Cómo viene el campeonato, del mejor equipo al peor (actualizarlo a medida que avanza la temporada). Los rivales
-// van en este orden: los de los mejores equipos largan adelante y reciben el ritmo (IA de siempre) o el agarre y la
+// van en este orden: los de los mejores equipos largan adelante y reciben el ritmo (IA clásica) o el agarre y la
 // potencia (red) más altos de la dificultad elegida.
 const STANDINGS = [
   'merchoedes',

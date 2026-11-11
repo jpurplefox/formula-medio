@@ -1,4 +1,4 @@
-// Mide una red en carrera: 22 autos desde la grilla, la mitad con la red y la mitad con la IA de siempre
+// Mide una red en carrera: 22 autos desde la grilla, la mitad con la red y la mitad con la IA clásica
 // (ritmos de Difícil), intercalados. Cuando el primero completa las vueltas se ordenan por distancia recorrida.
 //
 //   node rl/race_eval.js models/v22/fase18.json [circuitos separados por coma] [vueltas]
@@ -9,7 +9,7 @@
 // en el pasto (con dos ruedas o más; aparte, con una sola rueda afuera). Para ver cómo larga: cuánto más lenta que su
 // mejor vuelta es la primera de cada auto de la red (desde que cruza la línea; en fila india se pierden segundos).
 //
-// Con JUEGO=1 es la carrera del juego: todos los autos con la red salvo uno, la IA de siempre al ritmo más alto de
+// Con JUEGO=1 es la carrera del juego: todos los autos con la red salvo uno, la IA clásica al ritmo más alto de
 // Difícil, que hace de jugador (largando del medio). Informa toques por auto de la red, cuántos provocó, pasto y en
 // cuánto tiempo terminó el primero las vueltas (el ritmo). Con DIFICULTAD (facil, normal, dificil, experto) las redes
 // llevan el agarre y la potencia de esa dificultad en el juego (src/race/teams.js) y el jugador, su ritmo más alto.

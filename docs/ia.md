@@ -1,8 +1,8 @@
 # Los rivales
 
 Los rivales manejan con una red neuronal entrenada por refuerzo, la que diga `GAME_NET` en `src/drivers/policy.js`.
-Con `?ia=clasica` en la dirección manejan con la IA de siempre, que es también la que queda si la red no carga.
-Las dos usan la trazada ideal.
+La IA clásica (más abajo) es el piloto escrito a mano de antes de la red: queda sólo si la red no carga o con
+`?ia=clasica`, y como referencia para entrenar y medir. Las dos usan la trazada ideal.
 
 ## La trazada ideal
 
@@ -12,30 +12,13 @@ nuevo (en las eses, de vértice a vértice), con un suavizado final que saca los
 máxima en cada punto con los límites del auto (`src/sim/lapsim.js`): lo que aguanta el agarre en la curva, cuánto
 hay que frenar antes y cuánto acelera el motor después. Cómo se ve en el juego: [render.md](render.md#la-trazada-ideal).
 
-## La IA de siempre
-
-Cada rival (`src/drivers/ai.js`) es un auto con la misma física que el tuyo, manejado por un piloto automático:
-
-- **Volante:** persigue un punto de la trazada ideal unos metros más adelante (*pure pursuit*) y gira lo justo para
-  llegar, dentro de lo que permite el agarre.
-- **Pedales:** acelera o frena para ir a la velocidad que la trazada indica en ese punto, multiplicada por su ritmo
-  (`pace`, según la dificultad: `DIFFICULTIES` en `src/race/teams.js`; en Interlagos, de vueltas de ~75–80 s en
-  Fácil a ~69–70 s en Experto), con pequeñas variaciones de ritmo y de línea. Su trazada es la misma que ves, pero
-  frenando más al límite (93 % en vez de 85 %), y en las curvas lentas no pasan de 0,975 de esa velocidad, porque
-  más rápido se abren y salen.
-- **Tráfico:** si alcanza a otro auto, se abre hacia el lado donde ya está (o donde hay más lugar) para pasarlo; a
-  la par, cada uno se queda de su lado (y si no entran los dos, el que va un poco atrás levanta); si no hay lugar
-  para pasar, se queda detrás guardando distancia.
-- **A la par:** si el otro le lleva más de media trompa y no lo está pasando, cede y se ubica detrás.
-- Si un rival se queda trabado, vuelve a la pista sobre la trazada.
-
-## La IA entrenada con aprendizaje por refuerzo (`rl/`)
+## La red, entrenada con aprendizaje por refuerzo (`rl/`)
 
 Una red neuronal aprende a manejar sola, con la misma física del juego, por etapas:
 
 1. **Sola en pista** (contrarreloj): aprende a dar la vuelta lo más rápido posible en los 8 circuitos.
 2. **Contra otros autos** (`rl/race.js`): carreras de 4 autos que aprenden (la misma red, contra sí misma) y de 0 a
-   6 rivales con la IA de siempre a ritmos variados; largan en grilla, en fila o repartidos por la pista. Además de
+   6 rivales con la IA clásica a ritmos variados; largan en grilla, en fila o repartidos por la pista. Además de
    los metros, se castigan los toques entre autos (mucho más al que le pega al de adelante).
 
 **Qué ve** (`src/drivers/sensors.js`, 98 números; las redes entrenadas antes del agarre por rueda usan los primeros
@@ -65,7 +48,7 @@ python3 -m venv rl/.venv && rl/.venv/bin/pip install torch stable-baselines3 gym
 2. Entrenar: `rl/.venv/bin/python rl/train.py --steps 30000000 --name etapa1` (las curvas, con
    `rl/.venv/bin/tensorboard --logdir rl/runs`).
 3. Exportar la red a JSON: `rl/.venv/bin/python rl/export.py rl/runs/etapa1/model.zip models/etapa1.json`.
-4. Medirla contra la IA de siempre: `node rl/eval.js models/etapa1.json`.
+4. Medirla contra la IA clásica: `node rl/eval.js models/etapa1.json`.
 5. Verla en el juego: `http://localhost:8123/?ia=models/etapa1.json` (los rivales manejan con esa red).
 
 Para que el entrenamiento no se desarme (PPO es inestable), la tasa de aprendizaje baja de a poco hasta 0, cada
@@ -74,12 +57,12 @@ actualización usa 32.768 pasos y las recompensas se normalizan; conviene igual 
 y con ruedas afuera, para que aprenda también a largar y a volver a la pista.
 
 Para medir en carrera: `node rl/race_eval.js models/v22/fase18.json` (22 autos, la mitad con la red y la mitad con
-la IA de siempre; con `CARS=8` delante, 8 autos): posición media, toques y pasto.
+la IA clásica; con `CARS=8` delante, 8 autos): posición media, toques y pasto.
 
 ### Historia
 
 **Etapa 1** (`models/etapa1.json`, 60 millones de pasos, ~35 minutos): completa las vueltas en los 8 circuitos, en
-promedio un 7 % más rápido que la IA de siempre a su mejor ritmo (de 1 % en Monza a 15 % en el Red Bull Ring; en
+promedio un 7 % más rápido que la IA clásica a su mejor ritmo (de 1 % en Monza a 15 % en el Red Bull Ring; en
 Interlagos, 66,2 s contra 70,4 s).
 
 **Etapa 2** (`models/etapa2.json`, 35 millones de pasos más):
@@ -116,3 +99,23 @@ Después vino el entrenamiento en manada (22 autos con la red, desde la v8; rece
 `models/` queda sólo esa: las redes de las etapas y de los intentos anteriores (`models/etapa1.json`,
 `models/fase1.json` a `fase7.json`, `models/v3/` a `models/v21/`) están en el historial de git, en el commit
 e9ff553.
+
+## La IA clásica
+
+Es el piloto automático escrito a mano que manejaba a los rivales antes de la red. Hoy queda para cuando la red no
+carga (o con `?ia=clasica`), y como vara: los entrenamientos y las mediciones de `rl/` la usan de rival o de
+referencia (cuando dicen "contra la IA clásica"). Cada rival (`src/drivers/ai.js`) es un auto con la misma física que
+el tuyo:
+
+- **Volante:** persigue un punto de la trazada ideal unos metros más adelante (*pure pursuit*) y gira lo justo para
+  llegar, dentro de lo que permite el agarre.
+- **Pedales:** acelera o frena para ir a la velocidad que la trazada indica en ese punto, multiplicada por su ritmo
+  (`pace`, según la dificultad: `DIFFICULTIES` en `src/race/teams.js`; en Interlagos, de vueltas de ~75–80 s en
+  Fácil a ~69–70 s en Experto), con pequeñas variaciones de ritmo y de línea. Su trazada es la misma que ves, pero
+  frenando más al límite (93 % en vez de 85 %), y en las curvas lentas no pasan de 0,975 de esa velocidad, porque
+  más rápido se abren y salen.
+- **Tráfico:** si alcanza a otro auto, se abre hacia el lado donde ya está (o donde hay más lugar) para pasarlo; a
+  la par, cada uno se queda de su lado (y si no entran los dos, el que va un poco atrás levanta); si no hay lugar
+  para pasar, se queda detrás guardando distancia.
+- **A la par:** si el otro le lleva más de media trompa y no lo está pasando, cede y se ubica detrás.
+- Si un rival se queda trabado, vuelve a la pista sobre la trazada.

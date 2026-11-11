@@ -38,7 +38,7 @@ vuelven a la principal.
   muestra la sigla de cada piloto y el resultado, su nombre.
 - **Dificultad:** Fácil, Normal, Difícil o Experto. Con la red entrenada (la de por defecto) cambia el agarre y la
   potencia de los rivales: en Fácil, de 0,9 veces los tuyos (el mejor equipo) a 0,85 (el peor); en Experto, de
-  1,1 a 1,06. Con la IA de siempre, su ritmo (en Interlagos, de vueltas de ~75–80 s en Fácil a ~69–70 s en
+  1,1 a 1,06. Con la IA clásica, su ritmo (en Interlagos, de vueltas de ~75–80 s en Fácil a ~69–70 s en
   Experto).
 - **Circuito:** Interlagos, Monza, Albert Park, Barcelona, Montreal, Spa, Silverstone o Red Bull Ring, todos con
   alturas reales; y **vueltas** (1, 3, 5 o 10).
@@ -94,9 +94,9 @@ Cada carrera larga con la cámara que elegiste en Opciones (cabina si no elegist
 de color según tu velocidad: **verde** se puede acelerar, **amarillo** mantener o levantar, **rojo** hay que
 frenar.
 
-En la dirección: `?ia=clasica` hace manejar a los rivales con la IA de siempre, `?ia=models/….json` con otra red,
-`?cpu` dibuja sin WebGL y `?prueba` habilita teclas para romper piezas del auto (ver
-[docs/fisica.md](docs/fisica.md#daños)).
+En la dirección: `?ia=clasica` hace manejar a los rivales con la IA clásica (el piloto escrito a mano de antes de
+la red), `?ia=models/….json` con otra red, `?cpu` dibuja sin WebGL y `?prueba` habilita teclas para romper piezas del
+auto (ver [docs/fisica.md](docs/fisica.md#daños)).
 
 ## Cómo funciona
 
@@ -104,8 +104,8 @@ En la dirección: `?ia=clasica` hace manejar a los rivales con la IA de siempre,
   agregar un circuito.
 - [docs/fisica.md](docs/fisica.md): el modelo del auto (aerodinámica, gomas, balance, bloqueos, temperatura),
   estela, choques, daños, puesta a punto y la calibración con vueltas reales.
-- [docs/ia.md](docs/ia.md): la trazada ideal, la IA de siempre y la red entrenada por refuerzo (cómo se entrena y
-  su historia).
+- [docs/ia.md](docs/ia.md): la trazada ideal, la red entrenada por refuerzo que maneja a los rivales (cómo se
+  entrena y su historia) y la IA clásica, el piloto escrito a mano de antes.
 - [docs/render.md](docs/render.md): Voxel Space, los modelos 3D de los autos, WebGL y procesador, y la repetición.
 - [docs/sonido.md](docs/sonido.md): los motores y la música, sintetizados.
 
