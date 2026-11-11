@@ -202,6 +202,8 @@ export function rivalCars(team, count = Infinity, slot = 0) {
   return Array.from({ length: count }, (_, i) => all[count > 1 ? Math.round((i * (all.length - 1)) / (count - 1)) : 0]);
 }
 
+export const teamById = (id) => TEAMS.find((t) => t.id === id) || TEAMS[0];
+
 export const car = (team, slot) => {
   const [name, code, number] = team.drivers[slot];
   return { team, slot, name, code, number };
