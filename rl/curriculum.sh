@@ -1,5 +1,5 @@
 #!/bin/sh
-# Entrena desde cero la red del juego con el currículo en manada (rl/CURRICULO.md): desde la fase 2 todos los autos
+# Entrena desde cero la red del juego con el currículo en manada (rl/CURRICULUM.md): desde la fase 2 todos los autos
 # de cada carrera son la misma red, que aprende (rl/herd.js). Cuatro habilidades, cada una con su medida: tiempo de
 # vuelta (pace), toques (contact: cada contacto que empieza, no cada roce), largada (launch: primera vuelta contra la
 # lanzada) y persecución (chase: el tiempo del par). Cada fase premia una y las demás son presupuestos que se
@@ -18,21 +18,21 @@
 #
 # Siempre se deja margen para mejorar: las fases 1–4 se cortan a la mitad (--stop-at), con la tasa de aprendizaje
 # todavía alta (una fase que llega a su mejor número después sólo lo empeora), y la fase 2 no mata los toques. Cada
-# fase parte del modelo final de la anterior y se exporta a models/$NOMBRE/faseN.json. Apenas termina una fase se
+# fase parte del modelo final de la anterior y se exporta a models/$NAME/faseN.json. Apenas termina una fase se
 # mide en segundo plano mientras entrena la siguiente (en manada, sola y en la carrera tipo juego) y queda en
-# rl/runs/$NOMBRE-tabla.log; al final, la última y la del juego con daños. No pisa la red del juego: si una nueva es
+# rl/runs/$NAME-tabla.log; al final, la última y la del juego con daños. No pisa la red del juego: si una nueva es
 # mejor, se cambia a mano GAME_NET en src/drivers/policy.js.
 #
 #   sh rl/curriculum.sh [primera fase]      (por defecto 1)
-#   NOMBRE=v9 sh rl/curriculum.sh           (carpeta de los modelos y prefijo de rl/runs; por defecto "nueva")
+#   NAME=v9 sh rl/curriculum.sh           (carpeta de los modelos y prefijo de rl/runs; por defecto "nueva")
 #
-# Hace falta rl/.venv (docs/ia.md, "Cómo se entrena"); los circuitos de F1 salen de tracks/*.layout.json. El currículo
+# Hace falta rl/.venv (docs/ai.md, "Cómo se entrena"); los circuitos de F1 salen de tracks/*.layout.json. El currículo
 # anterior, con rivales de la IA clásica (rl/race.js), está en el historial de git (commit 47f1b3f).
 set -e
 cd "$(dirname "$0")/.."
 PY=rl/.venv/bin/python
 FROM=${1:-1}
-N=${NOMBRE:-nueva}
+N=${NAME:-nueva}
 OUT=models/$N
 RUNS=rl/runs
 TABLE=$RUNS/$N-tabla.log
@@ -48,9 +48,9 @@ ALL="--mix solo:10,grid:40,rolling:30,chase:20"
 
 # una fase en manada (rl/herd_eval.js), sola y en la carrera tipo juego, en una línea de la tabla
 measure() { # nombre, modelo
-  herd=$(DANOS=real node rl/herd_eval.js "$2" 2>&1 | grep -v '^$' | sed 's/^  [^ ]* *//' | paste -sd' ' -)
+  herd=$(DAMAGE=real node rl/herd_eval.js "$2" 2>&1 | grep -v '^$' | sed 's/^  [^ ]* *//' | paste -sd' ' -)
   solo=$(node rl/eval.js "$2" | tail -1)
-  game=$(JUEGO=1 DANOS=real node rl/race_eval.js "$2" 2>&1 | tail -2 | paste -sd' ' -)
+  game=$(GAME=1 DAMAGE=real node rl/race_eval.js "$2" 2>&1 | tail -2 | paste -sd' ' -)
   echo "$1 | manada: $herd | sola: $solo | juego: $game" >> "$TABLE"
 }
 run() { # fase, opciones de train.py
@@ -111,7 +111,7 @@ fi
 # las mediciones de cada fase terminan en segundo plano; con daños, la última y la del juego (en paralelo)
 for m in "$ACTUAL" "$OUT/fase9.json"; do
   for d in reduced real; do
-    (r=$(JUEGO=1 DANOS=$d node rl/race_eval.js "$m" 2>&1 | tail -2 | paste -sd' ' -); echo "$m · daños $d: $r" >> "$TABLE") &
+    (r=$(GAME=1 DAMAGE=$d node rl/race_eval.js "$m" 2>&1 | tail -2 | paste -sd' ' -); echo "$m · daños $d: $r" >> "$TABLE") &
   done
 done
 wait

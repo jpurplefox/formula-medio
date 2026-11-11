@@ -9,15 +9,15 @@
 // en el pasto (con dos ruedas o más; aparte, con una sola rueda afuera). Para ver cómo larga: cuánto más lenta que su
 // mejor vuelta es la primera de cada auto de la red (desde que cruza la línea; en fila india se pierden segundos).
 //
-// Con JUEGO=1 es la carrera del juego: todos los autos con la red salvo uno, la IA clásica al ritmo más alto de
+// Con GAME=1 es la carrera del juego: todos los autos con la red salvo uno, la IA clásica al ritmo más alto de
 // Difícil, que hace de jugador (largando del medio). Informa toques por auto de la red, cuántos provocó, pasto y en
-// cuánto tiempo terminó el primero las vueltas (el ritmo). Con DIFICULTAD (facil, normal, dificil, experto) las redes
+// cuánto tiempo terminó el primero las vueltas (el ritmo). Con DIFFICULTY (easy, normal, hard, expert) las redes
 // llevan el agarre y la potencia de esa dificultad en el juego (src/race/teams.js) y el jugador, su ritmo más alto.
 //
-// Con DANOS (reduced o real) los golpes rompen (damage.js): informa además abandonos y piezas rotas por carrera.
-// Con TOQUES=1 informa dónde se dan los toques de la red: en qué vuelta (la suya), en los primeros segundos de la
+// Con DAMAGE (reduced o real) los golpes rompen (damage.js): informa además abandonos y piezas rotas por carrera.
+// Con CONTACTS=1 informa dónde se dan los toques de la red: en qué vuelta (la suya), en los primeros segundos de la
 // carrera, contra el jugador, con cuántos autos cerca y qué tan fuertes.
-// Con GOLPES=1 informa qué tan fuertes son los golpes en cada pieza (para ajustar STRENGTH de damage.js).
+// Con HITS=1 informa qué tan fuertes son los golpes en cada pieza (para ajustar STRENGTH de damage.js).
 //
 // Con SPREAD (por ejemplo 0.05) cada auto de la grilla es un poco distinto, siempre igual para una misma semilla,
 // y cada carrera se corre dos veces intercambiando qué autos maneja la red: así ningún resultado depende de la
@@ -48,15 +48,15 @@ const DT = 1 / 60,
   CARS = Number(process.env.CARS ?? 22),
   LAPS = Number(lapsArg ?? 3);
 const SPREAD = Number(process.env.SPREAD ?? 0);
-const GAME = process.env.JUEGO === '1',
+const GAME = process.env.GAME === '1',
   PLAYER = Math.floor(CARS / 2);
-const LEVEL = GAME && DIFFICULTIES.find((d) => d.id === process.env.DIFICULTAD);
+const LEVEL = GAME && DIFFICULTIES.find((d) => d.id === process.env.DIFFICULTY);
 const PACES = LEVEL ? [LEVEL.paces[0], LEVEL.paces[0]] : [1.06, 0.98]; // Difícil
 const LEVEL_SETUPS = LEVEL && rivalSetups(LEVEL, CARS - 1);
-const DAMAGE = process.env.DANOS ?? 'off';
-const WHERE = process.env.TOQUES === '1';
-// golpes por pieza y por contra qué (auto o muro), para GOLPES=1
-const HITS = process.env.GOLPES === '1' ? new Map() : null;
+const DAMAGE = process.env.DAMAGE ?? 'off';
+const WHERE = process.env.CONTACTS === '1';
+// golpes por pieza y por contra qué (auto o muro), para HITS=1
+const HITS = process.env.HITS === '1' ? new Map() : null;
 if (HITS) {
   logHits((car, lx, ly, hit, other) => {
     const key = `${zoneAt(lx, ly).part.padEnd(10)} contra ${other ? other.part : 'muro'}`;
@@ -263,7 +263,7 @@ if (GAME) {
   console.log(
     `total: toques por auto ${mean((r) => r.hits / r.nets)} (provocados ${mean((r) => r.fault / r.nets)}) · pasto por auto ${mean((r) => r.grass / r.nets)} s (una rueda ${mean((r) => r.wheel / r.nets)} s) · 1.ª vuelta +${mean((r) => r.lap1)} s (jugador +${mean((r) => r.aiLap1)} s) · tiempo del ganador ${mean((r) => r.time)} s · jugador ${mean((r) => r.player)}.º`,
   );
-  if (process.env.TRAZADA)
+  if (process.env.LINE)
     console.log(
       `contra la trazada: 1.ª vuelta +${mean((r) => r.vsLine[0])} s · mejor +${mean((r) => r.vsLine[1])} s · cruza la línea a los ${mean((r) => r.vsLine[2])} s`,
     );

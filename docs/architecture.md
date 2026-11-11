@@ -64,7 +64,7 @@ falla.
 - `npm run regress` (`tools/regress.js`): carreras con semilla fija comparadas bit a bit con
   `tools/regress.base.txt`. Cubre la física, los choques, los daños, los sensores, la red, la carrera tipo juego y
   los dos simuladores de entrenamiento: si un cambio toca algo de eso, aunque sea en el último decimal, salta (~1
-  min). Cuando el cambio es a propósito, `node tools/regress.js guardar` actualiza la base. No cubre lo que es sólo
+  min). Cuando el cambio es a propósito, `node tools/regress.js save` actualiza la base. No cubre lo que es sólo
   del navegador (cámara, HUD, menú, sonido).
 
 El CI (`.github/workflows/check.yml`) corre las tres cosas en cada PR. La regresión corre en macOS arm64: en x64

@@ -3,7 +3,7 @@
 import js from '@eslint/js';
 import globals from 'globals';
 
-// Las capas de src/ (ver docs/arquitectura.md): cada una puede importar sólo las de su lista
+// Las capas de src/ (ver docs/architecture.md): cada una puede importar sólo las de su lista
 //   sim       la física y las reglas del auto y la pista: nada de afuera
 //   race      la carrera (grilla, semáforo, choques, vueltas, posiciones, abandonos) y los equipos: sim
 //   drivers   quién maneja (IA clásica, red, jugador): sim y race

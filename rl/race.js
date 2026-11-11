@@ -2,7 +2,7 @@
 // contra sí misma) y los demás son rivales que no aprenden: la IA clásica (ai.js) con ritmos distintos o redes
 // ya entrenadas (versiones anteriores).
 //
-// Cada carrera es un escenario (rl/CURRICULO.md), elegido al azar según la mezcla de la fase:
+// Cada carrera es un escenario (rl/CURRICULUM.md), elegido al azar según la mezcla de la fase:
 //   solo     agentes repartidos por la pista, sin rivales (repaso de la fase 1)
 //   pack     grupos de 2 o 3 autos que llegan juntos a una curva: frenar sin llevarse a nadie puesto
 //   start    largada con muchos autos, poco antes de una curva: pasarla sin chocar

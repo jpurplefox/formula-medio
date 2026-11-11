@@ -12,7 +12,7 @@
 //
 //   node rl/herd_eval.js models/a.json [models/b.json ...]
 //
-// Variables: ESCENARIOS (por ejemplo grid,chase; por defecto, todos), RACES (carreras por escenario, 8: una por circuito), DANOS (off, reduced o real; por defecto, off), AGENTS (autos por carrera, 22, como en el juego). Con JSON=1, para una sola red,
+// Variables: SCENARIOS (por ejemplo grid,chase; por defecto, todos), RACES (carreras por escenario, 8: una por circuito), DAMAGE (off, reduced o real; por defecto, off), AGENTS (autos por carrera, 22, como en el juego). Con JSON=1, para una sola red,
 // escribe el tiempo de cada escenario como lo usan los presupuestos del entrenamiento (Budgets, rl/train.py).
 
 import { execFile } from 'node:child_process';
@@ -43,7 +43,7 @@ function measure(policy, scenario) {
     seed: 4321,
     mix: { [scenario]: 1 },
     spread: [0.15, 0.2],
-    damage: process.env.DANOS ?? 'off',
+    damage: process.env.DAMAGE ?? 'off',
   });
   const eps = [];
   for (let race = 0; race < RACES; race++) {
@@ -89,9 +89,9 @@ function measure(policy, scenario) {
 
 const files = process.argv.slice(2);
 const policies = files.map((f) => new Policy(JSON.parse(readFileSync(f, 'utf8'))));
-if (process.env.ESCENARIO) {
+if (process.env.SCENARIO) {
   // un escenario, para la medición en paralelo de abajo
-  console.log(JSON.stringify(measure(policies[0], process.env.ESCENARIO)));
+  console.log(JSON.stringify(measure(policies[0], process.env.SCENARIO)));
   process.exit(0);
 }
 if (process.env.JSON === '1') {
@@ -102,7 +102,7 @@ if (process.env.JSON === '1') {
       execFile(
         'node',
         [process.argv[1], files[0]],
-        { env: { ...process.env, ESCENARIO: scenario }, maxBuffer: 1 << 20 },
+        { env: { ...process.env, SCENARIO: scenario }, maxBuffer: 1 << 20 },
         (err, out) => (err ? reject(err) : resolve(JSON.parse(out))),
       ),
     );
@@ -123,7 +123,7 @@ const fmt = {
   toques: 2,
   pasadas: 2,
 };
-const only = process.env.ESCENARIOS?.split(',');
+const only = process.env.SCENARIOS?.split(',');
 for (const [scenario, keys] of Object.entries(SCENARIOS)) {
   if (only && !only.includes(scenario)) continue;
   console.log(`\n${scenario}`);

@@ -140,7 +140,7 @@ sólo el contorno).
 
 Con `?prueba` en la dirección, las teclas **1** a **9** rompen piezas (1–2 alerón delantero izquierdo/derecho, 3–4
 trasero, 5–6 pontones, 7 pinchazo trasero izquierdo, 8 suspensión delantera derecha, 9 dirección rota) y **0**
-arregla todo. Los umbrales se ajustaron con `JUEGO=1 DANOS=real GOLPES=1 node rl/race_eval.js models/v22/fase18.json`
+arregla todo. Los umbrales se ajustaron con `GAME=1 DAMAGE=real HITS=1 node rl/race_eval.js models/v22/fase18.json`
 (cuántos autos rompen algo por carrera y qué tan fuertes son los golpes en cada pieza).
 
 ## Calibración con vueltas reales
@@ -149,7 +149,7 @@ Los números del auto (`cars/f1-2025.json`) se ajustaron con `tools/calibrate.js
 circuitos (lo que ya bajó `tools/layout.py` a `tools/.cache/`):
 
 ```bash
-node tools/calibrate.js          # cómo da el auto como está (y tools/.out/calibracion.html con los gráficos)
+node tools/calibrate.js          # cómo da el auto como está (y tools/.out/calibration.html con los gráficos)
 node tools/calibrate.js --fit    # busca los números que mejor ajustan y los escribe
 ```
 
@@ -169,7 +169,7 @@ cuánto cuesta el alerón). Cosas a saber:
   y ~6,2 g a 300 km/h, frenadas de hasta ~6 g, y vueltas simuladas de -4,3 a +0,7 s de la pole (lo más rápido, en
   los circuitos de chicanas).
 
-`node tools/lapcompare.js` grafica la pole real contra la red del juego dando una vuelta (`tools/.out/vueltas.html`).
+`node tools/lapcompare.js` grafica la pole real contra la red del juego dando una vuelta (`tools/.out/laps.html`).
 
 Las marchas y RPM siguen saliendo de `tools/car_profile.py` (las 15 vueltas más rápidas de una carrera en OpenF1:
 `python3 tools/car_profile.py Interlagos 2023 cars/f1-2023.json`), que además mide aceleración, frenada y agarre

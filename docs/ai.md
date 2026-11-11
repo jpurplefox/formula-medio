@@ -92,10 +92,10 @@ sola, no chocar, pasar, carreras completas) y después tres fases más dedicadas
 y el quinto (`models/v5/`, con el agarre por rueda y el pasto que frena) sumó ritmo en las largadas y una fase
 contra rivales más rápidos: `models/v5/fase7.json` fue la red del juego, con un 36 % menos de toques que la v4, un
 tercio del pasto y algo más rápida (en el juego los rivales llevan menos agarre y potencia). Detalle, resultados y
-lo que salió mal en el camino: `rl/CURRICULO.md`.
+lo que salió mal en el camino: `rl/CURRICULUM.md`.
 
 Después vino el entrenamiento en manada (22 autos con la red, desde la v8; receta en `rl/curriculum.sh`, ~3 h:
-`NOMBRE=v23 sh rl/curriculum.sh`). La red del juego hoy es la que diga `GAME_NET` en `src/drivers/policy.js`. En
+`NAME=v23 sh rl/curriculum.sh`). La red del juego hoy es la que diga `GAME_NET` en `src/drivers/policy.js`. En
 `models/` queda sólo esa: las redes de las etapas y de los intentos anteriores (`models/etapa1.json`,
 `models/fase1.json` a `fase7.json`, `models/v3/` a `models/v21/`) están en el historial de git, en el commit
 e9ff553.

@@ -217,7 +217,7 @@ Contra la IA clásica, igual que la tabla anterior:
 | v4 fase 5 | 125 | 82 | 20 | 84 s | 16,2 | 5,6 | 0,971 |
 | v4 fase 6 | **107** | **68** | **18** | 73 s | 16,3 | 5,8 | 0,969 |
 
-Carrera tipo juego (`JUEGO=1`: 21 autos con la red y uno de la IA clásica al ritmo más alto de Difícil
+Carrera tipo juego (`GAME=1`: 21 autos con la red y uno de la IA clásica al ritmo más alto de Difícil
 haciendo de jugador; los 8 circuitos), por auto de la red:
 
 | Red | Toques | Provocados | Pasto | Tiempo del ganador | El jugador termina |
@@ -252,7 +252,7 @@ según la superficie (el pasto frena y tira para afuera), los trazados salen de 
 entradas (el agarre de cada rueda al final). La receta suma `paceCrowd` en las fases 5–7 (piso de ritmo también
 amontonado, para no hacer fila en las largadas) y la fase 7, contra rivales 8 % más rápidos.
 
-Carrera tipo juego (`JUEGO=1`, Difícil de entonces, con el rescate en el pasto de abajo):
+Carrera tipo juego (`GAME=1`, Difícil de entonces, con el rescate en el pasto de abajo):
 
 | Red | Toques por auto | Provocados | Pasto por auto | Ganador | Jugador |
 |---|---|---|---|---|---|
@@ -286,14 +286,14 @@ Carrera tipo juego (`JUEGO=1`, Difícil de entonces, con el rescate en el pasto 
 `rl/curriculum.sh` entrena desde cero la receta de la red del juego: las fases 1–4 del tercer intento, las 5–6
 del cuarto y una 7 de ritmo contra rivales más rápidos (~3 h). En la fase 7 los rivales llevan 8 % más de agarre y
 potencia (`--rivals-boost 0.08`) y la IA clásica corre a 1–1,1 de ritmo: entre redes iguales el ritmo sólo
-mejora hasta el del de adelante, así que hace falta tener adelante autos más rápidos. Hace falta `rl/.venv` y los circuitos exportados en `rl/tracks/` (docs/ia.md, "Cómo se entrena").
+mejora hasta el del de adelante, así que hace falta tener adelante autos más rápidos. Hace falta `rl/.venv` y los circuitos exportados en `rl/tracks/` (docs/ai.md, "Cómo se entrena").
 
 ```bash
-NOMBRE=v5 sh rl/curriculum.sh        # modelos en models/v5/, logs y checkpoints en rl/runs/v5faseN
-NOMBRE=v5 sh rl/curriculum.sh 5      # rehace desde la fase 5 (usa rl/runs/v5fase4/model.zip)
+NAME=v5 sh rl/curriculum.sh        # modelos en models/v5/, logs y checkpoints en rl/runs/v5faseN
+NAME=v5 sh rl/curriculum.sh 5      # rehace desde la fase 5 (usa rl/runs/v5fase4/model.zip)
 ```
 
-Cada fase parte del modelo final de la anterior y se exporta a `models/$NOMBRE/faseN.json`. Al continuar un modelo,
+Cada fase parte del modelo final de la anterior y se exporta a `models/$NAME/faseN.json`. Al continuar un modelo,
 la tasa de aprendizaje de cada fase va de su valor inicial (`--lr`) a 0 dentro de esa fase. Al terminar mide la
 nueva contra la del juego en la carrera tipo juego; si es mejor, se cambia `GAME_NET` en `src/drivers/policy.js`.
 
@@ -316,7 +316,7 @@ el commit b3253db.
 ## Cómo se mide
 
 ```bash
-JUEGO=1 node rl/race_eval.js models/v22/fase18.json                 # carrera tipo juego: 21 redes y un "jugador"
+GAME=1 node rl/race_eval.js models/v22/fase18.json                 # carrera tipo juego: 21 redes y un "jugador"
 node rl/eval.js models/v22/fase18.json                              # vuelta lanzada sola, autos iguales
 node rl/scenario_eval.js models/a.json models/b.json                # cada escenario, mismas carreras
 SPREAD=0.05 node rl/race_eval.js models/v22/fase18.json             # 22 autos distintos, con rotación

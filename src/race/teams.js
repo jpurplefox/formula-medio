@@ -143,16 +143,16 @@ export const TEAMS = [
 // 0,98 de ~71,9 s, 0,93 de ~75 s y 0,87 de ~80 s). En las curvas lentas no pasan de 0,975 (ai.js).
 // Con la red entrenada (rl/) el ritmo no se elige: lo da el auto. setups: agarre y potencia del más rápido y del más
 // lento (1 = el tuyo). La red (v5) se entrenó con autos de 0,85 a 1,2; un poco más abajo sigue sin pisar el pasto.
-// Medido con JUEGO=1 DIFICULTAD=… node rl/race_eval.js: el ganador tarda 260 s (Fácil), 251 s (Normal), 243 s
+// Medido con GAME=1 DIFFICULTY=… node rl/race_eval.js: el ganador tarda 260 s (Fácil), 251 s (Normal), 243 s
 // (Difícil) y 237 s (Experto), y un jugador al ritmo más rápido de la IA clásica en esa dificultad termina
 // 5.º, 4.º, 6.º y 9.º.
 // Con la IA clásica, en Interlagos: vueltas de ~75 a 80 s (Fácil), ~71,5 a 74 s (Normal), ~69,5 a 72 s (Difícil)
 // y ~69 a 70 s (Experto).
 export const DIFFICULTIES = [
-  { id: 'facil', name: 'Fácil', paces: [0.93, 0.87], setups: [0.83, 0.78] },
+  { id: 'easy', name: 'Fácil', paces: [0.93, 0.87], setups: [0.83, 0.78] },
   { id: 'normal', name: 'Normal', paces: [0.985, 0.945], setups: [0.89, 0.84] },
-  { id: 'dificil', name: 'Difícil', paces: [1.06, 0.98], setups: [0.95, 0.9] },
-  { id: 'experto', name: 'Experto', paces: [1.1, 1.06], setups: [1.02, 0.98] },
+  { id: 'hard', name: 'Difícil', paces: [1.06, 0.98], setups: [0.95, 0.9] },
+  { id: 'expert', name: 'Experto', paces: [1.1, 1.06], setups: [1.02, 0.98] },
 ];
 
 const spread = ([fast, slow], count) =>

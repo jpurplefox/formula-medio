@@ -22,7 +22,7 @@ import { realLap } from './openf1.js';
 const root = (p) => new URL('../' + p, import.meta.url);
 const DT = 1 / 60;
 
-const [ids = TRACK_IDS.join(','), out = 'tools/.out/vueltas.html'] = process.argv.slice(2);
+const [ids = TRACK_IDS.join(','), out = 'tools/.out/laps.html'] = process.argv.slice(2);
 const profile = JSON.parse(readFileSync(root('cars/f1-2025.json'), 'utf8'));
 const policy = new Policy(JSON.parse(readFileSync(root(GAME_NET), 'utf8')));
 

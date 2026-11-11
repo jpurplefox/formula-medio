@@ -47,9 +47,9 @@ vuelven a la principal.
   largo del campeonato, así sigue habiendo autos rápidos y lentos; con uno solo, es un mano a mano con el del mejor
   equipo. Dificultad, vueltas y rivales son sólo para carrera.
 - **Puesta a punto:** alerones, balance mecánico y reparto de frenada, por circuito (qué hace cada uno:
-  [docs/fisica.md](docs/fisica.md#puesta-a-punto)).
+  [docs/physics.md](docs/physics.md#puesta-a-punto)).
 - **Caja de cambios:** automática o manual. Se elige acá y queda fija durante la carrera.
-- **Daños:** no, reducidos o reales ([docs/fisica.md](docs/fisica.md#daños)).
+- **Daños:** no, reducidos o reales ([docs/physics.md](docs/physics.md#daños)).
 - **Sonido:** prendido o apagado y volumen general, de los motores y de la música del menú. Arranca siempre apagado
   (se prende con N o desde el menú); los volúmenes sí se recuerdan.
 
@@ -96,18 +96,18 @@ frenar.
 
 En la dirección: `?ia=clasica` hace manejar a los rivales con la IA clásica (el piloto escrito a mano de antes de
 la red), `?ia=models/….json` con otra red, `?cpu` dibuja sin WebGL y `?prueba` habilita teclas para romper piezas del
-auto (ver [docs/fisica.md](docs/fisica.md#daños)).
+auto (ver [docs/physics.md](docs/physics.md#daños)).
 
 ## Cómo funciona
 
-- [docs/circuitos.md](docs/circuitos.md): del trazado al mapa, trazados reales desde la telemetría de F1 y cómo
+- [docs/tracks.md](docs/tracks.md): del trazado al mapa, trazados reales desde la telemetría de F1 y cómo
   agregar un circuito.
-- [docs/fisica.md](docs/fisica.md): el modelo del auto (aerodinámica, gomas, balance, bloqueos, temperatura),
+- [docs/physics.md](docs/physics.md): el modelo del auto (aerodinámica, gomas, balance, bloqueos, temperatura),
   estela, choques, daños, puesta a punto y la calibración con vueltas reales.
-- [docs/ia.md](docs/ia.md): la trazada ideal, la red entrenada por refuerzo que maneja a los rivales (cómo se
+- [docs/ai.md](docs/ai.md): la trazada ideal, la red entrenada por refuerzo que maneja a los rivales (cómo se
   entrena y su historia) y la IA clásica, el piloto escrito a mano de antes.
 - [docs/render.md](docs/render.md): Voxel Space, los modelos 3D de los autos, WebGL y procesador, y la repetición.
-- [docs/sonido.md](docs/sonido.md): los motores y la música, sintetizados.
+- [docs/sound.md](docs/sound.md): los motores y la música, sintetizados.
 
 ## Para tocar el código
 
@@ -118,4 +118,4 @@ npm run lint      # ESLint (errores y capas), Prettier y tipos
 npm run regress   # carreras con semilla fija comparadas bit a bit (~1 min)
 ```
 
-Cómo está organizado (capas, puertos, qué va dónde) y cómo se revisa: [docs/arquitectura.md](docs/arquitectura.md).
+Cómo está organizado (capas, puertos, qué va dónde) y cómo se revisa: [docs/architecture.md](docs/architecture.md).

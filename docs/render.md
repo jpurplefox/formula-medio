@@ -75,7 +75,7 @@ franja de columnas y el hilo principal arma la imagen y dibuja encima los sprite
 
 En el juego es una cinta semitransparente que flota un poco sobre el asfalto, con los bordes difusos (sin WebGL, se
 pinta sobre el piso), y cambia de color según tu velocidad: **verde** se puede acelerar, **amarillo** mantener o
-levantar, **rojo** hay que frenar. Cómo se calcula: [ia.md](ia.md#la-trazada-ideal).
+levantar, **rojo** hay que frenar. Cómo se calcula: [ai.md](ai.md#la-trazada-ideal).
 
 ## La repetición
 

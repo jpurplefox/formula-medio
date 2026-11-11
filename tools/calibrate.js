@@ -231,7 +231,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     writeFileSync(root(CAR), JSON.stringify(best, null, 1) + '\n');
     console.log(`→ ${CAR}`);
   }
-  chartHtml(JSON.parse(readFileSync(root(CAR), 'utf8')), cs, root('tools/.out/calibracion.html'));
+  chartHtml(JSON.parse(readFileSync(root(CAR), 'utf8')), cs, root('tools/.out/calibration.html'));
 }
 
 // Gráfico de la velocidad simulada (como la vería la telemetría) contra la real, para ver dónde no ajusta

@@ -2,13 +2,13 @@
 // tranquilo: si un cambio "de prolijidad" toca la física, los sensores, los choques, los daños o la IA, salta.
 //
 //   node tools/regress.js           compara con tools/regress.base.txt (sale con error si algo cambió)
-//   node tools/regress.js guardar   guarda los resultados actuales como base (cuando el cambio es a propósito)
+//   node tools/regress.js save   guarda los resultados actuales como base (cuando el cambio es a propósito)
 //
 // Tres partes, todas con la red del juego:
 // - los escenarios del currículum anterior (rl/race.js, 4 autos) y los del entrenamiento en manada (rl/herd.js, 22
 //   autos, con el que se entrena la red hoy): en cada paso se toma el estado completo de cada auto (todos sus
 //   números, con todos los decimales) y las recompensas, y se resume en un hash por escenario;
-// - la carrera del juego (rl/race_eval.js con JUEGO=1 y daños reales) en dos circuitos: su informe, tal cual.
+// - la carrera del juego (rl/race_eval.js con GAME=1 y daños reales) en dos circuitos: su informe, tal cual.
 
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -93,14 +93,14 @@ function report() {
   ];
   const game = execFileSync('node', ['rl/race_eval.js', NET, GAME_TRACKS, '2'], {
     cwd: ROOT,
-    env: { ...process.env, JUEGO: '1', DANOS: 'real' },
+    env: { ...process.env, GAME: '1', DAMAGE: 'real' },
     encoding: 'utf8',
   });
   return [...lines, ...game.trim().split('\n')].join('\n') + '\n';
 }
 
 const now = report();
-if (process.argv[2] === 'guardar') {
+if (process.argv[2] === 'save') {
   writeFileSync(BASE, now);
   console.log(`guardado en tools/regress.base.txt\n${now}`);
 } else {
@@ -112,7 +112,7 @@ if (process.argv[2] === 'guardar') {
     for (let i = 0; i < Math.max(a.length, b.length); i++) {
       if (a[i] !== b[i]) console.log(`- ${a[i] ?? ''}\n+ ${b[i] ?? ''}`);
     }
-    console.log('CAMBIÓ: si el cambio es a propósito, node tools/regress.js guardar');
+    console.log('CAMBIÓ: si el cambio es a propósito, node tools/regress.js save');
     process.exit(1);
   }
 }

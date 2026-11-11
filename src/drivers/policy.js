@@ -20,7 +20,7 @@ import {
 } from './sensors.js';
 import { stationAt } from '../sim/track.js';
 
-// La red con la que manejan los rivales en el juego (rl/CURRICULO.md). Es la única referencia: la usan también el
+// La red con la que manejan los rivales en el juego (rl/CURRICULUM.md). Es la única referencia: la usan también el
 // chequeo de regresión, la calibración y rl/curriculum.sh, así que para cambiar de red alcanza con cambiarla acá.
 export const GAME_NET = 'models/v22/fase18.json';
 

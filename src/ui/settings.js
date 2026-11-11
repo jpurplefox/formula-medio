@@ -14,7 +14,7 @@ export const settings = {
   mode: 'race',
   team: 'hierrari',
   driver: 0,
-  difficulty: 'dificil',
+  difficulty: 'hard',
   track: TRACKS[0].id,
   laps: 3,
   rivals: DEFAULT_RIVALS,
@@ -32,9 +32,11 @@ export const settings = {
 
 // v: versión de lo guardado; antes de la 2 los rivales venían en 21 y se pasan a los 10 nuevos (uno por equipo)
 const SETTINGS_VERSION = 2;
+const OLD_DIFFICULTIES = { facil: 'easy', dificil: 'hard', experto: 'expert' };
 try {
   const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? localStorage.getItem(OLD_SETTINGS_KEY)) || {};
   if (!(saved.v >= SETTINGS_VERSION) || !RIVAL_OPTIONS.includes(saved.rivals)) delete saved.rivals;
+  saved.difficulty = OLD_DIFFICULTIES[saved.difficulty] ?? saved.difficulty;
   Object.assign(settings, saved, { sound: false, v: SETTINGS_VERSION });
 } catch {
   // sin almacenamiento: quedan los valores por defecto

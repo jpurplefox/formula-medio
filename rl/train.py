@@ -1,9 +1,9 @@
 """Entrena la IA con PPO.
 
-Entrenamiento por fases (rl/CURRICULO.md). Fase 1, sola en pista con autos algo distintos:
+Entrenamiento por fases (rl/CURRICULUM.md). Fase 1, sola en pista con autos algo distintos:
     rl/.venv/bin/python rl/train.py --steps 60_000_000 --name fase1
 Fases 2 a 4, en escenarios con otros autos, cada una partiendo de la anterior (los comandos exactos están en
-rl/CURRICULO.md):
+rl/CURRICULUM.md):
     rl/.venv/bin/python rl/train.py --race --envs 4 --mix pack:45,start:30,solo:25 --steps 30_000_000 --name fase2 \
         --resume rl/runs/fase1/model.zip --fresh-opponents --critic-warmup 3_000_000 --lr 1e-4
 
@@ -273,7 +273,7 @@ class Budgets(BaseCallback):
 
         net = self.out / "medicion.json"
         export(self.model.policy, str(net))
-        env = {**os.environ, "JSON": "1", "RACES": str(self.FIXED_RACES), "DANOS": self.damage, "AGENTS": str(self.agents)}
+        env = {**os.environ, "JSON": "1", "RACES": str(self.FIXED_RACES), "DAMAGE": self.damage, "AGENTS": str(self.agents)}
         self.job = subprocess.Popen(["node", "rl/herd_eval.js", str(net)], cwd=ROOT, env=env, stdout=subprocess.PIPE, text=True)
         if wait:
             return self.collect(block=True)

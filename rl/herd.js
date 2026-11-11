@@ -1,4 +1,4 @@
-// Carreras en manada (currículo v8, rl/CURRICULO.md): todos los autos de la carrera son agentes con la misma red,
+// Carreras en manada (currículo v8, rl/CURRICULUM.md): todos los autos de la carrera son agentes con la misma red,
 // que aprende. Así se entrena el comportamiento de grupo que se ve en el juego (21 redes iguales), por ejemplo la
 // fila india en la largada, que con rivales de la IA clásica no aparecía.
 //

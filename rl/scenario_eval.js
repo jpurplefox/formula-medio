@@ -7,7 +7,7 @@
 // Por escenario: toques, toques provocados (le pegó al de adelante o apretó al de al lado) y segundos en peligro cada 1000 m, pasadas limpias, veces que lo pasaron, zigzags y metros
 // recorridos por episodio (el ritmo: una red miedosa choca poco pero avanza menos) y rescates (trabado, en el pasto o
 // para atrás demasiado tiempo). Variables: RACES (carreras por escenario, 40), SPREAD (variación de los autos, 0.02),
-// ESCENARIOS (sólo esos, separados por comas).
+// SCENARIOS (sólo esos, separados por comas).
 
 import { readFileSync } from 'node:fs';
 import { Policy } from '../src/drivers/policy.js';
@@ -63,7 +63,7 @@ function measure(policy, scenario) {
 }
 
 const policies = files.map((f) => new Policy(JSON.parse(readFileSync(f, 'utf8'))));
-const only = process.env.ESCENARIOS?.split(',');
+const only = process.env.SCENARIOS?.split(',');
 for (const scenario of Object.keys(SCENARIOS).filter((s) => !only || only.includes(s))) {
   console.log(`\n${scenario}`);
   policies.forEach((p, i) => {
