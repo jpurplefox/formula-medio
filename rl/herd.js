@@ -79,7 +79,7 @@ const ZONE_TIME = 0.4,
 const CHASE_HANDICAP = [0.2, 0.08];
 // vueltas de cada escenario y margen de tiempo (la vuelta de la trazada × SLACK, más unos segundos)
 // (start: lo que suele durar, en vueltas, para repartir los pasos de la mezcla y cortar si nadie llega)
-const HERD_SCENARIOS = { solo: 2, grid: 2, rolling: 2, chase: 1, flying: 1, start: 0.25 };
+export const HERD_SCENARIOS = { solo: 2, grid: 2, rolling: 2, chase: 1, flying: 1, start: 0.25 };
 const START_MARGIN = 10; // m antes del comienzo de la frenada donde termina el arranque
 const SLACK = 1.25,
   EXTRA = 25; // con una grilla de 16 los últimos tardan en completar las dos vueltas

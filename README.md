@@ -487,5 +487,5 @@ guarda en una Mac con Apple Silicon.
 
 `node tools/regress.js` corre carreras con semilla fija (los escenarios del currículum y la carrera del juego con
 daños, con la red del juego) y las compara con `tools/regress.base.txt`: si un cambio toca la física, los sensores,
-los choques, los daños o la IA, aunque sea en el último decimal, salta (~45 s). Cuando el cambio es a propósito,
+los choques, los daños o la IA, aunque sea en el último decimal, salta (~1 min). Cuando el cambio es a propósito,
 `node tools/regress.js guardar` actualiza la base. No cubre lo que es sólo del navegador (cámara, HUD, menú, sonido).
