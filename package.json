@@ -1,0 +1,14 @@
+{
+  "name": "formula-medio",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "regress": "node tools/regress.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.14.0",
+    "globals": "17.14.0"
+  }
+}

@@ -1,0 +1,31 @@
+# Revisa cada PR y cada push a main: ESLint (npm run lint) y el chequeo de regresión (tools/regress.js), que corre
+# carreras con semilla fija y las compara con tools/regress.base.txt. Si un cambio toca la física, la IA o los
+# sensores a propósito, se actualiza la base con node tools/regress.js guardar y se commitea junto con el cambio.
+name: Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Regresión
+        run: npm run regress

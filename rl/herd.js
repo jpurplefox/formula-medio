@@ -250,7 +250,7 @@ export class HerdSim extends RaceSim {
 
   step(actions) {
     if (this.time < 0) return this.countdown(actions);
-    const { track, line, cars } = this;
+    const { track, cars } = this;
     const L = track.length, M = track.meters, lapM = L * M;
     const all = cars.map((e) => e.car);
     const n = cars.length;
