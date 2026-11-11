@@ -496,9 +496,10 @@ export class Car {
       M = track.meters;
     this.placeOn(track);
     this.damage = deflate(this.damage, dt);
-    // abandonó: suelta todo y frena de a poco hasta quedar parado; a los PARKED segundos parado lo sacan (gone)
+    // abandonó: suelta todo y frena de a poco hasta quedar parado; a los PARKED segundos parado lo sacan (gone).
+    // Casi parado suelta el freno: con el auto quieto, el freno es la marcha atrás
     if (this.damage.retired) {
-      input = { throttle: 0, brake: 0.3, steer: this.steer * 0.5 };
+      input = { throttle: 0, brake: this.speed > 0.5 ? 0.3 : 0, steer: this.steer * 0.5 };
       this.parked = Math.abs(this.speed) < 0.5 ? (this.parked ?? 0) + dt : 0;
       this.gone = this.parked > PARKED;
     }
