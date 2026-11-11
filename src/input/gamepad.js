@@ -5,7 +5,16 @@
 const STICK_DEAD = 0.08; // zona muerta de la palanca: cerca del centro no dobla
 const STEER_CURVE = 1.5; // la palanca dobla menos al principio, para corregir fino a alta velocidad
 const TRIGGER_DEAD = 0.04;
-const PAD_KEYS = { 4: 'KeyZ', 5: 'KeyX', 3: 'KeyC', 2: 'KeyG', 8: 'KeyR', 9: 'Start', 14: 'ArrowLeft', 15: 'ArrowRight' };
+const PAD_KEYS = {
+  4: 'KeyZ',
+  5: 'KeyX',
+  3: 'KeyC',
+  2: 'KeyG',
+  8: 'KeyR',
+  9: 'Start',
+  14: 'ArrowLeft',
+  15: 'ArrowRight',
+};
 
 // El navegador recién muestra un joystick cuando se aprieta un botón con la página abierta. Si hay varios, usa el
 // primero con mapeo estándar. Los que no lo tienen (algunos genéricos, o según el navegador) suelen traer los

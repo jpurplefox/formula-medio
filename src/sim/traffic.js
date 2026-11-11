@@ -11,6 +11,13 @@ export const HIT_MIN = 0.05;
 // pide el piloto del auto i, en el momento de moverlo (puede mirar a los que ya se movieron en este paso), o null si
 // este paso no se mueve (en la grilla, esperando para largar). Devuelve cuánto golpe se llevó cada uno contra el muro
 // (al moverse) y contra otro auto (0: nada).
+/**
+ * @param {ReturnType<typeof import('./track.js').buildTrackFromLayout>} track
+ * @param {import('./car.js').Car[]} cars
+ * @param {number} dt
+ * @param {(i: number) => { throttle: number, brake: number, steer: number } | null} inputFor
+ * @returns {{ wall: Float64Array, hit: Float64Array }}
+ */
 export function stepCars(track, cars, dt, inputFor) {
   const n = cars.length,
     wall = new Float64Array(n),

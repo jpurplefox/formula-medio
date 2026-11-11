@@ -366,6 +366,8 @@ export class Car {
     this.ownAir = null;
     this.air = SEA_AIR; // densidad del aire del circuito (kg/m³)
     this.damage = NO_DAMAGE; // lo que tiene roto (damage.js)
+    /** @type {{ lit: number, since: number, out: boolean } | undefined} */
+    this.lights = undefined; // el semáforo, en la grilla (lights.js; lo pone quien larga la carrera)
     this.damageLevel = 'off'; // si los golpes rompen: 'off', 'reduced' o 'real'
     this.rubber = null; // la goma sobre la pista (RubberMap de rubber.js), si la hay: cambia el agarre de cada rueda
     this.wearRate = 0; // desgaste por metro andando normal (0 = no se gastan); lo fija el juego según la carrera

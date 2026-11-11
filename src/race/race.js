@@ -18,7 +18,47 @@ import { stepCars } from '../sim/traffic.js';
 
 const VALID_LAP = 0.75; // una vuelta vale si recorrió al menos esta parte del circuito sin cortar camino
 const PROGRESS_JUMP = 40; // celdas: un salto de progreso mayor es un atajo (o cruzar la línea marcha atrás)
-const NO_EVENTS = Object.freeze([]);
+/** @type {RaceEvent[]} */
+const NO_EVENTS = []; // (nunca se le agrega nada: emit arma una lista nueva)
+
+/**
+ * Un circuito armado (sim/track.js).
+ * @typedef {ReturnType<typeof import('../sim/track.js').buildTrackFromLayout>} Track
+ */
+/**
+ * Lo que pide un piloto en un paso.
+ * @typedef {{ throttle: number, brake: number, steer: number, revUp?: number, revDown?: number }} Input
+ */
+/**
+ * Dónde está un auto, como lo ven los pilotos: el auto, su posición sobre la línea central y de costado (celdas).
+ * @typedef {{ car: import('../sim/car.js').Car, st: number, lat: number }} CarState
+ */
+/**
+ * El puerto de los pilotos (drivers/): la IA clásica, la red y el jugador lo implementan. grid y seesLights, sólo
+ * los que manejan su propia largada.
+ * @typedef {object} Driver
+ * @property {(dt: number, track: Track, line: object, me: CarState, others: CarState[]) => Input} drive
+ * @property {(dt: number, track: Track, me: object, others: object[]) => Input} [grid]
+ * @property {boolean} [seesLights]
+ */
+/**
+ * Las vueltas de un auto: completas, si ya largó (cruzó la línea por primera vez), el tiempo de la actual y la
+ * última y mejor (s, null si todavía no hay).
+ * @typedef {{ laps: number, started: boolean, time: number, last: number | null, best: number | null,
+ *   prevAlong: number, maxProgress: number }} Lap
+ */
+/**
+ * Un auto en la carrera. car y driver los pone quien la arma (y lo que quiera además: nombre, color...); lo demás,
+ * la carrera.
+ * @typedef {{ car: import('../sim/car.js').Car, driver: Driver, lap?: Lap, st?: number, lat?: number,
+ *   dist?: number, out?: number, carHit?: number, [key: string]: any }} Entry
+ */
+/**
+ * Lo que pasó en un paso: 'start' (cruzó la línea por primera vez), 'lap' (completó una vuelta en time s; best si
+ * es su mejor), 'invalid' (cruzó sin dar la vuelta entera), 'finish' (llegó, en el puesto place) y 'retire'.
+ * @typedef {{ type: 'start' | 'lap' | 'invalid' | 'finish' | 'retire', entry: Entry, time?: number,
+ *   best?: boolean, place?: number }} RaceEvent
+ */
 
 // Posición respecto de la línea de largada: a lo largo (negativo: antes de cruzarla) y de costado (celdas)
 export function lineCoords(track, x, y) {
@@ -35,10 +75,28 @@ export class Race {
   // laps: vueltas (Infinity: hasta que se deje); line: la trazada por la que manejan los pilotos; rubber: la goma de
   // la pista (rubber.js) o null; random: el azar de la largada (la espera del semáforo y las reacciones);
   // stays: la entrada que queda en pista aunque abandone (el jugador: se queda donde paró)
+  /**
+   * @param {object} o
+   * @param {Track} o.track
+   * @param {Entry[]} o.entries
+   * @param {number} o.laps
+   * @param {object} o.line
+   * @param {import('../sim/rubber.js').RubberMap | null} [o.rubber]
+   * @param {() => number} [o.random]
+   * @param {Entry | null} [o.stays]
+   */
   constructor({ track, entries, laps, line, rubber = null, random = Math.random, stays = null }) {
-    Object.assign(this, { track, entries, laps, line, rubber, stays });
+    this.track = track;
+    this.entries = entries;
+    this.laps = laps;
+    this.line = line;
+    this.rubber = rubber;
+    this.stays = stays;
+    /** @type {RaceEvent[]} */
+    this.events = NO_EVENTS;
     this.time = 0; // segundos desde que se apagaron las luces
-    this.finished = []; // orden de llegada: { entry, time }
+    /** @type {{ entry: Entry, time: number }[]} */
+    this.finished = []; // orden de llegada
     this.lightsTotal = this.countdown = lightsDuration(randomHold(random));
     const L = Math.ceil(track.path.st[track.path.n]);
     for (const e of entries) {
@@ -68,6 +126,7 @@ export class Race {
 
   // Un paso de dt segundos. Devuelve lo que pasó: [{ type: 'start' | 'lap' | 'invalid' | 'finish' | 'retire', entry,
   // time?, best? }] ('start': cruzó la línea por primera vez; 'lap': completó una vuelta en time s, best si es su mejor)
+  /** @param {number} dt @returns {RaceEvent[]} */
   step(dt) {
     this.events = NO_EVENTS;
     if (this.countdown > 0) this.grid(dt);
@@ -75,6 +134,7 @@ export class Race {
     return this.events;
   }
 
+  /** @param {RaceEvent} event */
   emit(event) {
     if (this.events === NO_EVENTS) this.events = [];
     this.events.push(event);
@@ -146,6 +206,7 @@ export class Race {
 
   // ¿Ya largó? El que esperaba a acelerar larga cuando acelera; el que reacciona, cuando se le termina la reacción.
   // Mientras tanto, en la grilla, sólo sube o baja las vueltas.
+  /** @param {Entry} e @param {number} dt */
   launched(e, dt) {
     if (e.waiting) {
       if (e.driver.grid(dt, this.track, e, this.others(e)).throttle <= 0) {
@@ -164,12 +225,14 @@ export class Race {
     return true;
   }
 
+  /** @param {Entry} e */
   others(e) {
     return this.entries.filter((o) => o !== e);
   }
 
   // dónde está el auto sobre la pista: posición sobre la línea central y de costado (celdas), para los pilotos y
   // para el orden de carrera
+  /** @param {Entry} e @returns {CarState} */
   place(e) {
     const { track } = this;
     const st = stationAt(track, e.car.x, e.car.y);
@@ -179,6 +242,7 @@ export class Race {
   }
 
   // Las vueltas: cada cruce de la línea cuenta si dio la vuelta entera (sin atajos)
+  /** @param {Entry} e @param {number} dt */
   lapLine(e, dt) {
     const { track } = this,
       r = e.lap;
@@ -204,6 +268,7 @@ export class Race {
     if (r.started) r.time += dt;
   }
 
+  /** @param {Entry} e */
   finish(e) {
     if (this.finished.some((f) => f.entry === e)) return;
     this.finished.push({ entry: e, time: this.time });
@@ -212,6 +277,7 @@ export class Race {
 
   // distancia de carrera (celdas de la línea central): vueltas completas más lo recorrido de la actual; antes de
   // cruzar la línea por primera vez, negativa (están en la grilla)
+  /** @param {Entry} e */
   distance(e) {
     const L = this.track.path.st[this.track.path.n];
     return e.lap.started ? e.lap.laps * L + e.st : e.st - L;
@@ -219,6 +285,7 @@ export class Race {
 
   // orden de carrera: primero los que llegaron, en orden; después por distancia; los que abandonaron, al final
   // (entre ellos, el que más anduvo)
+  /** @returns {Entry[]} */
   order() {
     const progress = (e) => {
       const done = this.finished.findIndex((f) => f.entry === e);
@@ -243,6 +310,11 @@ export class Race {
 
   // Distancia del auto `behind` con el de adelante (`ahead`): { time } en segundos, { laps } si le sacó vueltas,
   // o null si todavía no se puede saber
+  /**
+   * @param {Entry} ahead
+   * @param {Entry} behind
+   * @returns {{ time?: number, laps?: number } | null}
+   */
   gap(ahead, behind) {
     const fa = this.finished.find((f) => f.entry === ahead),
       fb = this.finished.find((f) => f.entry === behind);
