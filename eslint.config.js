@@ -7,9 +7,9 @@ import globals from 'globals';
 //   sim       la física y las reglas del auto y la pista: nada de afuera
 //   race      la carrera (grilla, semáforo, choques, vueltas, posiciones, abandonos) y los equipos: sim
 //   drivers   quién maneja (IA clásica, red, jugador): sim y race
-//   render, ui, audio, load: adaptadores del navegador, pueden usar todo lo anterior
+//   render, ui, audio, input, load: adaptadores del navegador, pueden usar todo lo anterior
 // rl/, tools/ y test/ corren en Node: usan sim, race y drivers, nunca lo del navegador.
-const BROWSER = ['render', 'ui', 'audio', 'load'];
+const BROWSER = ['render', 'ui', 'audio', 'input', 'load'];
 const forbid = (layers, message, prefix = '..') => ({
   'no-restricted-imports': [
     'error',

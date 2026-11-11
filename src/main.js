@@ -1,5 +1,5 @@
 import { TRACKS } from '../tracks/index.js';
-import { buildTrackFromLayout, sampleField, stationAt, RIDGE, T } from './sim/track.js';
+import { buildTrackFromLayout, sampleField, stationAt, RIDGE } from './sim/track.js';
 import { loadImage, buildTrack } from './load/trackimage.js';
 import { Renderer, rgb } from './render/renderer.js';
 import { GLRenderer } from './render/glrenderer.js';
@@ -8,14 +8,10 @@ import {
   cornerGrip,
   DEFAULT_PROFILE,
   FUEL_PER_KM,
-  keyboardBrake,
-  keyboardSteer,
   isSolid,
   limitsOn,
   rearMargin,
   RIVAL_AIDS,
-  TEMP_HIGH,
-  TEMP_LOW,
   TRACTION_CONTROL,
   wheelAngle,
 } from './sim/car.js';
@@ -42,11 +38,14 @@ import {
 import { EngineAudio } from './audio/audio.js';
 import { GAME_NET, NeuralDriver, Policy } from './drivers/policy.js';
 import { HumanDriver } from './drivers/human.js';
+import { Gamepad } from './input/gamepad.js';
+import { Keyboard } from './input/keyboard.js';
+import { Hud, SHIFT_LIGHTS } from './ui/hud.js';
 import { Race } from './race/race.js';
 import { RubberMap } from './sim/rubber.js';
 import { DESIGNS } from './render/teamliveries.js';
 import { airDensity, carLimits, DEFAULT_TUNE, GRAVITY } from './sim/dynamics.js';
-import { DAMAGE_LEVELS, damaged, NO_DAMAGE } from './sim/damage.js';
+import { DAMAGE_LEVELS, NO_DAMAGE } from './sim/damage.js';
 import { drawCar, drawShape, trackShape } from './ui/menuview.js';
 
 const VIEW_W = 960;
@@ -66,7 +65,6 @@ const BUZZ = 0.05; // rad: lo que tiembla el volante en el pasto (en los pianos,
 const HEAD_ROLL = 6;
 const HEAD_DIVE = 5;
 const CAR_PROFILE = 'cars/f1-2025.json'; // ajustado con tools/calibrate.js
-const SHIFT_LIGHTS = 15;
 const REPLAY_DELAY = 6; // segundos de resultado antes de que empiece la repetición
 const SETTINGS_KEY = 'formula-medio-settings';
 const OLD_SETTINGS_KEY = 'raycast-racer-settings'; // de cuando el juego se llamaba Raycast Racer
@@ -149,29 +147,7 @@ overlay.height = VIEW_H;
 const ctx = overlay.getContext('2d');
 
 const $ = (id) => document.getElementById(id);
-const hud = {
-  speed: $('speed'),
-  gear: $('gear'),
-  rpm: $('rpm'),
-  mode: $('mode'),
-  lights: $('lights'),
-  help: $('help'),
-  damage: $('damage'),
-  tyres: $('tyres'),
-  lap: $('lap'),
-  pos: $('pos'),
-  results: $('results'),
-  replay: $('replay'),
-  tower: $('tower'),
-  stage: $('stage'),
-  time: $('time'),
-  last: $('last'),
-  best: $('best'),
-  msg: $('msg'),
-};
-for (let i = 0; i < SHIFT_LIGHTS; i++) hud.lights.appendChild(document.createElement('i'));
-const minimap = $('minimap');
-const mctx = minimap.getContext('2d');
+const hud = new Hud($, { ctx, scale: UI_SCALE, ghostStep: GHOST_STEP });
 
 const ghostModel = carModel('#3aa0ff', '#ffffff');
 // el modelo 3D de cada equipo se arma la primera vez que hace falta (la decoración tarda un poco)
@@ -197,31 +173,18 @@ const aiLines = new WeakMap(); // trazada de los rivales de cada circuito
 const tvCams = new WeakMap(); // cámaras de TV de cada circuito, para la repetición
 
 // ---------- entrada ----------
-// Cada tecla se reconoce por su posición (e.code, como en un teclado QWERTY) y también por la letra
-// que escribe (e.key), así funciona igual con distribuciones o teclados no convencionales.
-const keys = new Set();
-const held = new Map(); // e.code → nombres que agregó, para sacarlos al soltar
 const SHIFT_UP = ['KeyX', 'KeyE', 'KeyO'];
 const SHIFT_DOWN = ['KeyZ', 'KeyQ', 'KeyU'];
 
-function keyNames(e) {
-  const names = [e.code];
-  if (e.key.length === 1 && /[a-z]/i.test(e.key)) names.push('Key' + e.key.toUpperCase());
-  return names;
-}
-
-addEventListener('keydown', (e) => {
+const keyboard = new Keyboard(window, (e, names) => {
   if ((e.code.startsWith('Arrow') || e.code === 'Space') && !menuOpen()) e.preventDefault();
   // en el menú Enter lo maneja press (si no, además apretaría el botón que tiene el foco)
   if (e.code === 'Enter' && menuOpen()) e.preventDefault();
   if (settings.sound) audio.start(); // el navegador sólo deja arrancar el audio después de una tecla o un click
   if (e.code === 'KeyN' && !e.repeat) {
     toggleSound();
-    flash(settings.sound ? 'Sonido' : 'Silencio');
+    hud.flash(settings.sound ? 'Sonido' : 'Silencio');
   }
-  const names = keyNames(e);
-  held.set(e.code, names);
-  for (const n of names) keys.add(n);
   press(names, e.repeat);
 });
 
@@ -250,14 +213,14 @@ function press(names, repeat = false) {
   }
   // cambios, con la caja manual (se elige en el menú, no en carrera): X/E/O sube, Z/Q/U baja
   const dir = is(...SHIFT_UP) ? 1 : is(...SHIFT_DOWN) ? -1 : 0;
-  if (dir && game.car.manual && !game.car.shift(dir)) flash('Muy rápido para bajar');
+  if (dir && game.car.manual && !game.car.shift(dir)) hud.flash('Muy rápido para bajar');
   if (is('KeyC')) {
     cockpitView = !cockpitView;
-    flash(cockpitView ? 'Vista cabina' : 'Vista exterior');
+    hud.flash(cockpitView ? 'Vista cabina' : 'Vista exterior');
   }
   if (is('KeyG')) {
     showGuide = !showGuide;
-    flash(showGuide ? 'Trazada ideal' : 'Sin trazada');
+    hud.flash(showGuide ? 'Trazada ideal' : 'Sin trazada');
   }
   if (DAMAGE_TEST) testDamage(game.car, names);
 }
@@ -277,7 +240,7 @@ const TEST_KEYS = {
 function testDamage(car, names) {
   if (names.includes('Digit0')) {
     car.damage = NO_DAMAGE;
-    flash('Auto arreglado');
+    hud.flash('Auto arreglado');
     return;
   }
   const key = names.find((n) => TEST_KEYS[n]);
@@ -291,171 +254,27 @@ function testDamage(car, names) {
     [part]: d[part].map((x, k) => (k === i ? value : x)),
     retired: key === 'Digit9' ? label : d.retired,
   };
-  flash(part === 'tyre' ? label : `${label} ${Math.round(value * 100)} %`);
+  hud.flash(part === 'tyre' ? label : `${label} ${Math.round(value * 100)} %`);
 }
 
-// Daños de tu auto: aparece sólo si hay algo roto. El auto visto desde arriba (la trompa para arriba), cada pieza
-// de su color según cuánto está rota, y abajo la lista.
-const DAMAGE_PARTS = [
-  // pieza, índice, rectángulo en m (x adelante de 2,8 a -2,8; y a la derecha de -1 a 1), nombre
-  ['frontWing', 0, [2.25, 2.8, -0.95, 0], 'Alerón del. izq.'],
-  ['frontWing', 1, [2.25, 2.8, 0, 0.95], 'Alerón del. der.'],
-  ['suspension', 0, [1.3, 2.0, -1.0, -0.6], 'Susp. del. izq.'],
-  ['suspension', 1, [1.3, 2.0, 0.6, 1.0], 'Susp. del. der.'],
-  ['sidepod', 0, [-1.3, 1.0, -0.8, -0.3], 'Pontón izq.'],
-  ['sidepod', 1, [-1.3, 1.0, 0.3, 0.8], 'Pontón der.'],
-  ['suspension', 2, [-2.05, -1.35, -1.0, -0.6], 'Susp. tras. izq.'],
-  ['suspension', 3, [-2.05, -1.35, 0.6, 1.0], 'Susp. tras. der.'],
-  ['rearWing', 0, [-2.8, -2.3, -0.5, 0], 'Alerón tras. izq.'],
-  ['rearWing', 1, [-2.8, -2.3, 0, 0.5], 'Alerón tras. der.'],
-];
-const WHEEL_NAMES = ['del. izq.', 'del. der.', 'tras. izq.', 'tras. der.'];
-const damageColor = (x) => (x <= 0 ? '#3a4150' : x < 0.34 ? '#ffd400' : x < 0.67 ? '#ff8a00' : '#ff3b30');
-let damageClock = 0;
-function drawDamage(g, time) {
-  if (time - damageClock < 200) return;
-  damageClock = time;
-  const d = g.car.damage,
-    show = damaged(d);
-  hud.damage.classList.toggle('show', show);
-  if (!show) return;
-  const X = (y) => 30 + y * 20,
-    Y = (x) => 60 - x * 20;
-  const rect = ([x0, x1, y0, y1], fill, extra = '') =>
-    `<rect x="${X(y0)}" y="${Y(x1)}" width="${(y1 - y0) * 20}" height="${(x1 - x0) * 20}" rx="1.5" fill="${fill}"${extra}/>`;
-  let svg = rect([1.0, 2.25, -0.25, 0.25], '#3a4150') + rect([-2.3, 1.0, -0.3, 0.3], '#3a4150'); // trompa y chasis
-  const lines = [];
-  for (const [part, i, box, name] of DAMAGE_PARTS) {
-    const x = d[part][i];
-    const flat = part === 'suspension' && d.tyre[i] > 0;
-    // rota del todo: sólo el contorno, como si faltara; con la goma pinchada, un borde rojo cortado
-    const outline = ' fill-opacity="0" stroke="#ff3b30" stroke-width="1.2" stroke-dasharray="2 1.5"';
-    svg += rect(
-      box,
-      damageColor(x),
-      x >= 1 ? outline : flat ? ' stroke="#ff3b30" stroke-width="1.5" stroke-dasharray="2 1.5"' : '',
-    );
-    if (x > 0)
-      lines.push(
-        `<span style="color:${damageColor(x)}">${name} ${x >= 1 ? '<b>roto</b>' : `${Math.round(x * 100)} %`}</span>`,
-      );
-  }
-  d.tyre.forEach((t, i) => t > 0 && lines.push(`<span style="color:#ff2a2a">Pinchazo ${WHEEL_NAMES[i]}</span>`));
-  if (d.retired) lines.push(`<b>Abandono: ${d.retired.toLowerCase()}</b>`);
-  const html = `<svg viewBox="0 0 60 120" aria-label="Daños del auto">${svg}</svg><div>${lines.join('<br>')}</div>`;
-  if (hud.damage.innerHTML !== html) hud.damage.innerHTML = html;
-}
-// Las gomas del panel: el color de cada una es su temperatura (azul fría, verde en su punto, de amarilla a roja
-// pasada), con los °C; la barrita, la goma que le queda; un borde blanco, que está bloqueada o patinando
-const TYRE_COLD = 50,
-  TYRE_HOT = 40; // °C por debajo y por encima de la ventana hasta el azul y el rojo plenos
-function tyreColor(t) {
-  const hue =
-    t < TEMP_LOW
-      ? 130 + 80 * Math.min(1, (TEMP_LOW - t) / TYRE_COLD)
-      : t > TEMP_HIGH
-        ? 130 * (1 - Math.min(1, (t - TEMP_HIGH) / TYRE_HOT))
-        : 130;
-  return `hsl(${hue.toFixed(0)} 75% 55%)`;
-}
-let tyresClock = 0;
-function drawTyres(car, time) {
-  if (time - tyresClock < 150) return;
-  tyresClock = time;
-  const cells = hud.tyres.children;
-  for (let i = 0; i < 4; i++) {
-    const c = cells[i],
-      t = car.tyreTemp[i],
-      left = Math.round((1 - car.tyreWear[i]) * 100);
-    const html = `${Math.round(t)}<u style="width:${left}%"></u>`;
-    if (c.innerHTML !== html) c.innerHTML = html;
-    c.style.background = tyreColor(t);
-    c.classList.toggle('slide', car.locked[i >> 1] || (i > 1 && car.wheelspin));
-  }
-}
-addEventListener('keyup', (e) => {
-  for (const n of held.get(e.code) ?? keyNames(e)) keys.delete(n);
-  held.delete(e.code);
-});
-addEventListener('blur', () => {
-  keys.clear();
-  held.clear();
-});
-
-let keySteer = 0; // el volante con teclado, que va subiendo de a poco (keyboardSteer en car.js)
-let keyBrake = 0; // el freno con teclado, que se afloja un poco al doblar (keyboardBrake en car.js)
 function readInput(dt, speed) {
   // flechas, WASD o IJKL, más el joystick: lo que se pise más fuerte de los dos
-  const left = keys.has('ArrowLeft') || keys.has('KeyA') || keys.has('KeyJ');
-  const right = keys.has('ArrowRight') || keys.has('KeyD') || keys.has('KeyL');
-  const up = keys.has('ArrowUp') || keys.has('KeyW') || keys.has('KeyI');
-  const down = keys.has('ArrowDown') || keys.has('KeyS') || keys.has('KeyK') || keys.has('Space');
-  keySteer = keyboardSteer(keySteer, (right ? 1 : 0) - (left ? 1 : 0), speed, dt);
-  keyBrake = keyboardBrake(keyBrake, down, keySteer, speed, dt);
+  const k = keyboard.read(dt, speed);
   return {
-    throttle: Math.max(up ? 1 : 0, pad.throttle),
-    brake: Math.max(keyBrake, pad.brake),
-    steer: Math.max(-1, Math.min(1, keySteer + pad.steer)),
+    throttle: Math.max(k.throttle, pad.throttle),
+    brake: Math.max(k.brake, pad.brake),
+    steer: Math.max(-1, Math.min(1, k.steer + pad.steer)),
   };
 }
 
-// ---------- joystick ----------
-// Con la Gamepad API y el mapeo estándar (los de Xbox y PlayStation): el gatillo derecho acelera y el izquierdo
-// frena, la palanca izquierda dobla, y los tres son progresivos. Los botones hacen lo mismo que una tecla:
-// RB/R1 sube de marcha (X), LB/L1 baja (Z), Y/△ cambia la cámara (C), X/□ la trazada (G),
-// Start abre el menú o larga (Esc / Enter), Back/Share reinicia (R) y la cruceta elige el auto en la repetición.
-const STICK_DEAD = 0.08; // zona muerta de la palanca: cerca del centro no dobla
-const STEER_CURVE = 1.5; // la palanca dobla menos al principio, para corregir fino a alta velocidad
-const TRIGGER_DEAD = 0.04;
-const PAD_KEYS = { 4: 'KeyZ', 5: 'KeyX', 3: 'KeyC', 2: 'KeyG', 8: 'KeyR', 14: 'ArrowLeft', 15: 'ArrowRight' };
-const pad = { throttle: 0, brake: 0, steer: 0, pressed: [] };
-
-// El navegador recién muestra un joystick cuando se aprieta un botón con la página abierta. Si hay varios, usa el
-// primero con mapeo estándar. Los que no lo tienen (algunos genéricos, o según el navegador) suelen traer los
-// gatillos como ejes que en reposo valen -1: el primero frena y el segundo acelera.
-let padId = null;
-const padRest = new Map(); // id → valores de los ejes la primera vez que se lo vio (en reposo)
-
-function pollPad() {
-  const pads = [...(navigator.getGamepads?.() ?? [])].filter(Boolean);
-  const gp = pads.find((g) => g.mapping === 'standard') ?? pads[0];
-  if ((gp?.id ?? null) !== padId) {
-    padId = gp?.id ?? null;
-    $('pad-status').textContent = gp ? `Joystick: ${gp.id}` : 'Joystick: ninguno (conectalo y apretá cualquier botón)';
-    if (gp && game) flash('Joystick conectado');
-  }
-  if (!gp) {
-    Object.assign(pad, { throttle: 0, brake: 0, steer: 0 });
-    return;
-  }
-  if (!padRest.has(gp.id)) padRest.set(gp.id, [...gp.axes]);
-  const value = (i) => gp.buttons[i]?.value ?? 0;
-  const dead = (x) => Math.max(0, (x - TRIGGER_DEAD) / (1 - TRIGGER_DEAD));
-  let brake = value(6),
-    throttle = value(7);
-  if (gp.mapping !== 'standard') {
-    const triggers = padRest
-      .get(gp.id)
-      .map((a, i) => (i >= 2 && a < -0.5 ? i : -1))
-      .filter((i) => i >= 0);
-    if (triggers.length >= 2) {
-      brake = Math.max(brake, (gp.axes[triggers[0]] + 1) / 2);
-      throttle = Math.max(throttle, (gp.axes[triggers[1]] + 1) / 2);
-    }
-  }
-  const x = gp.axes[0] ?? 0,
-    mag = Math.max(0, (Math.abs(x) - STICK_DEAD) / (1 - STICK_DEAD));
-  pad.throttle = dead(throttle);
-  pad.brake = dead(brake);
-  pad.steer = Math.sign(x) * Math.min(1, mag) ** STEER_CURVE;
-  gp.buttons.forEach((b, i) => {
-    if (b.pressed && !pad.pressed[i]) {
-      if (i === 9) press([menuOpen() ? 'Enter' : 'Escape']);
-      else if (PAD_KEYS[i]) press([PAD_KEYS[i]]);
-    }
-    pad.pressed[i] = b.pressed;
-  });
-}
+// el joystick: Start abre el menú o, en el menú, larga
+const pad = new Gamepad({
+  onButton: (names) => press(names[0] === 'Start' ? [menuOpen() ? 'Enter' : 'Escape'] : names),
+  onChange: (id) => {
+    $('pad-status').textContent = id ? `Joystick: ${id}` : 'Joystick: ninguno (conectalo y apretá cualquier botón)';
+    if (id && game) hud.flash('Joystick conectado');
+  },
+});
 
 // ---------- estado del juego ----------
 let game = null;
@@ -546,7 +365,7 @@ function resetGame(track) {
     progressLog: [],
     wrongWay: false,
   };
-  towerClock = 0;
+  hud.towerClock = 0;
   if (!guides.has(track)) guides.set(track, racingLine(track, limitsOn(carProfile, track)));
   // la goma arranca con la franja tenue de otra categoría sobre la trazada y la carrera la va marcando
   game.rubber = new RubberMap(track, guides.get(track).offset);
@@ -567,7 +386,7 @@ function resetGame(track) {
   if (!tvCams.has(track)) tvCams.set(track, tvCameras(track));
   hud.stage.classList.remove('replay');
   hud.stage.classList.toggle('trial', trial);
-  drawMinimapBase(track);
+  hud.drawMinimapBase(track);
 }
 
 // Color de la trazada según la velocidad del auto: verde = se puede acelerar, amarillo = mantener o
@@ -637,19 +456,19 @@ function raceEvent(g, { type, entry: e, time, best, place }) {
   const me = e === g.player;
   if (type === 'retire') {
     if (me) {
-      flash(`Abandono: ${e.car.damage.retired.toLowerCase()}`);
+      hud.flash(`Abandono: ${e.car.damage.retired.toLowerCase()}`);
       g.replayIn = REPLAY_DELAY;
-    } else flash(`Abandona ${e.code}`);
+    } else hud.flash(`Abandona ${e.code}`);
   }
   if (type === 'finish' && me) {
-    flash(`¡Terminaste ${place}º!`);
+    hud.flash(`¡Terminaste ${place}º!`);
     g.replayIn = REPLAY_DELAY;
   }
   if (!me || !['start', 'lap', 'invalid'].includes(type)) return;
-  if (type === 'invalid') flash('Vuelta inválida');
+  if (type === 'invalid') hud.flash('Vuelta inválida');
   if (type === 'lap') {
     if (best && g.trial) g.ghost = Float32Array.from(g.rec); // el fantasma es la mejor vuelta de contrarreloj
-    flash(best ? `¡Mejor vuelta! ${fmt(time)}` : `Vuelta ${fmt(time)}`);
+    hud.flash(best ? `¡Mejor vuelta! ${hud.fmt(time)}` : `Vuelta ${hud.fmt(time)}`);
   }
   // cada cruce de la línea empieza a grabar la vuelta de nuevo
   g.rec = [];
@@ -657,66 +476,6 @@ function raceEvent(g, { type, entry: e, time, best, place }) {
 }
 
 // ---------- carrera ----------
-// distancia con el de adelante, como en la TV: segundos o vueltas
-function gapText(g, ahead, behind) {
-  const gap = g.race.gap(ahead, behind);
-  if (!gap) return '';
-  return gap.laps ? `+${gap.laps} V` : `+${gap.time.toFixed(1)}`;
-}
-
-// tabla de posiciones (como la de la TV): posición, auto y distancia con el de adelante
-let towerClock = 0;
-function drawTower(g, time) {
-  if (time - towerClock < 200) return; // 5 veces por segundo alcanza, y se lee mejor
-  towerClock = time;
-  const order = g.race.order();
-  const rows = order.map((e, i) => {
-    const gap =
-      e.out !== undefined
-        ? 'AB'
-        : i === 0
-          ? g.race.finished.some((f) => f.entry === e)
-            ? 'Final'
-            : 'Líder'
-          : gapText(g, order[i - 1], e);
-    const me = e === g.player ? ' class="me"' : '';
-    return `<tr${me}><td>${i + 1}</td><td><i style="background:${e.color}"></i>${e.code}<small>${e.number}</small></td><td>${gap}</td></tr>`;
-  });
-  const html = `<table>${rows.join('')}</table>`;
-  if (hud.tower.innerHTML !== html) hud.tower.innerHTML = html;
-}
-
-// tabla de resultados: aparece cuando terminás
-function drawResults(g) {
-  const show = g.race.finished.some((f) => f.entry === g.player) || g.player.out !== undefined;
-  hud.results.classList.toggle('show', show);
-  if (!show) return;
-  const first = g.race.finished[0]?.time;
-  const rows = g.race.order().map((e, i) => {
-    const f = g.race.finished.find((x) => x.entry === e);
-    const gap =
-      e.out !== undefined ? 'Abandono' : !f ? 'en pista' : i === 0 ? fmt(f.time) : `+${(f.time - first).toFixed(3)}`;
-    const me = e === g.player ? ' class="me"' : '';
-    return `<tr${me}><td>${i + 1}</td><td><i style="background:${e.color}"></i>${e.name}<small>${e.team}</small></td><td>${gap}</td></tr>`;
-  });
-  const html = `<h3>Resultado</h3><table>${rows.join('')}</table><p>R para correr de nuevo · Esc menú</p>`;
-  if (hud.results.innerHTML !== html) hud.results.innerHTML = html;
-}
-
-let flashTimer = 0;
-function flash(text) {
-  hud.msg.textContent = text;
-  hud.msg.classList.add('show');
-  flashTimer = 2.5;
-}
-
-function fmt(t) {
-  if (t === null) return '--:--.---';
-  const m = Math.floor(t / 60);
-  const s = t - m * 60;
-  return `${m}:${s.toFixed(3).padStart(6, '0')}`;
-}
-
 // ---------- dibujo ----------
 // posición del fantasma en la muestra u (con decimales), interpolando entre las dos grabadas más cercanas
 function ghostAt(ghost, u) {
@@ -835,10 +594,10 @@ async function drawReplay() {
   const order = g.entries.map((_, k) => k).sort((a, b) => ahead(b) - ahead(a));
   const html =
     `<b>REPETICIÓN</b> <span><i style="background:${e.color}"></i>${e.name} · P${order.indexOf(r.target) + 1}</span>` +
-    `<span>${Math.round(Math.abs(pose.speed) * 3.6)} km/h</span><span>${fmt(r.t)}</span>` +
+    `<span>${Math.round(Math.abs(pose.speed) * 3.6)} km/h</span><span>${hud.fmt(r.t)}</span>` +
     `<small>Cámara: ${CAMERA_NAMES[r.mode]}${r.mode === 'auto' ? ` (${CAMERA_NAMES[cam.mode]})` : ''} · C cámara · ←→ auto · R nueva carrera · Esc menú</small>`;
   if (hud.replay.innerHTML !== html) hud.replay.innerHTML = html;
-  drawMinimapAt(
+  hud.drawMinimapAt(
     track,
     poses.map((p, k) => [p.x, p.y, g.entries[k].color, k === r.target]),
   );
@@ -1113,7 +872,7 @@ async function draw(time) {
   await renderer.render(track, cam, sprites, models);
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
 
-  if (!g.race.started || g.race.time < 1) drawLights(g);
+  if (!g.race.started || g.race.time < 1) hud.drawLights(g);
 
   // HUD
   hud.speed.textContent = Math.round(Math.abs(car.speed) * 3.6);
@@ -1130,102 +889,21 @@ async function draw(time) {
   const lap = g.player.lap;
   hud.lap.textContent = g.trial ? lap.laps + 1 : `${Math.min(g.laps, lap.laps + 1)}/${g.laps}`;
   hud.pos.textContent = `${g.race.order().indexOf(g.player) + 1}/${g.entries.length}`;
-  drawTower(g, time);
-  drawDamage(g, time);
-  drawTyres(car, time);
-  drawResults(g);
-  hud.time.textContent = lap.started ? fmt(lap.time) : fmt(null);
-  hud.last.textContent = fmt(lap.last);
-  hud.best.textContent = fmt(lap.best);
-  if (g.wrongWay && flashTimer <= 0) {
+  hud.drawTower(g, time);
+  hud.drawDamage(g, time);
+  hud.drawTyres(car, time);
+  hud.drawResults(g);
+  hud.time.textContent = lap.started ? hud.fmt(lap.time) : hud.fmt(null);
+  hud.last.textContent = hud.fmt(lap.last);
+  hud.best.textContent = hud.fmt(lap.best);
+  if (g.wrongWay && hud.flashTimer <= 0) {
     hud.msg.textContent = '¡CONTRAMANO!';
     hud.msg.classList.add('show');
-  } else if (flashTimer <= 0) {
+  } else if (hud.flashTimer <= 0) {
     hud.msg.classList.remove('show');
   }
 
-  drawMinimap(g);
-}
-
-// Semáforo de largada, como el de la F1: cinco columnas con dos luces rojas cada una.
-// Se prenden de a una por segundo y, después de una espera al azar, se apagan todas: ahí se larga.
-function drawLights(g) {
-  const { lit } = g.race.lights();
-  const w = 26,
-    gap = 6,
-    x0 = 240 - (5 * w + 4 * gap) / 2,
-    y0 = 22;
-  ctx.save();
-  ctx.scale(UI_SCALE, UI_SCALE);
-  ctx.fillStyle = 'rgba(10,10,12,0.9)';
-  ctx.fillRect(x0 - 8, y0 - 6, 5 * w + 4 * gap + 16, 2 * w + 10);
-  for (let i = 0; i < 5; i++) {
-    const x = x0 + i * (w + gap);
-    ctx.fillStyle = '#1b1b1f';
-    ctx.fillRect(x, y0 - 2, w, 2 * w + 2);
-    for (let row = 0; row < 2; row++) {
-      ctx.beginPath();
-      ctx.arc(x + w / 2, y0 + w / 2 + row * w, w * 0.36, 0, Math.PI * 2);
-      ctx.fillStyle = i < lit ? '#ff1e1e' : '#3a0d0d';
-      if (i < lit) {
-        ctx.shadowColor = '#ff2a2a';
-        ctx.shadowBlur = 10;
-      }
-      ctx.fill();
-      ctx.shadowBlur = 0;
-    }
-  }
-  ctx.restore();
-}
-
-let minimapBase = null;
-function drawMinimapBase(track) {
-  const { W, H, tiles } = track;
-  const c = document.createElement('canvas');
-  c.width = W;
-  c.height = H;
-  const g = c.getContext('2d');
-  const img = g.createImageData(W, H);
-  const d = new Uint32Array(img.data.buffer);
-  for (let i = 0; i < W * H; i++) {
-    const t = tiles[i];
-    if (t === T.ROAD) d[i] = 0xf0ffffff;
-    else if (t === T.WALL) d[i] = 0x50ffffff;
-  }
-  g.putImageData(img, 0, 0);
-  minimap.width = 220;
-  minimap.height = Math.round((220 * H) / W);
-  minimapBase = c;
-}
-
-function drawMinimap(g) {
-  const { W } = g.track;
-  const k = minimap.width / W;
-  mctx.clearRect(0, 0, minimap.width, minimap.height);
-  mctx.drawImage(minimapBase, 0, 0, minimap.width, minimap.height);
-  if (g.trial && g.ghost && g.player.lap.started) {
-    const i = Math.min(Math.floor(g.player.lap.time / GHOST_STEP), g.ghost.length / 2 - 1) * 2;
-    dot(g.ghost[i] * k, g.ghost[i + 1] * k, '#3aa0ff');
-  }
-  for (const e of g.entries) if (e !== g.player && !e.car.gone) dot(e.car.x * k, e.car.y * k, e.color, 3);
-  dot(g.car.x * k, g.car.y * k, g.player.color);
-}
-
-// minimapa de la repetición: dots = [[x, y, color, destacado]]
-function drawMinimapAt(track, dots) {
-  const k = minimap.width / track.W;
-  mctx.clearRect(0, 0, minimap.width, minimap.height);
-  mctx.drawImage(minimapBase, 0, 0, minimap.width, minimap.height);
-  for (const [x, y, color, big] of [...dots].sort((a, b) => a[3] - b[3])) dot(x * k, y * k, color, big ? 5 : 3);
-}
-
-function dot(x, y, color, r = 4) {
-  mctx.beginPath();
-  mctx.arc(x, y, r, 0, Math.PI * 2);
-  mctx.fillStyle = color;
-  mctx.fill();
-  mctx.strokeStyle = '#000';
-  mctx.stroke();
+  hud.drawMinimap(g);
 }
 
 // ---------- bucle ----------
@@ -1241,7 +919,7 @@ function frame(now) {
   }
   const dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
-  pollPad();
+  pad.poll();
   if (game) {
     // al terminar, unos segundos de resultado y después la repetición (la carrera queda en pausa)
     if (game.replayIn !== null && !game.replay) {
@@ -1257,7 +935,7 @@ function frame(now) {
         drawing = false;
       });
     }
-    flashTimer -= dt;
+    hud.tick(dt);
   }
   requestAnimationFrame(frame);
 }
@@ -1327,7 +1005,7 @@ async function startRace() {
     resetGame(track);
   } catch (err) {
     console.error(err);
-    flash('No se pudo cargar el circuito');
+    hud.flash('No se pudo cargar el circuito');
   } finally {
     button.textContent = 'Largar';
     starting = false;
