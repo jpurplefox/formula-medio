@@ -1,7 +1,7 @@
-# Revisa cada PR y cada push a main: ESLint y Prettier (npm run lint), los tests (npm test, en test/) y el chequeo de
-# regresión (tools/regress.js),
-# que corre carreras con semilla fija y las compara con tools/regress.base.txt. Si un cambio toca la física, la IA
-# o los sensores a propósito, se actualiza la base con node tools/regress.js guardar y se commitea con el cambio.
+# Revisa cada PR y cada push a main: ESLint y Prettier (npm run lint), los tests (npm test, en test/) y el chequeo
+# de regresión (tools/regress.js), que corre carreras con semilla fija y las compara con tools/regress.base.txt. Si
+# un cambio toca la física, la IA o los sensores a propósito, se actualiza la base con node tools/regress.js guardar
+# y se commitea con el cambio.
 name: Check
 
 on:
