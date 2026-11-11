@@ -2,7 +2,22 @@
 // Los pesos vienen de rl/export.py: capas lineales con tanh entre ellas.
 
 import { rescue } from './ai.js';
-import { aheadFromCar, DAMAGE_VALUES, LIMIT_VALUES, OBS_SIZE, observe, OPPONENT_INPUT_SIZE, SETUP_START, SETUP_VALUES, FAR_AHEAD, RISK_INPUT_SIZE, START_INPUT_START, START_VALUES, TYRE_VALUES, WHEEL_VALUES } from './sensors.js';
+import {
+  aheadFromCar,
+  DAMAGE_VALUES,
+  LIMIT_VALUES,
+  OBS_SIZE,
+  observe,
+  OPPONENT_INPUT_SIZE,
+  SETUP_START,
+  SETUP_VALUES,
+  FAR_AHEAD,
+  RISK_INPUT_SIZE,
+  START_INPUT_START,
+  START_VALUES,
+  TYRE_VALUES,
+  WHEEL_VALUES,
+} from './sensors.js';
 import { stationAt } from './track.js';
 
 // La red con la que manejan los rivales en el juego (rl/CURRICULO.md). Es la única referencia: la usan también el
@@ -17,7 +32,17 @@ export class Policy {
     // además, no reciben esos valores: se les sacan
     this.size = obs_size;
     const reads = [OBS_SIZE];
-    for (const n of [FAR_AHEAD.length, RISK_INPUT_SIZE, TYRE_VALUES, START_VALUES, OPPONENT_INPUT_SIZE, DAMAGE_VALUES, LIMIT_VALUES, WHEEL_VALUES]) reads.push(reads.at(-1) - n);
+    for (const n of [
+      FAR_AHEAD.length,
+      RISK_INPUT_SIZE,
+      TYRE_VALUES,
+      START_VALUES,
+      OPPONENT_INPUT_SIZE,
+      DAMAGE_VALUES,
+      LIMIT_VALUES,
+      WHEEL_VALUES,
+    ])
+      reads.push(reads.at(-1) - n);
     this.legacy = obs_size === reads.at(-1) - SETUP_VALUES;
     if (!reads.includes(obs_size) && !this.legacy) {
       throw new Error(`La red espera ${obs_size} valores y los sensores dan ${OBS_SIZE}`);

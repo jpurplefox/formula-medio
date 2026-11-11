@@ -14,14 +14,20 @@ import { loadTrack, TRACK_IDS } from './tracks.js';
 const [file, ids] = process.argv.slice(2);
 const policy = new Policy(JSON.parse(readFileSync(file, 'utf8')));
 const profile = JSON.parse(readFileSync(new URL('../cars/f1-2025.json', import.meta.url), 'utf8')) ?? DEFAULT_PROFILE;
-const DT = 1 / 60, LAPS = 3, MAX_TIME = 400;
+const DT = 1 / 60,
+  LAPS = 3,
+  MAX_TIME = 400;
 
 function run(track, drive) {
   const slot = gridSlots(track, 1)[0];
   const car = Object.assign(new Car(slot.x, slot.y, slot.angle, profile), RIVAL_AIDS); // con las ayudas del juego
   car.launch();
   car.throttle = 1;
-  let prev = stationAt(track, car.x, car.y), laps = [], last = null, grass = 0, hits = 0;
+  let prev = stationAt(track, car.x, car.y),
+    laps = [],
+    last = null,
+    grass = 0,
+    hits = 0;
   for (let t = 0; t < MAX_TIME && laps.length < LAPS; t += DT) {
     const bump = car.bump;
     car.update(DT, drive(car), track);

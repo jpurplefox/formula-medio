@@ -4,28 +4,138 @@
 // sigla para la tabla y número), inventados a partir de la grilla de 2026. Como en la F1, el primero lleva la cámara
 // de arriba, la "T", negra y el segundo, amarilla (como en la grilla de 2026 de verdad); si elegís ese equipo, manejás el auto del piloto que elijas.
 export const TEAMS = [
-  { id: 'hierrari', name: 'Hierrari', code: 'HIE', color: '#d40000', accent: '#ffe600', helmet: '#ffe600',
-    drivers: [['Carlos Le Clic', 'LEC', '16'], ['Luis Jamónton', 'JAM', '44']] },
-  { id: 'merchoedes', name: 'Merchoedes', code: 'MER', color: '#c3c8cd', accent: '#00b5a5', helmet: '#1a1a1a',
-    drivers: [['Jorge Rústico', 'RUS', '63'], ['Kimi Antojo', 'ANT', '12']] },
-  { id: 'redtoro', name: 'Red Toro', code: 'RTO', color: '#1b2550', accent: '#e8002d', helmet: '#ffc906',
-    drivers: [['Max Verstapón', 'VER', '3'], ['Isaac Hachar', 'HAC', '6']] },
-  { id: 'mclarron', name: 'McLarrón', code: 'MCL', color: '#ff8000', accent: '#2a73d6', helmet: '#47c7fc',
-    drivers: [['Óscar Pistacho', 'PIS', '81'], ['Lando Nórdico', 'NOR', '1']] },
-  { id: 'austin', name: 'Austin Martini', code: 'AUS', color: '#00594f', accent: '#cedc00', helmet: '#cedc00',
-    drivers: [['Lance Trol', 'TRO', '18'], ['Fernando Alondra', 'ALO', '14']] },
-  { id: 'allpain', name: 'Allpain', code: 'ALL', color: '#0078c1', accent: '#f363b9', helmet: '#f363b9',
-    drivers: [['Pedro Gaseosa', 'GAS', '10'], ['Franco Colapuntos', 'COL', '43']] },
-  { id: 'willyams', name: 'Willyams', code: 'WIL', color: '#0b2463', accent: '#ffffff', helmet: '#ffffff',
-    drivers: [['Alex Albóndiga', 'ALB', '23'], ['Carlos Santo', 'SAN', '55']] },
-  { id: 'audios', name: 'Audiós', code: 'AUD', color: '#a3a8ae', accent: '#ff2d2d', helmet: '#d6dadf',
-    drivers: [['Nico Increíble', 'INC', '27'], ['Gabriel Borbotón', 'BOR', '5']] },
-  { id: 'haash', name: 'Haash', code: 'HAA', color: '#e9e9e9', accent: '#d50000', helmet: '#d50000',
-    drivers: [['Esteban Ocono', 'OCO', '31'], ['Oliver Bermudas', 'BER', '87']] },
-  { id: 'alfatorito', name: 'AlfaTorito', code: 'ALF', color: '#f2f2f2', accent: '#1634cc', helmet: '#e8e8e8',
-    drivers: [['Arvid Blablá', 'BLA', '41'], ['Liam Leyson', 'LEY', '30']] },
-  { id: 'cadillaque', name: 'Cadillaque', code: 'CAD', color: '#141414', accent: '#c9a54a', helmet: '#f2f2f2',
-    drivers: [['Checo Pereza', 'PER', '11'], ['Valtteri Botas', 'BOT', '77']] },
+  {
+    id: 'hierrari',
+    name: 'Hierrari',
+    code: 'HIE',
+    color: '#d40000',
+    accent: '#ffe600',
+    helmet: '#ffe600',
+    drivers: [
+      ['Carlos Le Clic', 'LEC', '16'],
+      ['Luis Jamónton', 'JAM', '44'],
+    ],
+  },
+  {
+    id: 'merchoedes',
+    name: 'Merchoedes',
+    code: 'MER',
+    color: '#c3c8cd',
+    accent: '#00b5a5',
+    helmet: '#1a1a1a',
+    drivers: [
+      ['Jorge Rústico', 'RUS', '63'],
+      ['Kimi Antojo', 'ANT', '12'],
+    ],
+  },
+  {
+    id: 'redtoro',
+    name: 'Red Toro',
+    code: 'RTO',
+    color: '#1b2550',
+    accent: '#e8002d',
+    helmet: '#ffc906',
+    drivers: [
+      ['Max Verstapón', 'VER', '3'],
+      ['Isaac Hachar', 'HAC', '6'],
+    ],
+  },
+  {
+    id: 'mclarron',
+    name: 'McLarrón',
+    code: 'MCL',
+    color: '#ff8000',
+    accent: '#2a73d6',
+    helmet: '#47c7fc',
+    drivers: [
+      ['Óscar Pistacho', 'PIS', '81'],
+      ['Lando Nórdico', 'NOR', '1'],
+    ],
+  },
+  {
+    id: 'austin',
+    name: 'Austin Martini',
+    code: 'AUS',
+    color: '#00594f',
+    accent: '#cedc00',
+    helmet: '#cedc00',
+    drivers: [
+      ['Lance Trol', 'TRO', '18'],
+      ['Fernando Alondra', 'ALO', '14'],
+    ],
+  },
+  {
+    id: 'allpain',
+    name: 'Allpain',
+    code: 'ALL',
+    color: '#0078c1',
+    accent: '#f363b9',
+    helmet: '#f363b9',
+    drivers: [
+      ['Pedro Gaseosa', 'GAS', '10'],
+      ['Franco Colapuntos', 'COL', '43'],
+    ],
+  },
+  {
+    id: 'willyams',
+    name: 'Willyams',
+    code: 'WIL',
+    color: '#0b2463',
+    accent: '#ffffff',
+    helmet: '#ffffff',
+    drivers: [
+      ['Alex Albóndiga', 'ALB', '23'],
+      ['Carlos Santo', 'SAN', '55'],
+    ],
+  },
+  {
+    id: 'audios',
+    name: 'Audiós',
+    code: 'AUD',
+    color: '#a3a8ae',
+    accent: '#ff2d2d',
+    helmet: '#d6dadf',
+    drivers: [
+      ['Nico Increíble', 'INC', '27'],
+      ['Gabriel Borbotón', 'BOR', '5'],
+    ],
+  },
+  {
+    id: 'haash',
+    name: 'Haash',
+    code: 'HAA',
+    color: '#e9e9e9',
+    accent: '#d50000',
+    helmet: '#d50000',
+    drivers: [
+      ['Esteban Ocono', 'OCO', '31'],
+      ['Oliver Bermudas', 'BER', '87'],
+    ],
+  },
+  {
+    id: 'alfatorito',
+    name: 'AlfaTorito',
+    code: 'ALF',
+    color: '#f2f2f2',
+    accent: '#1634cc',
+    helmet: '#e8e8e8',
+    drivers: [
+      ['Arvid Blablá', 'BLA', '41'],
+      ['Liam Leyson', 'LEY', '30'],
+    ],
+  },
+  {
+    id: 'cadillaque',
+    name: 'Cadillaque',
+    code: 'CAD',
+    color: '#141414',
+    accent: '#c9a54a',
+    helmet: '#f2f2f2',
+    drivers: [
+      ['Checo Pereza', 'PER', '11'],
+      ['Valtteri Botas', 'BOT', '77'],
+    ],
+  },
 ];
 
 // Ritmo de los rivales: del más rápido (pole) al más lento, repartido parejo entre los 21
@@ -59,8 +169,19 @@ export const LAP_OPTIONS = [1, 3, 5, 10];
 // Cómo viene el campeonato, del mejor equipo al peor (actualizarlo a medida que avanza la temporada). Los rivales
 // van en este orden: los de los mejores equipos largan adelante y reciben el ritmo (IA de siempre) o el agarre y la
 // potencia (red) más altos de la dificultad elegida.
-const STANDINGS = ['merchoedes', 'hierrari', 'mclarron', 'redtoro', 'allpain', 'haash', 'alfatorito', 'audios',
-  'willyams', 'austin', 'cadillaque'];
+const STANDINGS = [
+  'merchoedes',
+  'hierrari',
+  'mclarron',
+  'redtoro',
+  'allpain',
+  'haash',
+  'alfatorito',
+  'audios',
+  'willyams',
+  'austin',
+  'cadillaque',
+];
 
 // Cuántos rivales se pueden elegir en el menú: con 10 (lo que viene elegido), uno de cada equipo rival; con todos, la
 // grilla completa
@@ -90,8 +211,9 @@ export const car = (team, slot) => {
 // largar adelante, pero cualquiera puede quedar hasta unos GRID_MIX puestos más adelante o más atrás
 const GRID_MIX = 6;
 export function gridOrder(count, rand = Math.random) {
-  const order = Array.from({ length: count }, (_, i) => ({ i, key: i + GRID_MIX * rand() }))
-    .sort((a, b) => a.key - b.key);
+  const order = Array.from({ length: count }, (_, i) => ({ i, key: i + GRID_MIX * rand() })).sort(
+    (a, b) => a.key - b.key,
+  );
   const slot = new Array(count);
   order.forEach(({ i }, k) => (slot[i] = k));
   return slot;

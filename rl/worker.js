@@ -46,9 +46,9 @@ class Solo {
 }
 
 const Sim = { race: RaceSim, herd: HerdSim }[mode];
-const sims = Array.from({ length: Number(n) }, (_, k) => Sim
-  ? new Sim({ ...options, trackIds, seed: Number(seed) * 1000 + k })
-  : new Solo(Number(seed) * 1000 + k));
+const sims = Array.from({ length: Number(n) }, (_, k) =>
+  Sim ? new Sim({ ...options, trackIds, seed: Number(seed) * 1000 + k }) : new Solo(Number(seed) * 1000 + k),
+);
 const N = sims.reduce((a, s) => a + s.agents, 0);
 const obs = new Float32Array(N * OBS_SIZE);
 const out = new Float32Array(N * (OBS_SIZE + 3));
@@ -75,7 +75,7 @@ function stepAll(actions) {
         info.terminal = Array.from(r.obs);
       }
       if (Object.keys(info).length) infos.push([k, info]);
-      out.set(fresh ? fresh[j] : r.next ?? r.obs, k * OBS_SIZE);
+      out.set(fresh ? fresh[j] : (r.next ?? r.obs), k * OBS_SIZE);
       out[N * OBS_SIZE + k] = r.reward;
       out[N * (OBS_SIZE + 1) + k] = ended ? 1 : 0;
       out[N * (OBS_SIZE + 2) + k] = r.truncated ? 1 : 0;

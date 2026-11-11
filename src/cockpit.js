@@ -2,7 +2,8 @@
 // afuera, dibujado por el renderer desde los ojos del piloto. Acá se dibuja la pantalla del volante (la marcha, la
 // velocidad y las luces de cambio) en un canvas chico que el renderer pone sobre el volante 3D (m.screen).
 
-const W = 256, H = 144;
+const W = 256,
+  H = 144;
 
 export class Cockpit {
   constructor() {

@@ -41,7 +41,14 @@ function numbers(value, out, seen = new Set()) {
 function scenarioHash(policy, scenario) {
   Math.random = rng(777);
   setDamageRandom(rng(778));
-  const sim = new RaceSim({ trackIds: TRACK_IDS, agents: 4, seed: 12345, mix: { [scenario]: 1 }, damage: 'real', progress: 1 });
+  const sim = new RaceSim({
+    trackIds: TRACK_IDS,
+    agents: 4,
+    seed: 12345,
+    mix: { [scenario]: 1 },
+    damage: 'real',
+    progress: 1,
+  });
   const hash = createHash('sha256');
   let steps = 0;
   for (let race = 0; race < RACES; race++) {
@@ -67,7 +74,9 @@ function report() {
   const policy = new Policy(JSON.parse(readFileSync(new URL(`../${NET}`, import.meta.url), 'utf8')));
   const lines = Object.keys(SCENARIOS).map((s) => scenarioHash(policy, s));
   const game = execFileSync('node', ['rl/race_eval.js', NET, GAME_TRACKS, '2'], {
-    cwd: ROOT, env: { ...process.env, JUEGO: '1', DANOS: 'real' }, encoding: 'utf8',
+    cwd: ROOT,
+    env: { ...process.env, JUEGO: '1', DANOS: 'real' },
+    encoding: 'utf8',
   });
   return [...lines, ...game.trim().split('\n')].join('\n') + '\n';
 }
@@ -80,7 +89,8 @@ if (process.argv[2] === 'guardar') {
   const base = readFileSync(BASE, 'utf8');
   if (base === now) console.log('igual que la base ✓');
   else {
-    const a = base.split('\n'), b = now.split('\n');
+    const a = base.split('\n'),
+      b = now.split('\n');
     for (let i = 0; i < Math.max(a.length, b.length); i++) {
       if (a[i] !== b[i]) console.log(`- ${a[i] ?? ''}\n+ ${b[i] ?? ''}`);
     }

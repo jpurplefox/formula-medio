@@ -23,9 +23,11 @@ export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE
   const wrap = (b) => ((b % n) + n) % n;
 
   // normal hacia la derecha de la marcha en cada punto (mismo signo que track.lat)
-  const nx = new Float64Array(n), ny = new Float64Array(n);
+  const nx = new Float64Array(n),
+    ny = new Float64Array(n);
   for (let b = 0; b < n; b++) {
-    const dx = x[wrap(b + 2)] - x[wrap(b - 2)], dy = y[wrap(b + 2)] - y[wrap(b - 2)];
+    const dx = x[wrap(b + 2)] - x[wrap(b - 2)],
+      dy = y[wrap(b + 2)] - y[wrap(b - 2)];
     const len = Math.hypot(dx, dy) || 1;
     nx[b] = -dy / len;
     ny[b] = dx / len;
@@ -46,7 +48,8 @@ export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE
     let j = -1; // último punto de control antes de b (-1: el tramo viene del último de la vuelta)
     for (let b = 0; b < n; b++) {
       while (j + 1 < ctrl.length && ctrl[j + 1].s <= st[b]) j++;
-      const a = ctrl[j < 0 ? ctrl.length - 1 : j], c = ctrl[(j + 1) % ctrl.length];
+      const a = ctrl[j < 0 ? ctrl.length - 1 : j],
+        c = ctrl[(j + 1) % ctrl.length];
       const span = (c.s - a.s + len) % len || len;
       const t = ((st[b] - a.s + len) % len) / span;
       off[b] = a.o + (c.o - a.o) * t * t * (3 - 2 * t);
@@ -57,7 +60,8 @@ export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE
   for (const [k, iters] of SMOOTH) {
     for (let it = 0; it < iters; it++) {
       for (let b = 0; b < n; b++) {
-        const a = wrap(b - k), c = wrap(b + k);
+        const a = wrap(b - k),
+          c = wrap(b + k);
         const mx = (x[a] + nx[a] * off[a] + x[c] + nx[c] * off[c]) / 2;
         const my = (y[a] + ny[a] * off[a] + y[c] + ny[c] * off[c]) / 2;
         const target = (mx - x[b]) * nx[b] + (my - y[b]) * ny[b];
@@ -65,7 +69,8 @@ export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE
       }
     }
   }
-  const px = new Float64Array(n), py = new Float64Array(n);
+  const px = new Float64Array(n),
+    py = new Float64Array(n);
   for (let b = 0; b < n; b++) {
     px[b] = x[b] + nx[b] * off[b];
     py[b] = y[b] + ny[b] * off[b];
@@ -76,10 +81,16 @@ export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE
   let curv = new Float64Array(n);
   const ds = new Float64Array(n);
   for (let b = 0; b < n; b++) {
-    const a = wrap(b - K), c = wrap(b + K);
-    const ax = px[a] - px[b], ay = py[a] - py[b], cx = px[c] - px[b], cy = py[c] - py[b];
+    const a = wrap(b - K),
+      c = wrap(b + K);
+    const ax = px[a] - px[b],
+      ay = py[a] - py[b],
+      cx = px[c] - px[b],
+      cy = py[c] - py[b];
     const cross = ax * cy - ay * cx;
-    const la = Math.hypot(ax, ay), lc = Math.hypot(cx, cy), lac = Math.hypot(px[c] - px[a], py[c] - py[a]);
+    const la = Math.hypot(ax, ay),
+      lc = Math.hypot(cx, cy),
+      lac = Math.hypot(px[c] - px[a], py[c] - py[a]);
     curv[b] = Math.abs((2 * cross) / (la * lc * lac || 1)) / meters;
     ds[b] = Math.hypot(px[wrap(b + 1)] - px[b], py[wrap(b + 1)] - py[b]) * meters;
   }
@@ -96,21 +107,25 @@ export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE
   const v = Float64Array.from(curv, (k) => cornerSpeed(limits, k, gripUse));
   for (let pass = 0; pass < 2; pass++) {
     for (let i = 2 * n - 1; i >= 0; i--) {
-      const b = wrap(i), next = v[wrap(b + 1)];
+      const b = wrap(i),
+        next = v[wrap(b + 1)];
       // doblando, a las gomas les queda menos para frenar (círculo de fricción): hay que frenar antes de la curva
       const turning = Math.min(1, (next * next * curv[b]) / (limits.lateral(next) * gripUse));
-      const decel = (limits.brake(next) * Math.max(BRAKE_TURNING, Math.sqrt(1 - turning * turning)) + limits.drag(next)) * brakeUse;
+      const decel =
+        (limits.brake(next) * Math.max(BRAKE_TURNING, Math.sqrt(1 - turning * turning)) + limits.drag(next)) * brakeUse;
       v[b] = Math.min(v[b], Math.sqrt(next * next + 2 * decel * ds[b]));
     }
     for (let i = 0; i < 2 * n; i++) {
-      const b = wrap(i), prev = v[wrap(b - 1)];
+      const b = wrap(i),
+        prev = v[wrap(b - 1)];
       v[b] = Math.min(v[b], Math.sqrt(prev * prev + 2 * Math.max(0, limits.accel(prev)) * ds[wrap(b - 1)]));
     }
   }
 
   // 4) Pasamos todo a una entrada por celda de la línea central
   const L = Math.ceil(st[n]) + 1;
-  const offset = new Float32Array(L), speed = new Float32Array(L);
+  const offset = new Float32Array(L),
+    speed = new Float32Array(L);
   let b = 0;
   for (let u = 0; u < L; u++) {
     while (b < n - 1 && st[b + 1] <= u) b++;
@@ -125,7 +140,8 @@ export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE
 // Tramos donde la pista dobla siempre para el mismo lado, con su vértice (el punto más cerrado).
 // sign: +1 dobla a la derecha, -1 a la izquierda. Posiciones en celdas sobre la línea central.
 function findCorners(curv, st, n, wrap, meters) {
-  const bend = meters / BEND_RADIUS, sharp = meters / CORNER_RADIUS;
+  const bend = meters / BEND_RADIUS,
+    sharp = meters / CORNER_RADIUS;
   const bent = (b) => Math.abs(curv[b]) > bend;
   let start = 0;
   while (start < n && bent(start)) start++; // arrancamos en una recta para no partir una curva
@@ -134,10 +150,15 @@ function findCorners(curv, st, n, wrap, meters) {
     const b = wrap(start + k);
     if (!bent(b)) continue;
     const sign = Math.sign(curv[b]);
-    let end = k, peak = 0, apex = b;
+    let end = k,
+      peak = 0,
+      apex = b;
     while (end < k + n && bent(wrap(start + end)) && Math.sign(curv[wrap(start + end)]) === sign) {
       const c = wrap(start + end);
-      if (Math.abs(curv[c]) > peak) { peak = Math.abs(curv[c]); apex = c; }
+      if (Math.abs(curv[c]) > peak) {
+        peak = Math.abs(curv[c]);
+        apex = c;
+      }
       end++;
     }
     if (peak > sharp) corners.push({ sign, from: st[b], apex: st[apex], to: st[wrap(start + end - 1)] });

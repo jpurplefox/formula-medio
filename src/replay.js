@@ -19,7 +19,8 @@ export class Recorder {
     this.clock += dt;
     while (this.clock >= REPLAY_STEP) {
       this.clock -= REPLAY_STEP;
-      for (const { car: c, dist } of cars) this.data.push(c.x, c.y, c.angle, c.steer, c.speed, c.slope, dist, c.rpm, c.throttle, c.gear);
+      for (const { car: c, dist } of cars)
+        this.data.push(c.x, c.y, c.angle, c.steer, c.speed, c.slope, dist, c.rpm, c.throttle, c.gear);
     }
   }
 
@@ -31,16 +32,29 @@ export class Recorder {
   at(t) {
     const frames = this.data.length / (FIELDS * this.count);
     const u = Math.min(frames - 1.001, Math.max(0, t / REPLAY_STEP));
-    const i = Math.floor(u), f = u - i;
+    const i = Math.floor(u),
+      f = u - i;
     const d = this.data;
     const poses = [];
     for (let k = 0; k < this.count; k++) {
-      const a = (i * this.count + k) * FIELDS, b = a + this.count * FIELDS;
+      const a = (i * this.count + k) * FIELDS,
+        b = a + this.count * FIELDS;
       const lerp = (j) => d[a + j] + (d[b + j] - d[a + j]) * f;
       // el ángulo, por el camino más corto
       let da = d[b + 2] - d[a + 2];
       da -= Math.round(da / (Math.PI * 2)) * Math.PI * 2;
-      poses.push({ x: lerp(0), y: lerp(1), angle: d[a + 2] + da * f, steer: lerp(3), speed: lerp(4), slope: lerp(5), dist: lerp(6), rpm: lerp(7), throttle: d[a + 8], gear: d[a + 9] });
+      poses.push({
+        x: lerp(0),
+        y: lerp(1),
+        angle: d[a + 2] + da * f,
+        steer: lerp(3),
+        speed: lerp(4),
+        slope: lerp(5),
+        dist: lerp(6),
+        rpm: lerp(7),
+        throttle: d[a + 8],
+        gear: d[a + 9],
+      });
     }
     return poses;
   }
@@ -52,7 +66,8 @@ const TV_SPACING = 230;
 const TV_HEIGHT = 12;
 const TV_BACK = 2; // metros por detrás del muro
 export function tvCameras(track) {
-  const f = lineFrame(track), M = track.meters;
+  const f = lineFrame(track),
+    M = track.meters;
   const out = [];
   const count = Math.max(4, Math.round((f.length * M) / TV_SPACING));
   for (let k = 0; k < count; k++) {
@@ -64,7 +79,14 @@ export function tvCameras(track) {
   return out;
 }
 
-export const CAMERA_NAMES = { auto: 'Automática', tv: 'TV', chase: 'Persecución', onboard: 'A bordo', heli: 'Helicóptero', front: 'Frontal' };
+export const CAMERA_NAMES = {
+  auto: 'Automática',
+  tv: 'TV',
+  chase: 'Persecución',
+  onboard: 'A bordo',
+  heli: 'Helicóptero',
+  front: 'Frontal',
+};
 export const CAMERA_MODES = Object.keys(CAMERA_NAMES);
 // orden de las tomas del director automático y cuánto dura cada una (s)
 const SHOTS = ['tv', 'chase', 'tv', 'heli', 'onboard', 'tv', 'front'];
@@ -77,7 +99,8 @@ export function replayCamera(mode, pose, track, tvCams, state, t, P) {
   const M = track.meters;
   const heightAt = (x, y) => sampleField(track.height, track.W, x, y);
   const carZ = heightAt(pose.x, pose.y);
-  const ca = Math.cos(pose.angle), sa = Math.sin(pose.angle);
+  const ca = Math.cos(pose.angle),
+    sa = Math.sin(pose.angle);
   const at = (fwd, up) => ({ x: pose.x + (ca * fwd) / M, y: pose.y + (sa * fwd) / M, up });
   let cam, look; // posición de la cámara y punto al que mira
   let zoom = 1;
@@ -85,7 +108,9 @@ export function replayCamera(mode, pose, track, tvCams, state, t, P) {
     // la cámara más cercana; cambia sólo si otra queda bastante más cerca
     const dist = (c) => Math.hypot(c.x - pose.x, c.y - pose.y);
     let best = state.tv ?? 0;
-    tvCams.forEach((c, k) => { if (dist(c) < dist(tvCams[best]) * 0.7) best = k; });
+    tvCams.forEach((c, k) => {
+      if (dist(c) < dist(tvCams[best]) * 0.7) best = k;
+    });
     state.tv = best;
     const c = tvCams[best];
     cam = { x: c.x, y: c.y, up: TV_HEIGHT };
@@ -107,7 +132,8 @@ export function replayCamera(mode, pose, track, tvCams, state, t, P) {
   }
   const ground = heightAt(cam.x, cam.y);
   const z = (mode === 'tv' ? ground : carZ) + cam.up / M;
-  const dx = look.x - cam.x, dy = look.y - cam.y;
+  const dx = look.x - cam.x,
+    dy = look.y - cam.y;
   const angle = Math.atan2(dy, dx);
   // inclinación: el horizonte se corre para que el punto mirado quede en el medio de la pantalla
   const d = Math.max(0.5, Math.hypot(dx, dy));

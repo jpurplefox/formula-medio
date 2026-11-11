@@ -18,7 +18,9 @@ const WHEEL_M = 0.8; // de la línea del auto a cada rueda (m)
 const WHEEL_SPREAD_M = 0.35; // medio ancho de la marca de cada rueda (m)
 // cuánta goma deja una rueda por metro, sin exigir el agarre y al límite; la marca se ve
 // 1 - exp(-goma / SATURATION): con unas 3 vueltas de 22 autos la trazada ya está clara y a las 10, bien negra
-const PER_M = 0.4, PER_M_LIMIT = 1.6, SATURATION = 25;
+const PER_M = 0.4,
+  PER_M_LIMIT = 1.6,
+  SATURATION = 25;
 const REFRESH = 0.5; // cada cuánto se recalculan los bytes (s)
 const MAX_ROWS = 4096; // las texturas no pueden ser más largas
 const RUBBER_GRIP = 0.06; // fuera de la trazada al largar, 2 % menos de agarre; con la trazada negra, 4 % más
@@ -48,7 +50,7 @@ export class RubberMap {
   }
 
   laneSide(l) {
-    return ((l + 0.5) / this.lanes * 2 - 1) * this.span;
+    return (((l + 0.5) / this.lanes) * 2 - 1) * this.span;
   }
 
   // Lo que dejó cada auto en este cuadro. cars: [{ car, st, lat }] (st y lat en celdas, como carState)
@@ -75,10 +77,12 @@ export class RubberMap {
 
   // las dos ruedas: una marca de cada lado de la línea del auto, más fuerte en el centro
   deposit(row, lat, amount) {
-    const laneW = (2 * this.span) / this.lanes, spread = WHEEL_SPREAD_M / this.meters;
+    const laneW = (2 * this.span) / this.lanes,
+      spread = WHEEL_SPREAD_M / this.meters;
     for (const side of [-1, 1]) {
       const at = lat + (side * WHEEL_M) / this.meters;
-      const l0 = Math.max(0, Math.floor(((at - spread + this.span) / laneW))), l1 = Math.min(this.lanes - 1, Math.floor((at + spread + this.span) / laneW));
+      const l0 = Math.max(0, Math.floor((at - spread + this.span) / laneW)),
+        l1 = Math.min(this.lanes - 1, Math.floor((at + spread + this.span) / laneW));
       for (let l = l0; l <= l1; l++) {
         const d = Math.abs(this.laneSide(l) - at) / spread;
         if (d < 1) this.rubber[row * this.lanes + l] += amount * (1 - d * d);
@@ -112,7 +116,8 @@ export class RubberMap {
     const row = Math.floor((st / map.length) * rows) % rows;
     const x = ((side / span + 1) / 2) * lanes - 0.5;
     if (x <= -0.5 || x >= lanes - 0.5) return 0;
-    const l = Math.max(0, Math.min(lanes - 2, Math.floor(x))), f = Math.max(0, Math.min(1, x - l));
+    const l = Math.max(0, Math.min(lanes - 2, Math.floor(x))),
+      f = Math.max(0, Math.min(1, x - l));
     return (bytes[row * lanes + l] * (1 - f) + bytes[row * lanes + l + 1] * f) / 255;
   }
 

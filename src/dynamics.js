@@ -30,20 +30,26 @@ export const WHEELBASE = 3.35; // m, entre los ejes (como en carmodel.js)
 // Traslado de peso al frenar o acelerar: fracción de la carga total que pasa de un eje al otro con una aceleración
 // a (m/s², + hacia adelante) y esa carga (m/s²: el peso más el apoyo, por kilo). Positivo: hacia adelante (frenando)
 const MAX_SHIFT = 0.3;
-export const weightShift = (a, load) => Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT, (-a * CG_HEIGHT) / (WHEELBASE * load)));
+export const weightShift = (a, load) =>
+  Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT, (-a * CG_HEIGHT) / (WHEELBASE * load)));
 // los frenos reparten la frenada entre los ejes como la carga que tiene cada uno en ese momento, corrido esto hacia
 // adelante: así las que se bloquean primero son las delanteras (el auto sigue derecho) y no las traseras (trompo)
 // (fwd: BRAKE_BIAS_FWD más lo que diga la puesta a punto, de a BRAKE_BIAS_STEP por punto: más adelante el auto frena
 // más estable pero bloquea antes las delanteras y frena menos; más atrás frena más y rota al entrar, hasta que
 // bloquean las de atrás)
-export const BRAKE_BIAS_FWD = 0.08, BRAKE_BIAS_STEP = 0.012, BRAKE_TUNE_MAX = 5;
-export const brakeBias = (capF, capR, fwd = BRAKE_BIAS_FWD) => Math.min(0.85, Math.max(0.15, capF / (capF + capR) + fwd));
+export const BRAKE_BIAS_FWD = 0.08,
+  BRAKE_BIAS_STEP = 0.012,
+  BRAKE_TUNE_MAX = 5;
+export const brakeBias = (capF, capR, fwd = BRAKE_BIAS_FWD) =>
+  Math.min(0.85, Math.max(0.15, capF / (capF + capR) + fwd));
 // lo que se considera frenar y acelerar "a fondo" para la trazada: esta parte de lo más que aguantan las gomas
 const BRAKE_NOMINAL = 0.93;
 const TRACTION_NOMINAL = 0.92;
 const CLEAN_AIR = Object.freeze([1, 1]); // carga aerodinámica de cada eje respecto de la del aire limpio
 export const DEFAULT_TUNE = Object.freeze({ front: 5, rear: 5, balance: 0, brake: 0 });
-export const WING_MIN = 1, WING_MAX = 10, BALANCE_MAX = 5;
+export const WING_MIN = 1,
+  WING_MAX = 10,
+  BALANCE_MAX = 5;
 
 // densidad del aire (kg/m³) a una altura sobre el nivel del mar (m)
 export const airDensity = (altitude = 0) => SEA_AIR * Math.exp(-altitude / AIR_SCALE);
@@ -53,7 +59,8 @@ export const airDensity = (altitude = 0) => SEA_AIR * Math.exp(-altitude / AIR_S
 // pasado el pico, cae de a poco hasta slide (la goma arrastrándose de costado agarra menos que en el pico). Por eso
 // pedir más volante del que se puede no dobla más: abre la curva (subviraje) o suelta la cola (sobreviraje).
 export function tyreCurve(x, slide = 0.75) {
-  const a = Math.abs(x), peak = (2 * a) / (1 + a * a);
+  const a = Math.abs(x),
+    peak = (2 * a) / (1 + a * a);
   return Math.sign(x) * (a <= 1 ? peak : slide + (1 - slide) * peak);
 }
 
@@ -67,19 +74,27 @@ const wing = (x) => (Math.max(WING_MIN, Math.min(WING_MAX, x)) - WING_MIN) / (WI
 export function carLimits(car, tune = DEFAULT_TUNE, air = SEA_AIR, setup = {}, damage = NO_DAMAGE, fuel = 0) {
   const { frontShare, mu, loadExp, brakeMu, tractionMu, power, engineBrake, rolling, aero } = car;
   const mass = car.mass + fuel;
-  const wf = wing(tune.front), wr = wing(tune.rear);
+  const wf = wing(tune.front),
+    wr = wing(tune.rear);
   // coeficientes por área (m²): carga y resistencia = ½·ρ·C·v². Con los dos alerones al mínimo el auto tiene clMin
   // de carga (la del piso y la carrocería) y con los dos al máximo, clMax; frontWing es la parte de esa diferencia
   // que pone el alerón delantero. La carrocería reparte su carga de modo que con los alerones parejos el auto quede
   // neutro (la carga se reparte entre los ejes como el peso). Cada alerón cobra en resistencia su carga sobre su
   // eficiencia (ld): el delantero es mucho más eficiente que el trasero.
-  const span = aero.clMax - aero.clMin, wingF = span * aero.frontWing, wingR = span - wingF;
+  const span = aero.clMax - aero.clMin,
+    wingF = span * aero.frontWing,
+    wingR = span - wingF;
   const bodyF = (frontShare * (aero.clMin + span / 2) - wingF / 2) / aero.clMin;
   const cdWingR = (wingR * wr) / aero.ldRear;
   // con daños, cada eje lleva carga distinta de cada lado: [izquierda, derecha] (la mitad del eje cada uno)
   const hurt = damagedAero(damage, {
-    bodyF: aero.clMin * bodyF, bodyR: aero.clMin * (1 - bodyF), wingF: wingF * wf, wingR: wingR * wr,
-    cd: aero.cdBody, cdWingF: (wingF * wf) / aero.ldFront, cdWingR,
+    bodyF: aero.clMin * bodyF,
+    bodyR: aero.clMin * (1 - bodyF),
+    wingF: wingF * wf,
+    wingR: wingR * wr,
+    cd: aero.cdBody,
+    cdWingF: (wingF * wf) / aero.ldFront,
+    cdWingR,
   });
   const cd = hurt.cd / (setup.topSpeed ?? 1) ** 2;
   // balance mecánico: qué parte del traslado de peso de costado se lleva el eje delantero (parejo: como el peso)
@@ -95,13 +110,17 @@ export function carLimits(car, tune = DEFAULT_TUNE, air = SEA_AIR, setup = {}, d
   // shift, la carga que pasa de la rueda de adentro a la de afuera (respecto de la de una rueda con el auto quieto;
   // la de adentro no baja de cero: se levanta)
   const axle = (cl, k, share, v, out, shift) => {
-    const lo = sideLoad(cl[out] * k, share, v), li = sideLoad(cl[1 - out] * k, share, v), d = Math.min(shift, li);
+    const lo = sideLoad(cl[out] * k, share, v),
+      li = sideLoad(cl[1 - out] * k, share, v),
+      d = Math.min(shift, li);
     return ((lo + d) ** loadExp + (li - d) ** loadExp) / 2;
   };
   // los dos ejes doblando al límite hacia un lado: el traslado de costado depende de cuánto dobla, y cuánto dobla,
   // del agarre que queda (se resuelve en tres vueltas)
   const turning = (v, out, k) => {
-    let f = 0, r = 0, ay = 0;
+    let f = 0,
+      r = 0,
+      ay = 0;
     for (let i = 0; i < 3; i++) {
       const t = (2 * ay * CG_HEIGHT) / (GRAVITY * TRACK_WIDTH);
       f = grip * axle(hurt.front, k[0], frontShare, v, out, (t * rollF) / frontShare);
@@ -111,9 +130,11 @@ export function carLimits(car, tune = DEFAULT_TUNE, air = SEA_AIR, setup = {}, d
     return [f, r];
   };
   const longBrake = brakeMu * (setup.brakes ?? 1);
-  const brakeFwd = BRAKE_BIAS_FWD + BRAKE_BIAS_STEP * Math.max(-BRAKE_TUNE_MAX, Math.min(BRAKE_TUNE_MAX, tune.brake ?? 0));
+  const brakeFwd =
+    BRAKE_BIAS_FWD + BRAKE_BIAS_STEP * Math.max(-BRAKE_TUNE_MAX, Math.min(BRAKE_TUNE_MAX, tune.brake ?? 0));
   const even = damage === NO_DAMAGE; // sano: da lo mismo para qué lado dobla
-  const clF = hurt.front[0] + hurt.front[1], clR = hurt.rear[0] + hurt.rear[1];
+  const clF = hurt.front[0] + hurt.front[1],
+    clR = hurt.rear[0] + hurt.rear[1];
 
   const lim = {
     frontShare,
@@ -137,12 +158,16 @@ export function carLimits(car, tune = DEFAULT_TUNE, air = SEA_AIR, setup = {}, d
     // (1 derecha, -1 izquierda, 0: cualquiera; con daño de un lado, el peor de los dos)
     axles(v, turn = 0, k = CLEAN_AIR) {
       if (turn || even) return turning(v, turn > 0 ? 0 : 1, k);
-      const a = turning(v, 0, k), c = turning(v, 1, k);
+      const a = turning(v, 0, k),
+        c = turning(v, 1, k);
       return [Math.min(a[0], c[0]), Math.min(a[1], c[1])];
     },
     // lo mismo en recta (sin traslado de costado): lo que tienen las gomas para frenar o empujar
     straight(v, k = CLEAN_AIR) {
-      return [grip * axle(hurt.front, k[0], frontShare, v, 0, 0), grip * axle(hurt.rear, k[1], 1 - frontShare, v, 0, 0)];
+      return [
+        grip * axle(hurt.front, k[0], frontShare, v, 0, 0),
+        grip * axle(hurt.rear, k[1], 1 - frontShare, v, 0, 0),
+      ];
     },
     // lo más que puede doblar el auto en régimen (los dos ejes tienen que aguantar su parte)
     lateral(v, k = CLEAN_AIR) {
@@ -160,11 +185,14 @@ export function carLimits(car, tune = DEFAULT_TUNE, air = SEA_AIR, setup = {}, d
     // lo más que frenan las gomas en recta (m/s², sin el aire): al frenar el peso pasa adelante, y el límite lo pone
     // el eje que primero se bloquea con el reparto de frenada (brakeBias)
     brakePeak(v, k = CLEAN_AIR) {
-      const [f, r] = lim.straight(v, k), load = GRAVITY * lim.load(v, k), FS = frontShare;
+      const [f, r] = lim.straight(v, k),
+        load = GRAVITY * lim.load(v, k),
+        FS = frontShare;
       let a = longBrake * (f * FS + r * (1 - FS));
       for (let i = 0; i < 4; i++) {
         const s = weightShift(-a, load);
-        const cF = longBrake * f * FS * ((FS + s) / FS) ** loadExp, cR = longBrake * r * (1 - FS) * ((1 - FS - s) / (1 - FS)) ** loadExp;
+        const cF = longBrake * f * FS * ((FS + s) / FS) ** loadExp,
+          cR = longBrake * r * (1 - FS) * ((1 - FS - s) / (1 - FS)) ** loadExp;
         const bias = brakeBias(cF, cR, brakeFwd);
         a = Math.min(cF / bias, cR / (1 - bias));
       }
@@ -176,9 +204,12 @@ export function carLimits(car, tune = DEFAULT_TUNE, air = SEA_AIR, setup = {}, d
     },
     // lo más que pueden empujar las ruedas de atrás (m/s² de todo el auto): al acelerar el peso pasa atrás
     tractionPeak(v, k = CLEAN_AIR) {
-      const r = lim.straight(v, k)[1], load = GRAVITY * lim.load(v, k), FS = frontShare;
+      const r = lim.straight(v, k)[1],
+        load = GRAVITY * lim.load(v, k),
+        FS = frontShare;
       let a = tractionMu * r * (1 - FS);
-      for (let i = 0; i < 4; i++) a = tractionMu * r * (1 - FS) * ((1 - FS - weightShift(a, load)) / (1 - FS)) ** loadExp;
+      for (let i = 0; i < 4; i++)
+        a = tractionMu * r * (1 - FS) * ((1 - FS - weightShift(a, load)) / (1 - FS)) ** loadExp;
       return a;
     },
     // lo que empujan acelerando con cuidado (lo que usa la trazada)
@@ -199,7 +230,8 @@ export function carLimits(car, tune = DEFAULT_TUNE, air = SEA_AIR, setup = {}, d
     },
   };
   // velocidad punta: donde el motor ya no le gana al aire
-  let lo = 30, hi = 140;
+  let lo = 30,
+    hi = 140;
   for (let i = 0; i < 40; i++) {
     const v = (lo + hi) / 2;
     if (lim.accel(v) > 0) lo = v;

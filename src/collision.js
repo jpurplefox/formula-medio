@@ -37,7 +37,13 @@ const LAUNCH_SPIN = 4; // girando hasta esto (rad/s)
 const LAUNCH_DAMAGE = 2; // y su suspensión recibe el golpe multiplicado por esto
 
 // piezas de choque entre autos: centro y medio largo y ancho, en m (marco del auto)
-const PIECES = ZONES.map((z) => ({ zone: z, cx: (z.x[0] + z.x[1]) / 2, cy: (z.y[0] + z.y[1]) / 2, hx: (z.x[1] - z.x[0]) / 2, hy: (z.y[1] - z.y[0]) / 2 }));
+const PIECES = ZONES.map((z) => ({
+  zone: z,
+  cx: (z.x[0] + z.x[1]) / 2,
+  cy: (z.y[0] + z.y[1]) / 2,
+  hx: (z.x[1] - z.x[0]) / 2,
+  hy: (z.y[1] - z.y[0]) / 2,
+}));
 
 // Para medir los golpes (tools/damage_hits.js): se la llama con (auto, zona, intensidad, zona del otro o null)
 let hitLog = null;
@@ -45,25 +51,31 @@ export const logHits = (fn) => (hitLog = fn);
 
 // un golpe de intensidad hit en el punto r (m desde el centro, en el mundo) del auto: lo anota y lo rompe
 function hurt(car, r, hit, other) {
-  const ca = Math.cos(car.angle), sa = Math.sin(car.angle);
-  const lx = r[0] * ca + r[1] * sa, ly = -r[0] * sa + r[1] * ca;
+  const ca = Math.cos(car.angle),
+    sa = Math.sin(car.angle);
+  const lx = r[0] * ca + r[1] * sa,
+    ly = -r[0] * sa + r[1] * ca;
   hitLog?.(car, lx, ly, hit, other);
-  if (car.damageLevel && car.damageLevel !== 'off') car.damage = applyHit(car.damage, lx, ly, hit, other, car.damageLevel);
+  if (car.damageLevel && car.damageLevel !== 'off')
+    car.damage = applyHit(car.damage, lx, ly, hit, other, car.damageLevel);
 }
 
 const cross = (ax, ay, bx, by) => ax * by - ay * bx;
 
 // velocidad del auto en el mundo (m/s)
 function velocity(car) {
-  const ca = Math.cos(car.angle), sa = Math.sin(car.angle);
+  const ca = Math.cos(car.angle),
+    sa = Math.sin(car.angle);
   return [ca * car.speed - sa * car.slip, sa * car.speed + ca * car.slip];
 }
 
 // Aplica un impulso (px, py, por unidad de masa) en un punto a (rx, ry) metros del centro del auto
 function push(car, rx, ry, px, py) {
-  const ca = Math.cos(car.angle), sa = Math.sin(car.angle);
+  const ca = Math.cos(car.angle),
+    sa = Math.sin(car.angle);
   const [vx, vy] = velocity(car);
-  const nx = vx + px, ny = vy + py;
+  const nx = vx + px,
+    ny = vy + py;
   car.speed = nx * ca + ny * sa;
   car.slip = -nx * sa + ny * ca;
   car.omega = Math.max(-MAX_SPIN, Math.min(MAX_SPIN, car.omega + cross(rx, ry, px, py) / INERTIA));
@@ -78,16 +90,19 @@ function impulse(a, b, rA, rB, nx, ny, bounce, friction, surface = 1) {
   };
   const va = pointVel(a, rA);
   const vb = b ? pointVel(b, rB) : [0, 0];
-  const rvx = vb[0] - va[0], rvy = vb[1] - va[1];
+  const rvx = vb[0] - va[0],
+    rvy = vb[1] - va[1];
   const vn = rvx * nx + rvy * ny;
   if (vn >= 0) return 0; // se están separando (o sólo apoyados)
-  const tx = -ny, ty = nx;
+  const tx = -ny,
+    ty = nx;
   const share = (r, ax, ay) => cross(r[0], r[1], ax, ay) ** 2 / INERTIA;
   const kn = 1 + share(rA, nx, ny) + (b ? 1 + share(rB, nx, ny) : 0);
   const kt = 1 + share(rA, tx, ty) + (b ? 1 + share(rB, tx, ty) : 0);
   const j = (-(1 + bounce) * vn) / kn;
   const jt = Math.max(-friction * j, Math.min(friction * j, (-(rvx * tx + rvy * ty) * surface) / kt));
-  const px = j * nx + jt * tx, py = j * ny + jt * ty;
+  const px = j * nx + jt * tx,
+    py = j * ny + jt * ty;
   push(a, rA[0], rA[1], -px, -py);
   if (b) push(b, rB[0], rB[1], px, py);
   return j;
@@ -96,14 +111,17 @@ function impulse(a, b, rA, rB, nx, ny, bounce, friction, surface = 1) {
 // Muros: tres círculos a lo largo del auto. Si alguno se mete en el muro, se saca el auto y se aplica el impulso
 // en ese punto: un roce en ángulo casi no frena y endereza el auto contra el muro; de frente, frena y rebota.
 export function collideWalls(car, track) {
-  const M = track.meters, { sdf, W } = track;
+  const M = track.meters,
+    { sdf, W } = track;
   const limit = -track.runoff + WALL_R / M; // el centro del círculo no puede estar más afuera que esto (celdas)
   const e = 0.5;
   let hit = 0;
   for (let pass = 0; pass < 2; pass++) {
     for (const off of WALL_PROBES) {
-      const ca = Math.cos(car.angle), sa = Math.sin(car.angle);
-      const px = car.x + (ca * off) / M, py = car.y + (sa * off) / M;
+      const ca = Math.cos(car.angle),
+        sa = Math.sin(car.angle);
+      const px = car.x + (ca * off) / M,
+        py = car.y + (sa * off) / M;
       const depth = limit - sampleField(sdf, W, px, py);
       if (depth <= 0) continue;
       // normal del muro hacia la pista: hacia donde crece la distancia al borde
@@ -128,32 +146,52 @@ export function collideWalls(car, track) {
 
 // Una pieza de un auto en el mundo (m): centro, ejes y medidas
 function box(car, piece, M) {
-  const ca = Math.cos(car.angle), sa = Math.sin(car.angle);
+  const ca = Math.cos(car.angle),
+    sa = Math.sin(car.angle);
   return {
-    piece, car, ca, sa, hx: piece.hx, hy: piece.hy,
-    x: car.x * M + ca * piece.cx - sa * piece.cy, y: car.y * M + sa * piece.cx + ca * piece.cy,
+    piece,
+    car,
+    ca,
+    sa,
+    hx: piece.hx,
+    hy: piece.hy,
+    x: car.x * M + ca * piece.cx - sa * piece.cy,
+    y: car.y * M + sa * piece.cx + ca * piece.cy,
   };
 }
 
 // esquinas de una pieza
 function corners(b) {
-  return [[1, 1], [1, -1], [-1, -1], [-1, 1]].map(([l, w]) => [b.x + b.ca * b.hx * l - b.sa * b.hy * w, b.y + b.sa * b.hx * l + b.ca * b.hy * w]);
+  return [
+    [1, 1],
+    [1, -1],
+    [-1, -1],
+    [-1, 1],
+  ].map(([l, w]) => [b.x + b.ca * b.hx * l - b.sa * b.hy * w, b.y + b.sa * b.hx * l + b.ca * b.hy * w]);
 }
 
 // ¿el punto p está dentro de la pieza? (con un poco de tolerancia)
 function inside(b, p) {
-  const dx = p[0] - b.x, dy = p[1] - b.y;
+  const dx = p[0] - b.x,
+    dy = p[1] - b.y;
   return Math.abs(dx * b.ca + dy * b.sa) <= b.hx + 0.05 && Math.abs(-dx * b.sa + dy * b.ca) <= b.hy + 0.05;
 }
 
 // Dos piezas con el test de ejes separadores (si en alguno de los cuatro ejes las sombras no se pisan, no se tocan).
 // El eje donde menos se pisan da la normal (de A hacia B) y cuánto se meten.
 function overlap(A, B) {
-  const dx = B.x - A.x, dy = B.y - A.y;
+  const dx = B.x - A.x,
+    dy = B.y - A.y;
   const extent = (b, ax, ay) => b.hx * Math.abs(b.ca * ax + b.sa * ay) + b.hy * Math.abs(-b.sa * ax + b.ca * ay);
-  let best = Infinity, nx = 0, ny = 0, owner = null;
+  let best = Infinity,
+    nx = 0,
+    ny = 0,
+    owner = null;
   for (const b of [A, B]) {
-    for (const [ax, ay] of [[b.ca, b.sa], [-b.sa, b.ca]]) {
+    for (const [ax, ay] of [
+      [b.ca, b.sa],
+      [-b.sa, b.ca],
+    ]) {
       const d = dx * ax + dy * ay;
       const o = extent(A, ax, ay) + extent(B, ax, ay) - Math.abs(d);
       if (o <= 0) return null;
@@ -167,7 +205,8 @@ function overlap(A, B) {
 // alineados, trompa contra cola, queda en el medio de la zona que se toca). Si ninguna quedó adentro (se cruzan
 // dos lados), la esquina de la otra pieza que más se mete en la dueña del eje.
 function contact(A, B, { nx, ny, owner }) {
-  const ca = corners(A), cb = corners(B);
+  const ca = corners(A),
+    cb = corners(B);
   let touching = [...cb.filter((p) => inside(A, p)), ...ca.filter((p) => inside(B, p))];
   if (!touching.length) {
     const pts = owner === A ? cb : ca;
@@ -185,11 +224,14 @@ export function collideCars(cars, track, isSolid) {
   const M = track.meters;
   for (let i = 0; i < cars.length; i++) {
     for (let j = i + 1; j < cars.length; j++) {
-      const a = cars[i], b = cars[j];
-      const dx = (b.x - a.x) * M, dy = (b.y - a.y) * M;
+      const a = cars[i],
+        b = cars[j];
+      const dx = (b.x - a.x) * M,
+        dy = (b.y - a.y) * M;
       if (dx * dx + dy * dy > 4 * (HALF_L * HALF_L + HALF_W * HALF_W)) continue;
       for (let pass = 0; pass < 2; pass++) {
-        const boxesA = PIECES.map((p) => box(a, p, M)), boxesB = PIECES.map((p) => box(b, p, M));
+        const boxesA = PIECES.map((p) => box(a, p, M)),
+          boxesB = PIECES.map((p) => box(b, p, M));
         let worst = null;
         for (const A of boxesA) {
           for (const B of boxesB) {
@@ -199,24 +241,38 @@ export function collideCars(cars, track, isSolid) {
           }
         }
         if (!worst) break;
-        const { A, B, o } = worst, { nx, ny } = o;
+        const { A, B, o } = worst,
+          { nx, ny } = o;
         const cp = contact(A, B, o);
         // se separan (cada uno la mitad, o todo el que puede si el otro está contra el muro)
         const sep = o.depth / M;
-        const aFree = !isSolid(track, a.x - nx * sep, a.y - ny * sep), bFree = !isSolid(track, b.x + nx * sep, b.y + ny * sep);
-        const ka = aFree ? (bFree ? 0.5 : 1) : 0, kb = bFree ? (aFree ? 0.5 : 1) : 0;
-        a.x -= nx * sep * ka; a.y -= ny * sep * ka;
-        b.x += nx * sep * kb; b.y += ny * sep * kb;
-        const rA = [cp[0] - a.x * M, cp[1] - a.y * M], rB = [cp[0] - b.x * M, cp[1] - b.y * M];
-        const za = A.piece.zone, zb = B.piece.zone, tyres = za.part === 'wheel' && zb.part === 'wheel';
-        const hit = tyres ? impulse(a, b, rA, rB, nx, ny, CAR_BOUNCE, TYRE_FRICTION, TYRE_SURFACE) : impulse(a, b, rA, rB, nx, ny, CAR_BOUNCE, CAR_FRICTION);
+        const aFree = !isSolid(track, a.x - nx * sep, a.y - ny * sep),
+          bFree = !isSolid(track, b.x + nx * sep, b.y + ny * sep);
+        const ka = aFree ? (bFree ? 0.5 : 1) : 0,
+          kb = bFree ? (aFree ? 0.5 : 1) : 0;
+        a.x -= nx * sep * ka;
+        a.y -= ny * sep * ka;
+        b.x += nx * sep * kb;
+        b.y += ny * sep * kb;
+        const rA = [cp[0] - a.x * M, cp[1] - a.y * M],
+          rB = [cp[0] - b.x * M, cp[1] - b.y * M];
+        const za = A.piece.zone,
+          zb = B.piece.zone,
+          tyres = za.part === 'wheel' && zb.part === 'wheel';
+        const hit = tyres
+          ? impulse(a, b, rA, rB, nx, ny, CAR_BOUNCE, TYRE_FRICTION, TYRE_SURFACE)
+          : impulse(a, b, rA, rB, nx, ny, CAR_BOUNCE, CAR_FRICTION);
         if (hit <= 0) continue;
         const k = Math.min(1, hit / 15);
         a.bump = Math.max(a.bump, k);
         b.bump = Math.max(b.bump, k);
         // ¿una delantera que le pegó de atrás a una trasera? Se trepa
-        const climbs = (car, mine, theirs, n) => tyres && mine.wheel < 2 && theirs.wheel >= 2 && hit > LAUNCH_HIT
-          && Math.cos(car.angle) * n[0] + Math.sin(car.angle) * n[1] > 0.7;
+        const climbs = (car, mine, theirs, n) =>
+          tyres &&
+          mine.wheel < 2 &&
+          theirs.wheel >= 2 &&
+          hit > LAUNCH_HIT &&
+          Math.cos(car.angle) * n[0] + Math.sin(car.angle) * n[1] > 0.7;
         const launched = climbs(a, za, zb, [nx, ny]) ? a : climbs(b, zb, za, [-nx, -ny]) ? b : null;
         hurt(a, rA, launched === a ? hit * LAUNCH_DAMAGE : hit, zb);
         hurt(b, rB, launched === b ? hit * LAUNCH_DAMAGE : hit, za);

@@ -72,24 +72,32 @@ const PASSED_PENALTY = 0.3; // por ser pasado limpio
 const PASS_GAP = 30; // m: sólo cuentan los cambios de orden entre autos cerca
 const PASS_HOLD = 2.5; // s que tiene que seguir adelante para que la pasada cuente
 const PASS_CLEAN = 2; // s antes de la pasada sin toques ni pasto
-const CROWD_RANGE = 50, CROWD_MAX = 2; // con más de 2 autos a menos de 50 m, pasar no suma
+const CROWD_RANGE = 50,
+  CROWD_MAX = 2; // con más de 2 autos a menos de 50 m, pasar no suma
 const WEAVE_PENALTY = 0.5; // por cada cambio de dirección de más defendiendo en recta
 const WEAVE_MOVE = 1.5; // m de costado: desde acá cuenta como movimiento
 // Trabado, en el pasto o para atrás demasiado tiempo: se lo vuelve a poner en la pista (como el rescate del juego)
 // con un castigo, pero el episodio sigue. Si terminara, quedarse quieto sería una salida barata de un
 // amontonamiento: la red se ahorra los toques y el peligro que venían, y aprende a frenar en vez de salir de ahí
-const GRASS_LIMIT = 6, STUCK_LIMIT = 6, BACKWARDS_LIMIT = 30, RESCUE_PENALTY = 4;
+const GRASS_LIMIT = 6,
+  STUCK_LIMIT = 6,
+  BACKWARDS_LIMIT = 30,
+  RESCUE_PENALTY = 4;
 const STALL_PENALTY = 1; // por segundo casi quieto
 const RETIRE_PENALTY = 10; // por abandonar
 const DAMAGE_LEVELS = ['off', 'reduced', 'real'];
 // Piso de ritmo: con la pista libre adelante, ir por debajo de PACE_FLOOR de la velocidad de la trazada se castiga
 // (hasta PACE_PENALTY por segundo, proporcional a lo que le falta). Así frenar nunca es "seguro" sin motivo; con
 // alguien adelante no aplica, porque seguir a uno más lento está bien
-const PACE_FLOOR = 0.75, PACE_PENALTY = 1, FREE_ROAD = 40;
+const PACE_FLOOR = 0.75,
+  PACE_PENALTY = 1,
+  FREE_ROAD = 40;
 // Con paceAlways el piso cuenta también con alguien adelante (quedarse detrás de uno lento cuesta: hay que pasarlo),
 // salvo en un amontonamiento: más de CROWD_CLOSE autos a menos de CROWD_NEAR m (largadas, pelotones). Ahí, con
 // crowd, un toque provocado cuesta crowd veces más y el peligro se mira con TTC_CROWD veces más anticipación
-const CROWD_NEAR = 30, CROWD_CLOSE = 3, TTC_CROWD = 1.5;
+const CROWD_NEAR = 30,
+  CROWD_CLOSE = 3,
+  TTC_CROWD = 1.5;
 // Con paceCrowd (una fracción, como PACE_FLOOR) el piso también cuenta amontonado, pero más bajo: en una largada
 // meterse en fila levantando el pie cuesta tiempo, así que si hay lugar conviene seguir a la par
 // Largada (launch): desde parado, lo que la primera vuelta va perdiendo contra su ritmo de vuelta lanzada. Se
@@ -98,7 +106,10 @@ const CROWD_NEAR = 30, CROWD_CLOSE = 3, TTC_CROWD = 1.5;
 // eso, cada segundo de más cuesta LAUNCH_PENALTY, y más cuanto más lleva perdido (×2 a LAUNCH_SCALE s de más): perder
 // un poco es aceptable, mucho no. Para no castigar lo que ya cuesta ir más lento, el ritmo de vuelta lanzada es el
 // de las vueltas recientes de los agentes en ese circuito (LAUNCH_PACE: el cuartil más rápido de las últimas)
-const LAUNCH_START = 5, LAUNCH_LAP = 10, LAUNCH_PENALTY = 2, LAUNCH_SCALE = 3;
+const LAUNCH_START = 5,
+  LAUNCH_LAP = 10,
+  LAUNCH_PENALTY = 2,
+  LAUNCH_SCALE = 3;
 const LAUNCH_PACE = { laps: 60, min: 8, quantile: 0.25, initial: 1.08 };
 // Persecución: desventaja del rival de adelante (menos agarre y motor) al principio y al final de la fase
 const CHASE_HANDICAP = [0.2, 0.08];
@@ -143,12 +154,16 @@ export function getTrack(id) {
 }
 
 function corners(track, line) {
-  const v = line.speed, n = v.length, M = track.meters;
-  const near = Math.round(100 / M), far = Math.round(300 / M);
+  const v = line.speed,
+    n = v.length,
+    M = track.meters;
+  const near = Math.round(100 / M),
+    far = Math.round(300 / M);
   const at = (i) => v[((i % n) + n) % n];
   const out = [];
   for (let i = 0; i < n; i++) {
-    let min = true, top = 0;
+    let min = true,
+      top = 0;
     for (let d = -far; d <= far && min; d++) {
       if (Math.abs(d) <= near && at(i + d) < v[i]) min = false;
       top = Math.max(top, at(i + d));
@@ -161,19 +176,36 @@ function corners(track, line) {
 const policies = new Map();
 function getPolicy(file) {
   if (!policies.has(file)) {
-    policies.set(file, new Policy(JSON.parse(readFileSync(fileURLToPath(new URL('../' + file, import.meta.url)), 'utf8'))));
+    policies.set(
+      file,
+      new Policy(JSON.parse(readFileSync(fileURLToPath(new URL('../' + file, import.meta.url)), 'utf8'))),
+    );
   }
   return policies.get(file);
 }
 
-export const wrap = (d, L) => ((d % L) + 1.5 * L) % L - L / 2; // diferencia de posición en la vuelta, entre -L/2 y L/2
+export const wrap = (d, L) => (((d % L) + 1.5 * L) % L) - L / 2; // diferencia de posición en la vuelta, entre -L/2 y L/2
 export const mod = (u, L) => ((u % L) + L) % L;
 
 export class RaceSim {
   // agents: cuántos autos aprenden; opponents: redes que manejan algunos rivales; mix: peso de cada escenario
   // (en pasos de entrenamiento, no en carreras); spread: variación de los autos (raceSpread en carrera completa)
-  constructor({ trackIds, agents = 4, seed = 1, opponents = [], mix = { race: 1 }, spread = 0.02, raceSpread = spread,
-    rewards = {}, contactScale = 1, progress = 0, boost = 0, damage = 'off', damagedStarts = 0, tuneSpread = TUNE_SPREAD }) {
+  constructor({
+    trackIds,
+    agents = 4,
+    seed = 1,
+    opponents = [],
+    mix = { race: 1 },
+    spread = 0.02,
+    raceSpread = spread,
+    rewards = {},
+    contactScale = 1,
+    progress = 0,
+    boost = 0,
+    damage = 'off',
+    damagedStarts = 0,
+    tuneSpread = TUNE_SPREAD,
+  }) {
     this.tuneSpread = tuneSpread;
     this.damage = damage;
     this.damagedStarts = damagedStarts;
@@ -190,7 +222,9 @@ export class RaceSim {
     this.spread = spread;
     this.raceSpread = raceSpread;
     // cada escenario se elige según su peso dividido su duración: así el peso es la parte de los pasos
-    this.mix = Object.entries(mix).filter(([, w]) => w > 0).map(([k, w]) => [k, w / SCENARIOS[k]]);
+    this.mix = Object.entries(mix)
+      .filter(([, w]) => w > 0)
+      .map(([k, w]) => [k, w / SCENARIOS[k]]);
     this.mixTotal = this.mix.reduce((a, [, w]) => a + w, 0);
   }
 
@@ -223,7 +257,8 @@ export class RaceSim {
 
   // rival de la IA de siempre (pace: fracción de la trazada ideal) o, a veces, una red ya entrenada
   bot(k, pace = this.boost ? 1 + 0.1 * this.rand() : 0.9 + 0.18 * this.rand(), neural = 0) {
-    if (this.opponents.length && this.rand() < neural) return new NeuralDriver(this.opponents[Math.floor(this.rand() * this.opponents.length)]);
+    if (this.opponents.length && this.rand() < neural)
+      return new NeuralDriver(this.opponents[Math.floor(this.rand() * this.opponents.length)]);
     return new Driver(pace, k + 1);
   }
 
@@ -233,9 +268,22 @@ export class RaceSim {
     const { track, line, clock, corners } = getTrack(id);
     const scenario = this.pickScenario();
     const damage = this.damage === 'mix' ? DAMAGE_LEVELS[Math.floor(r() * 3)] : this.damage;
-    Object.assign(this, { id, track, line, clock, corners, scenario, damage, steps: 0, time: 0, length: SCENARIOS[scenario] });
-    const L = track.length, M = track.meters, half = track.halfWidth * M;
-    const corner = () => corners.length ? corners[Math.floor(r() * corners.length)] : r() * L;
+    Object.assign(this, {
+      id,
+      track,
+      line,
+      clock,
+      corners,
+      scenario,
+      damage,
+      steps: 0,
+      time: 0,
+      length: SCENARIOS[scenario],
+    });
+    const L = track.length,
+      M = track.meters,
+      half = track.halfWidth * M;
+    const corner = () => (corners.length ? corners[Math.floor(r() * corners.length)] : r() * L);
     const spread = scenario === 'race' ? this.raceSpread : this.spread;
     const spots = []; // { kind, u, side (m), v (m/s), driver? }
     const agent = (u, side, v) => spots.push({ kind: 'agent', u, side, v });
@@ -279,14 +327,15 @@ export class RaceSim {
       }
       const front = corner() - (250 + 250 * r()) / M;
       kinds.forEach((kind, k) => {
-        const u = front - (k * 8) / M, side = (k % 2 ? -1 : 1) * Math.min(3, half * 0.5);
+        const u = front - (k * 8) / M,
+          side = (k % 2 ? -1 : 1) * Math.min(3, half * 0.5);
         if (kind === 'agent') agent(u, side, 0);
         else bot(u, side, 0, this.bot(k, undefined, 0.4));
       });
     } else if (scenario === 'chase') {
       // un rival lento adelante; atrás uno o dos agentes. En recta (saliendo de una curva) o antes de una curva
       const used = [];
-      for (let k = 0; k < A; ) {
+      for (let k = 0; k < A;) {
         const two = A - k >= 2 && r() < 0.5;
         const straight = r() < 0.5;
         let c = corner();
@@ -334,7 +383,11 @@ export class RaceSim {
       car.setup = s.setup ?? randomSetup(r, spread);
       // los rivales más rápidos (salvo los que ya traen su auto, como el de adelante en las persecuciones)
       if (s.kind === 'bot' && !s.setup && this.boost) {
-        car.setup = { ...car.setup, grip: car.setup.grip * (1 + this.boost), power: car.setup.power * (1 + this.boost) };
+        car.setup = {
+          ...car.setup,
+          grip: car.setup.grip * (1 + this.boost),
+          power: car.setup.power * (1 + this.boost),
+        };
       }
       // la puesta a punto y el aire varían sólo para los que aprenden: los demás manejan para la del circuito
       if (s.kind === 'agent') randomTune(car, r, track, this.tuneSpread);
@@ -342,13 +395,20 @@ export class RaceSim {
       randomTyres(car, r, track);
       car.damageLevel = damage;
       if (s.kind === 'agent' && damage !== 'off' && r() < this.damagedStarts) car.damage = randomDamage(r, damage);
-      const e = { kind: s.kind, car, u: stationAt(track, car.x, car.y), start: wrap(s.u - front, L) * M, dist: 0, lastHit: -1e9, lastGrass: -1e9 };
+      const e = {
+        kind: s.kind,
+        car,
+        u: stationAt(track, car.x, car.y),
+        start: wrap(s.u - front, L) * M,
+        dist: 0,
+        lastHit: -1e9,
+        lastGrass: -1e9,
+      };
       if (s.kind === 'bot') {
         e.driver = s.driver;
         // la IA de siempre no sabe de su auto: con menos agarre, menos ritmo (la velocidad en curva va con su raíz)
         if (e.driver.pace) e.driver.pace *= Math.sqrt(Math.min(1, car.setup.grip));
-      }
-      else {
+      } else {
         this.newEpisode(e);
         // largando parado: se mide cuánto tiempo pierde en la primera vuelta contra la trazada
         if (!s.v) e.launch = { from: e.dist, clock: this.launchClock(car, e.u), worst: 0 };
@@ -362,12 +422,40 @@ export class RaceSim {
   }
 
   newEpisode(e) {
-    Object.assign(e, { grass: 0, stuck: 0, back: 0, ret: 0, steps: 0, lapStart: null, epDist: 0,
-      lag: 0, lagRef: 0, launchCost: 0, passes: 0, passed: 0, hits: 0, faults: 0, slow: 0, danger: 0, weaves: 0, rescues: 0, defDir: 0, moves: 0, behind: 0, ext: undefined });
+    Object.assign(e, {
+      grass: 0,
+      stuck: 0,
+      back: 0,
+      ret: 0,
+      steps: 0,
+      lapStart: null,
+      epDist: 0,
+      lag: 0,
+      lagRef: 0,
+      launchCost: 0,
+      passes: 0,
+      passed: 0,
+      hits: 0,
+      faults: 0,
+      slow: 0,
+      danger: 0,
+      weaves: 0,
+      rescues: 0,
+      defDir: 0,
+      moves: 0,
+      behind: 0,
+      ext: undefined,
+    });
   }
 
   observe(e) {
-    return observe(this.track, e.car, e.u, this.cars.map((o) => o.car), new Float32Array(OBS_SIZE));
+    return observe(
+      this.track,
+      e.car,
+      e.u,
+      this.cars.map((o) => o.car),
+      new Float32Array(OBS_SIZE),
+    );
   }
 
   raceDist(e) {
@@ -376,28 +464,42 @@ export class RaceSim {
 
   // o en el marco de e: [adelante, a la derecha] (m)
   rel(e, o) {
-    const M = this.track.meters, { car } = e;
-    const ca = Math.cos(car.angle), sa = Math.sin(car.angle);
-    const dx = (o.car.x - car.x) * M, dy = (o.car.y - car.y) * M;
+    const M = this.track.meters,
+      { car } = e;
+    const ca = Math.cos(car.angle),
+      sa = Math.sin(car.angle);
+    const dx = (o.car.x - car.x) * M,
+      dy = (o.car.y - car.y) * M;
     return [dx * ca + dy * sa, -dx * sa + dy * ca];
   }
 
   // actions: [volante, pedal] de cada agente, en orden. Devuelve un resultado por agente, como RaceEnv.step
   step(actions) {
     const { track, line, cars } = this;
-    const L = track.length, M = track.meters;
+    const L = track.length,
+      M = track.meters;
     const all = cars.map((e) => e.car);
     const rewards = new Float32Array(this.agentsList.length);
     const laps = this.agentsList.map(() => null);
     this.agentsList.forEach((e, k) => {
-      const steer = clamp(actions[ACTIONS * k]), pedal = clamp(actions[ACTIONS * k + 1]);
+      const steer = clamp(actions[ACTIONS * k]),
+        pedal = clamp(actions[ACTIONS * k + 1]);
       e.input = { steer, throttle: Math.max(0, pedal), brake: Math.max(0, -pedal) };
     });
     const states = cars.map((e) => ({ car: e.car, st: e.u, lat: sampleField(track.lat, track.W, e.car.x, e.car.y) }));
     for (let s = 0; s < SUBSTEPS; s++) {
       for (const c of all) c.draft = slipstream(c, all, M);
       cars.forEach((e, i) => {
-        const input = e.kind === 'agent' ? e.input : e.driver.drive(DT, track, line, states[i], states.filter((_, j) => j !== i));
+        const input =
+          e.kind === 'agent'
+            ? e.input
+            : e.driver.drive(
+                DT,
+                track,
+                line,
+                states[i],
+                states.filter((_, j) => j !== i),
+              );
         const bump = e.car.bump;
         e.car.update(DT, input, track);
         e.wallHit = e.car.bump > bump + 0.05 ? e.car.bump - bump : 0;
@@ -481,10 +583,37 @@ export class RaceSim {
       e.ret += rewards[k];
       const info = { lap: laps[k], track: this.id };
       if (truncated || retired) {
-        info.episode = { r: e.ret, l: e.steps, dist: e.epDist, track: this.id, scenario: this.scenario, damage: this.damage, retired,
-          passes: e.passes, passed: e.passed, hits: e.hits, faults: e.faults, slow: e.slow, lag: e.lag, lagRef: e.lagRef, launchCost: e.launchCost, danger: e.danger, weaves: e.weaves, rescues: e.rescues };
+        info.episode = {
+          r: e.ret,
+          l: e.steps,
+          dist: e.epDist,
+          track: this.id,
+          scenario: this.scenario,
+          damage: this.damage,
+          retired,
+          passes: e.passes,
+          passed: e.passed,
+          hits: e.hits,
+          faults: e.faults,
+          slow: e.slow,
+          lag: e.lag,
+          lagRef: e.lagRef,
+          launchCost: e.launchCost,
+          danger: e.danger,
+          weaves: e.weaves,
+          rescues: e.rescues,
+        };
       }
-      return { obs: null, reward: rewards[k], done: retired, truncated: truncated && !retired, info, e, rescue, retired };
+      return {
+        obs: null,
+        reward: rewards[k],
+        done: retired,
+        truncated: truncated && !retired,
+        info,
+        e,
+        rescue,
+        retired,
+      };
     });
     // los rescatados vuelven a la pista donde estaban, a un costado y despacio, sin cortar el episodio (con su auto
     // como estaba); los que abandonaron, igual pero arreglados y con un episodio nuevo
@@ -495,8 +624,15 @@ export class RaceSim {
         const old = e.car;
         const side = (this.rand() < 0.5 ? -1 : 1) * halfWidthAt(track, e.u) * M * 0.6;
         e.car = this.place(e.u, side, 10);
-        Object.assign(e.car, { setup: old.setup, wear: old.wear, wearRate: old.wearRate, ownTune: old.ownTune, ownAir: old.ownAir,
-          damageLevel: old.damageLevel, damage: r.retired ? NO_DAMAGE : old.damage });
+        Object.assign(e.car, {
+          setup: old.setup,
+          wear: old.wear,
+          wearRate: old.wearRate,
+          ownTune: old.ownTune,
+          ownAir: old.ownAir,
+          damageLevel: old.damageLevel,
+          damage: r.retired ? NO_DAMAGE : old.damage,
+        });
         e.car.placeOn(track);
         Object.assign(e, { grass: 0, stuck: 0, back: 0, launch: null });
         if (r.retired) this.newEpisode(e);
@@ -525,10 +661,13 @@ export class RaceSim {
     };
     for (let i = 0; i < cars.length; i++) {
       for (let j = i + 1; j < cars.length; j++) {
-        const a = cars[i], b = cars[j];
+        const a = cars[i],
+          b = cars[j];
         if (a.kind !== 'agent' && b.kind !== 'agent') continue;
         const gap = this.raceDist(a) - this.raceDist(b);
-        const key = `${i},${j}`, was = this.ahead.get(key), now = gap > 0;
+        const key = `${i},${j}`,
+          was = this.ahead.get(key),
+          now = gap > 0;
         this.ahead.set(key, now);
         if (was === undefined || was === now || Math.abs(gap) > PASS_GAP) continue;
         const [passer, passed] = now ? [a, b] : [b, a];
@@ -539,7 +678,12 @@ export class RaceSim {
           continue;
         }
         const crowd = cars.filter((o) => o !== passer && Math.hypot(...this.rel(passer, o)) < CROWD_RANGE).length;
-        this.pending.push({ passer, passed, t: time, clean: crowd <= CROWD_MAX && time - passer.lastHit > PASS_CLEAN && time - passer.lastGrass > PASS_CLEAN });
+        this.pending.push({
+          passer,
+          passed,
+          t: time,
+          clean: crowd <= CROWD_MAX && time - passer.lastHit > PASS_CLEAN && time - passer.lastGrass > PASS_CLEAN,
+        });
       }
     }
     this.pending = this.pending.filter((p) => {
@@ -559,16 +703,21 @@ export class RaceSim {
   danger(e, dt) {
     let worst = 0;
     const look = this.rewards.crowd > 1 && this.crowded(e) ? TTC_CROWD : 1;
-    const TTC_AHEAD = TTC * look, TTC_LAT = TTC_SIDE * look;
+    const TTC_AHEAD = TTC * look,
+      TTC_LAT = TTC_SIDE * look;
     const { car } = e;
-    const ca = Math.cos(car.angle), sa = Math.sin(car.angle);
-    const vx = ca * car.speed - sa * car.slip, vy = sa * car.speed + ca * car.slip;
+    const ca = Math.cos(car.angle),
+      sa = Math.sin(car.angle);
+    const vx = ca * car.speed - sa * car.slip,
+      vy = sa * car.speed + ca * car.slip;
     for (const o of this.cars) {
       if (o === e) continue;
       const [fwd, side] = this.rel(e, o);
       if (fwd <= 0 || fwd > 40 || Math.abs(side) > 2.2) continue;
-      const oc = Math.cos(o.car.angle), os = Math.sin(o.car.angle);
-      const ovx = oc * o.car.speed - os * o.car.slip, ovy = os * o.car.speed + oc * o.car.slip;
+      const oc = Math.cos(o.car.angle),
+        os = Math.sin(o.car.angle);
+      const ovx = oc * o.car.speed - os * o.car.slip,
+        ovy = os * o.car.speed + oc * o.car.slip;
       const closing = (vx - ovx) * ca + (vy - ovy) * sa;
       if (closing <= 0) continue;
       const ttc = Math.max(0, fwd - 5) / closing; // 5 m: el largo de un auto
@@ -591,8 +740,12 @@ export class RaceSim {
   // Segundos hasta cada celda de la vuelta largando desde u parado (o a v0 m/s): la trazada para ese auto (más lenta
   // con menos agarre, como en el piso de ritmo), pero acelerando desde v0 con lo que da su motor
   launchClock(car, u, v0 = 0) {
-    const { track } = this, L = track.length, M = track.meters, n = this.line.speed.length;
-    const g = Math.sqrt(Math.min(1, car.setup.grip)), lim = car.limits;
+    const { track } = this,
+      L = track.length,
+      M = track.meters,
+      n = this.line.speed.length;
+    const g = Math.sqrt(Math.min(1, car.setup.grip)),
+      lim = car.limits;
     const clock = new Float32Array(L + 1);
     let v = v0;
     for (let i = 0; i < L; i++) {
@@ -615,7 +768,8 @@ export class RaceSim {
   lag(e) {
     const { launch } = e;
     if (!launch) return 0;
-    const L = this.track.length, M = this.track.meters;
+    const L = this.track.length,
+      M = this.track.meters;
     const d = e.dist - launch.from;
     if (d >= L * M) {
       e.launch = null;
@@ -640,11 +794,13 @@ export class RaceSim {
   // que le falta
   slow(e, dt) {
     const crowded = this.rewards.paceAlways && this.crowded(e);
-    const free = this.rewards.paceAlways ? !crowded || this.rewards.paceCrowd > 0 : !this.cars.some((o) => {
-      if (o === e) return false;
-      const [fwd, side] = this.rel(e, o);
-      return fwd > 0 && fwd < FREE_ROAD && Math.abs(side) < 4;
-    });
+    const free = this.rewards.paceAlways
+      ? !crowded || this.rewards.paceCrowd > 0
+      : !this.cars.some((o) => {
+          if (o === e) return false;
+          const [fwd, side] = this.rel(e, o);
+          return fwd > 0 && fwd < FREE_ROAD && Math.abs(side) < 4;
+        });
     const level = crowded ? this.rewards.paceCrowd : PACE_FLOOR;
     const floor = level * this.lineSpeed(e.u) * Math.sqrt(Math.min(1, e.car.setup.grip));
     if (!free || e.car.speed >= floor) return 0;
@@ -655,7 +811,8 @@ export class RaceSim {
   // Zigzag defendiendo: en recta, con un auto pegado atrás, el primer movimiento vale y volver también; cambiar
   // de dirección otra vez se castiga. Sin nadie atrás se reinicia la cuenta; en un pelotón no aplica
   weave(e, dt) {
-    const { track } = this, M = track.meters;
+    const { track } = this,
+      M = track.meters;
     const behind = this.cars.some((o) => {
       if (o === e) return false;
       const [fwd, side] = this.rel(e, o);
@@ -698,11 +855,14 @@ export class RaceSim {
 
   // Velocidad de e de costado (respecto de la pista) hacia o (m/s): positiva si se le va encima
   lateralToward(e, o) {
-    const { track } = this, M = track.meters;
+    const { track } = this,
+      M = track.meters;
     const h = trackHeading(track, e.u);
-    const nx = -Math.sin(h), ny = Math.cos(h);
+    const nx = -Math.sin(h),
+      ny = Math.cos(h);
     const lat = (c) => {
-      const ca = Math.cos(c.angle), sa = Math.sin(c.angle);
+      const ca = Math.cos(c.angle),
+        sa = Math.sin(c.angle);
       return (ca * c.speed - sa * c.slip) * nx + (sa * c.speed + ca * c.slip) * ny;
     };
     const dir = Math.sign((o.car.x - e.car.x) * M * nx + (o.car.y - e.car.y) * M * ny);
@@ -712,7 +872,8 @@ export class RaceSim {
   // ¿amontonamiento? más de CROWD_CLOSE autos a menos de CROWD_NEAR metros
   crowded(e) {
     let n = 0;
-    for (const o of this.cars) if (o !== e && Math.hypot(...this.rel(e, o)) < CROWD_NEAR && ++n > CROWD_CLOSE) return true;
+    for (const o of this.cars)
+      if (o !== e && Math.hypot(...this.rel(e, o)) < CROWD_NEAR && ++n > CROWD_CLOSE) return true;
     return false;
   }
 

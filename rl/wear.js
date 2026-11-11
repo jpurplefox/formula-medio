@@ -21,11 +21,18 @@ for (const id of TRACK_IDS) {
   car.launch();
   car.wearRate = 1 / (track.length * track.meters);
   const driver = new Driver(1, 1);
-  let st = stationAt(track, car.x, car.y), prev = st, crossed = 0, start = 0;
+  let st = stationAt(track, car.x, car.y),
+    prev = st,
+    crossed = 0,
+    start = 0;
   for (let t = 0; t < 400 && crossed < 2; t += DT) {
     const s = stationAt(track, car.x, car.y);
     if (s >= 0) st = s;
-    car.update(DT, driver.drive(DT, track, line, { car, st, lat: sampleField(track.lat, track.W, car.x, car.y) }, []), track);
+    car.update(
+      DT,
+      driver.drive(DT, track, line, { car, st, lat: sampleField(track.lat, track.W, car.x, car.y) }, []),
+      track,
+    );
     if (st - prev < -track.length / 2) {
       // la primera vuelta arranca al cruzar la línea; se mide la siguiente, lanzada
       if (++crossed === 1) start = car.wear;
