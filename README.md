@@ -473,7 +473,8 @@ grilla está sobre la recta, el trazado se reconoció entero.
 
 ## Antes de refactorizar
 
-`npm install` una vez y `npm run lint` (ESLint: variables sin uso, nombres sin definir, código inalcanzable).
+`npm install` una vez; `npm run lint` revisa errores (ESLint: variables sin uso, nombres sin definir, código
+inalcanzable) y formato (Prettier, sólo los `.js`), y `npm run format` formatea.
 El CI (`.github/workflows/check.yml`) corre el lint y la regresión en cada PR.
 
 `node tools/regress.js` corre carreras con semilla fija (los escenarios del currículum y la carrera del juego con

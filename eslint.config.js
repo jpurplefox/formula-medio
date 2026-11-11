@@ -1,4 +1,5 @@
-// ESLint: errores reales (variables sin uso, nombres sin definir, código inalcanzable), con npm run lint.
+// ESLint: errores reales (variables sin uso, nombres sin definir, código inalcanzable). El formato lo pone Prettier
+// (.prettierrc.json): npm run lint revisa las dos cosas y npm run format formatea.
 import js from '@eslint/js';
 import globals from 'globals';
 
