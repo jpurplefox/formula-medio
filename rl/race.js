@@ -42,8 +42,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Driver } from '../src/drivers/ai.js';
-import { Car, DEFAULT_PROFILE, isSolid, limitsOn, RIVAL_AIDS, SAME_SETUP, slipstream } from '../src/sim/car.js';
-import { collideCars } from '../src/sim/collision.js';
+import { Car, DEFAULT_PROFILE, limitsOn, RIVAL_AIDS, SAME_SETUP } from '../src/sim/car.js';
+import { stepCars } from '../src/sim/traffic.js';
 import { NeuralDriver, Policy } from '../src/drivers/policy.js';
 import { racingLine } from '../src/sim/racingline.js';
 import { ACTIONS, OBS_SIZE, observe, stationAt, trackHeading } from '../src/drivers/sensors.js';
@@ -488,32 +488,25 @@ export class RaceSim {
     });
     const states = cars.map((e) => ({ car: e.car, st: e.u, lat: sampleField(track.lat, track.W, e.car.x, e.car.y) }));
     for (let s = 0; s < SUBSTEPS; s++) {
-      for (const c of all) c.draft = slipstream(c, all, M);
-      cars.forEach((e, i) => {
-        const input =
-          e.kind === 'agent'
-            ? e.input
-            : e.driver.drive(
-                DT,
-                track,
-                line,
-                states[i],
-                states.filter((_, j) => j !== i),
-              );
-        const bump = e.car.bump;
-        e.car.update(DT, input, track);
-        e.wallHit = e.car.bump > bump + 0.05 ? e.car.bump - bump : 0;
-      });
-      const before = all.map((c) => c.bump);
-      collideCars(all, track, isSolid);
+      const { wall, hit } = stepCars(track, all, DT, (i) =>
+        cars[i].kind === 'agent'
+          ? cars[i].input
+          : cars[i].driver.drive(
+              DT,
+              track,
+              line,
+              states[i],
+              states.filter((_, j) => j !== i),
+            ),
+      );
       this.time += DT;
       cars.forEach((e, i) => {
         const k = this.agentsList.indexOf(e);
-        const carHit = e.car.bump > before[i] + 0.05 ? e.car.bump - before[i] : 0;
+        const carHit = hit[i];
         if (carHit) e.lastHit = this.time;
         if (e.car.onGrass) e.lastGrass = this.time;
         if (k >= 0) {
-          rewards[k] -= WALL_PENALTY * e.wallHit;
+          rewards[k] -= WALL_PENALTY * wall[i];
           if (carHit) {
             const fault = this.hitAhead(e) || this.squeezed(e);
             const crowd = this.crowded(e) ? this.rewards.crowd : 1;

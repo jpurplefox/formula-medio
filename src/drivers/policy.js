@@ -114,6 +114,11 @@ export class NeuralDriver {
     this.input = { throttle: 0, brake: 0, steer: 0 };
   }
 
+  // si la red ve el semáforo (sensors.js): entonces maneja su largada (race/race.js)
+  get seesLights() {
+    return !!this.policy.lights;
+  }
+
   // Misma forma que Driver.drive de ai.js: me y others son { car, ... }
   drive(dt, track, line, { car }, others = []) {
     const u = stationAt(track, car.x, car.y);

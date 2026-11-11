@@ -42,8 +42,7 @@
 // Y sin escala: - muro, quedarse quieto, rescate, abandono, ir lento con la pista libre (piso de ritmo)
 
 import { gridSlots } from '../src/race/grid.js';
-import { isSolid, slipstream } from '../src/sim/car.js';
-import { collideCars } from '../src/sim/collision.js';
+import { stepCars } from '../src/sim/traffic.js';
 import { ACTIONS, inZone, stationAt } from '../src/drivers/sensors.js';
 import { halfWidthAt, sampleField } from '../src/sim/track.js';
 import { NO_DAMAGE } from '../src/sim/damage.js';
@@ -339,29 +338,23 @@ export class HerdSim extends RaceSim {
       e.input = { steer, throttle: Math.max(0, pedal), brake: Math.max(0, -pedal) };
     });
     for (let s = 0; s < SUBSTEPS; s++) {
-      for (const c of all) c.draft = slipstream(c, all, M);
-      for (const e of cars) {
+      const { wall, hit } = stepCars(track, all, DT, (k) => {
+        const e = cars[k];
         if (e.waiting) {
           // se apagaron las luces y no venía acelerando: larga cuando acelera
-          if (e.input.throttle > 0) {
-            e.car.launch();
-            e.waiting = false;
-          } else {
+          if (e.input.throttle <= 0) {
             e.car.rev(DT, 0);
-            e.wallHit = 0;
-            continue;
+            return null;
           }
+          e.car.launch();
+          e.waiting = false;
         }
-        const bump = e.car.bump;
-        e.car.update(DT, e.input, track);
-        e.wallHit = e.car.bump > bump + 0.05 ? e.car.bump - bump : 0;
-      }
-      const before = all.map((c) => c.bump);
-      collideCars(all, track, isSolid);
+        return e.input;
+      });
       this.time += DT;
       cars.forEach((e, k) => {
-        const carHit = e.car.bump > before[k] + 0.05 ? e.car.bump - before[k] : 0;
-        rewards[k] -= WALL_PENALTY * e.wallHit;
+        const carHit = hit[k];
+        rewards[k] -= WALL_PENALTY * wall[k];
         if (carHit) {
           const fresh = this.time - e.lastTouch > CONTACT_GAP;
           e.lastTouch = e.lastHit = this.time;

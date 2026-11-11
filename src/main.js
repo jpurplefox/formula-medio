@@ -10,12 +10,10 @@ import {
   FUEL_PER_KM,
   keyboardBrake,
   keyboardSteer,
-  LAUNCH_WINDOW,
   isSolid,
   limitsOn,
   rearMargin,
   RIVAL_AIDS,
-  slipstream,
   TEMP_HIGH,
   TEMP_LOW,
   TRACTION_CONTROL,
@@ -27,7 +25,6 @@ import { carModel, STEERING, TCAM, WHEEL_R } from './render/carmodel.js';
 import { Driver } from './drivers/ai.js';
 import { lineFrame, pointAt } from './sim/lineframe.js';
 import { gridSlots } from './race/grid.js';
-import { collideCars } from './sim/collision.js';
 import { Cockpit } from './render/cockpit.js';
 import { CAMERA_MODES, CAMERA_NAMES, Recorder, replayCamera, tvCameras } from './ui/replay.js';
 import {
@@ -44,7 +41,8 @@ import {
 } from './race/teams.js';
 import { EngineAudio } from './audio/audio.js';
 import { GAME_NET, NeuralDriver, Policy } from './drivers/policy.js';
-import { LIGHTS_OUT, lightsAt, lightsDuration, randomHold } from './sim/lights.js';
+import { HumanDriver } from './drivers/human.js';
+import { Race } from './race/race.js';
 import { RubberMap } from './sim/rubber.js';
 import { DESIGNS } from './render/teamliveries.js';
 import { airDensity, carLimits, DEFAULT_TUNE, GRAVITY } from './sim/dynamics.js';
@@ -472,7 +470,7 @@ let neuralPolicy = null;
 function resetGame(track) {
   cockpitView = settings.view !== 'chase';
   const prev = game || lastGame;
-  const prevBest = prev && prev.track === track ? prev.best : null;
+  const prevBest = prev && prev.track === track ? prev.player.lap.best : null;
   const prevGhost = prev && prev.track === track ? prev.ghost : null;
   const team = teamById(settings.team);
   const difficulty = DIFFICULTIES.find((d) => d.id === settings.difficulty) || DIFFICULTIES[2];
@@ -499,10 +497,8 @@ function resetGame(track) {
     number: mine.number,
     color: team.color,
     car,
-    driver: null,
-    race: newRace(track, car),
+    driver: new HumanDriver(),
     model: modelFor(mine, 2),
-    dist: 0,
     gridBack: spawn.back,
   };
   const rivals = others
@@ -519,15 +515,10 @@ function resetGame(track) {
         number: o.number,
         color: t.color,
         car: c,
-        race: newRace(track, c),
         driver: neuralPolicy ? new NeuralDriver(neuralPolicy) : new Driver(paces[i], i + 1),
         model: modelFor(o),
         spin: 0,
-        dist: 0,
         gridBack: s.back,
-        // en la grilla cada rival acelera hasta unas vueltas propias y reacciona al semáforo con su tiempo
-        revTarget: LAUNCH_WINDOW[0] - 300 + Math.random() * 1500,
-        react: 0.12 + Math.random() * 0.22,
       };
     })
     .sort((a, b) => a.gridBack - b.gridBack); // en orden de grilla: así los muestra la tabla antes de largar
@@ -548,18 +539,6 @@ function resetGame(track) {
     recorder: new Recorder(others.length + 1), // la carrera, para la repetición
     replayIn: null, // cuánto falta para que empiece la repetición (cuando terminás)
     replay: null, // { t, mode, target, tv } mientras se ve la repetición
-    raceTime: 0,
-    finished: [], // orden de llegada: { entry, time }
-    countdown: 0, // segundos hasta que se apaga el semáforo (se calcula abajo)
-    lightsTotal: 0,
-    awaitLaunch: false, // si al apagarse el semáforo no estabas acelerando: largás cuando acelerás
-    running: false, // la vuelta empieza al cruzar la línea
-    lapTime: 0,
-    lap: 0,
-    last: null,
-    best: prevBest,
-    lapMaxProgress: 0,
-    prevAlong: lineCoords(track, spawn.x, spawn.y).along,
     resultsShown: false,
     rec: [],
     recClock: 0,
@@ -567,19 +546,24 @@ function resetGame(track) {
     progressLog: [],
     wrongWay: false,
   };
-  const L = Math.ceil(track.path.st[track.path.n]);
-  for (const e of game.entries) {
-    e.passTimes = new Float32Array(L * ((trial ? 1 : game.laps) + 3)).fill(-1); // hora de paso por cada celda (ver timePasses)
-    e.lastPass = -1;
-  }
   towerClock = 0;
-  game.lightsTotal = game.countdown = lightsDuration(randomHold());
   if (!guides.has(track)) guides.set(track, racingLine(track, limitsOn(carProfile, track)));
   // la goma arranca con la franja tenue de otra categoría sobre la trazada y la carrera la va marcando
   game.rubber = new RubberMap(track, guides.get(track).offset);
   for (const e of game.entries) e.car.rubber = game.rubber; // y agarra según cuánta haya (car.js)
   if (!aiLines.has(track))
     aiLines.set(track, racingLine(track, limitsOn(carProfile, track), { brakeUse: AI_BRAKE_USE }));
+  // la carrera (race/race.js): grilla, semáforo, largadas, vueltas, abandonos y orden. Vos quedás en pista aunque
+  // abandones (donde paraste)
+  game.race = new Race({
+    track,
+    entries: game.entries,
+    laps: game.laps,
+    line: aiLines.get(track),
+    rubber: game.rubber,
+    stays: player,
+  });
+  player.lap.best = prevBest;
   if (!tvCams.has(track)) tvCams.set(track, tvCameras(track));
   hud.stage.classList.remove('replay');
   hud.stage.classList.toggle('trial', trial);
@@ -611,147 +595,35 @@ function paintGuide(guide, track, car) {
   }
 }
 
-function lineCoords(track, x, y) {
-  const { line } = track;
-  const ax = x - line.x,
-    ay = y - line.y;
-  return { along: ax * line.dx + ay * line.dy, side: -ax * line.dy + ay * line.dx };
-}
-
-// si el rival lo maneja una red que ve el semáforo (sensors.js): sube las vueltas y larga ella
-const seesLights = (e) => e.driver instanceof NeuralDriver && e.driver.policy.lights;
-
 function update(dt) {
-  const g = game;
-  const input = readInput(dt, g.car.speed);
-
-  // con el semáforo en rojo los autos quedan quietos en la grilla, pero se puede subir de vueltas
-  if (g.countdown > 0) {
-    g.countdown -= dt;
-    g.car.rev(dt, input.throttle);
-    // los rivales con una red que ve el semáforo suben y bajan las vueltas ellos (sensors.js); los demás, hasta las suyas
-    const lights = lightsAt(g.lightsTotal - Math.max(0, g.countdown), g.lightsTotal);
+  const g = game,
+    r = g.race,
+    me = g.player;
+  me.driver.input = readInput(dt, g.car.speed);
+  const racing = r.started; // con el semáforo prendido sólo se suben las vueltas
+  for (const ev of r.step(dt)) raceEvent(g, ev);
+  if (racing) {
+    const cars = g.entries.filter((e) => e === me || !e.car.gone).map((e) => e.car);
     for (const e of g.entries) {
-      if (!e.driver) continue;
-      if (seesLights(e)) {
-        e.car.lights = lights;
-        const inp = e.driver.grid(
-          dt,
-          g.track,
-          e,
-          g.entries.filter((o) => o !== e),
-        );
-        e.car.revBy(dt, inp.revUp, inp.revDown);
-        e.car.throttle = inp.throttle;
-      } else e.car.rev(dt, e.car.rpm < e.revTarget);
-    }
-    // se apagan las luces: el que viene acelerando suelta el embrague ya
-    if (g.countdown <= 0) {
-      if (input.throttle) g.car.launch();
-      else g.awaitLaunch = true;
-      // las redes que ven el semáforo: como vos, sin la reacción de la IA (la pone la red, al acelerar)
-      for (const e of g.entries) {
-        if (!e.driver || !seesLights(e)) continue;
-        e.car.lights = LIGHTS_OUT;
-        e.react = 0;
-        if (e.driver.input.throttle > 0) e.car.launch();
-        else e.gridWait = true;
-      }
-    }
-  } else {
-    g.raceTime += dt;
-    // si no estabas acelerando, largás cuando acelerás
-    if (g.awaitLaunch) {
-      if (input.throttle) {
-        g.car.launch();
-        g.awaitLaunch = false;
-      } else g.car.rev(dt, false);
-    }
-    // los rivales que abandonaron y ya sacaron de la pista no cuentan más (vos quedás donde paraste)
-    const cars = g.entries.filter((e) => e === g.player || !e.car.gone).map((e) => e.car);
-    for (const c of cars) c.draft = slipstream(c, cars, g.track.meters);
-    if (!g.awaitLaunch) g.car.update(dt, input, g.track);
-    const line = aiLines.get(g.track);
-    const states = g.entries.map((e) => carState(g.track, e));
-    g.entries.forEach((e, i) => {
-      if (!e.driver || e.car.gone) return;
-      // una red que no venía acelerando cuando se apagaron las luces: larga cuando acelera
-      if (e.gridWait) {
-        if (
-          e.driver.grid(
-            dt,
-            g.track,
-            e,
-            g.entries.filter((o) => o !== e),
-          ).throttle > 0
-        ) {
-          e.car.launch();
-          e.gridWait = false;
-        } else {
-          e.car.rev(dt, false);
-          return;
-        }
-      }
-      // cada rival tarda un poquito en reaccionar al semáforo
-      if (e.react > 0) {
-        e.react -= dt;
-        e.car.rev(dt, e.car.rpm < e.revTarget);
-        if (e.react <= 0) e.car.launch();
-        return;
-      }
-      const others = states.filter((_, j) => j !== i && !g.entries[j].car.gone);
-      e.car.update(dt, e.driver.drive(dt, g.track, line, states[i], others), g.track);
-      e.spin = (e.spin + (e.car.speed * dt) / WHEEL_R) % (Math.PI * 2);
-    });
-    collideCars(cars, g.track, isSolid);
-    for (const e of g.entries) if (e.car.damage.retired && e.out === undefined) retire(g, e);
-    for (const e of g.entries) {
+      if (e !== me) e.spin = (e.spin + (e.car.speed * dt) / WHEEL_R) % (Math.PI * 2);
       e.head = turnHead(e.head, lookYaw(e.car, cars, g.track), dt);
       const c = e.car;
       e.body = suspension(e.body, c.speed * c.omega, (c.speed - (e.prevSpeed ?? c.speed)) / dt, dt);
       e.prevSpeed = c.speed;
       e.paddles = paddles(e.paddles, c.gear, dt);
     }
-    for (const e of g.entries) if (e.driver) raceLine(g, e);
-    for (const e of g.entries) e.dist += Math.abs(e.car.speed) * dt;
-    g.rubber.update(dt, states);
     g.recorder.add(dt, g.entries);
-    timePasses(g);
   }
 
-  // cruce de la línea de largada
-  const { along, side } = lineCoords(g.track, g.car.x, g.car.y);
-  if (g.prevAlong < 0 && along >= 0 && Math.abs(side) < g.track.line.half) {
-    if (!g.running) {
-      g.running = true;
-      g.player.race.started = true;
-    } else if (g.lapMaxProgress > g.track.maxProgress * 0.75) {
-      completeLap(g);
-    } else {
-      flash('Vuelta inválida');
-    }
-    g.lapTime = 0;
-    g.lapMaxProgress = 0;
-    g.rec = [];
-    g.recClock = 0;
-  }
-  g.prevAlong = along;
-
-  if (g.running) {
-    g.lapTime += dt;
-    const ix = Math.floor(g.car.x),
-      iy = Math.floor(g.car.y);
-    const p = g.track.progress[iy * g.track.W + ix];
-    // sólo cuenta el progreso continuo (evita atajos y cruzar la línea marcha atrás)
-    if (p >= 0 && p <= g.lapMaxProgress + 40) g.lapMaxProgress = Math.max(g.lapMaxProgress, p);
-
+  if (me.lap.started) {
+    // tu vuelta, para el fantasma de contrarreloj
     g.recClock += dt;
     while (g.recClock >= GHOST_STEP) {
       g.recClock -= GHOST_STEP;
       g.rec.push(g.car.x, g.car.y);
     }
-
     // contramano: el progreso viene bajando sostenidamente
+    const p = g.track.progress[Math.floor(g.car.y) * g.track.W + Math.floor(g.car.x)];
     g.progressLog.push(p);
     if (g.progressLog.length > 45) g.progressLog.shift();
     const first = g.progressLog[0],
@@ -760,98 +632,36 @@ function update(dt) {
   }
 }
 
+// Lo que pasó en la carrera, en pantalla: tus vueltas, los abandonos y la llegada
+function raceEvent(g, { type, entry: e, time, best, place }) {
+  const me = e === g.player;
+  if (type === 'retire') {
+    if (me) {
+      flash(`Abandono: ${e.car.damage.retired.toLowerCase()}`);
+      g.replayIn = REPLAY_DELAY;
+    } else flash(`Abandona ${e.code}`);
+  }
+  if (type === 'finish' && me) {
+    flash(`¡Terminaste ${place}º!`);
+    g.replayIn = REPLAY_DELAY;
+  }
+  if (!me || !['start', 'lap', 'invalid'].includes(type)) return;
+  if (type === 'invalid') flash('Vuelta inválida');
+  if (type === 'lap') {
+    if (best && g.trial) g.ghost = Float32Array.from(g.rec); // el fantasma es la mejor vuelta de contrarreloj
+    flash(best ? `¡Mejor vuelta! ${fmt(time)}` : `Vuelta ${fmt(time)}`);
+  }
+  // cada cruce de la línea empieza a grabar la vuelta de nuevo
+  g.rec = [];
+  g.recClock = 0;
+}
+
 // ---------- carrera ----------
-// estado de carrera de un auto: vueltas completas y si ya cruzó la línea por primera vez (largó)
-function newRace(track, car) {
-  return { laps: 0, started: false, prevAlong: lineCoords(track, car.x, car.y).along, maxProgress: 0 };
-}
-
-// posición sobre la línea central y de costado, para el piloto automático y para ordenar la carrera
-function carState(track, e) {
-  const st = stationAt(track, e.car.x, e.car.y);
-  e.st = st >= 0 ? st : (e.st ?? 0);
-  e.lat = sampleField(track.lat, track.W, e.car.x, e.car.y);
-  return { car: e.car, st: e.st, lat: e.lat };
-}
-
-// vueltas de los rivales: cada cruce de la línea, si dieron la vuelta completa
-function raceLine(g, e) {
-  const { track } = g;
-  const r = e.race;
-  const { along, side } = lineCoords(track, e.car.x, e.car.y);
-  const p = track.progress[Math.floor(e.car.y) * track.W + Math.floor(e.car.x)];
-  if (p >= 0 && p <= r.maxProgress + 40) r.maxProgress = Math.max(r.maxProgress, p);
-  if (r.prevAlong < 0 && along >= 0 && Math.abs(side) < track.line.half) {
-    if (!r.started) r.started = true;
-    else if (r.maxProgress > track.maxProgress * 0.75) {
-      r.laps++;
-      if (r.laps === g.laps) finish(g, e);
-    }
-    r.maxProgress = 0;
-  }
-  r.prevAlong = along;
-}
-
-// abandono: queda último (entre los que abandonaron, el que más anduvo) y, si sos vos, la carrera terminó
-function retire(g, e) {
-  e.out = g.raceTime;
-  if (e === g.player) {
-    flash(`Abandono: ${e.car.damage.retired.toLowerCase()}`);
-    g.replayIn = REPLAY_DELAY;
-  } else flash(`Abandona ${e.code}`);
-}
-
-function finish(g, e) {
-  if (g.finished.some((f) => f.entry === e)) return;
-  g.finished.push({ entry: e, time: g.raceTime });
-  if (e === g.player) {
-    flash(`¡Terminaste ${g.finished.length}º!`);
-    g.replayIn = REPLAY_DELAY;
-  }
-}
-
-// orden de carrera: primero los que llegaron, en orden; después por vueltas y distancia recorrida
-// distancia de carrera (celdas de la línea central): vueltas completas más lo recorrido de la actual;
-// antes de cruzar la línea por primera vez, negativa (están en la grilla)
-function raceDistance(g, e) {
-  const L = g.track.path.st[g.track.path.n];
-  const st = e.st ?? 0;
-  return e.race.started ? e.race.laps * L + st : st - L;
-}
-
-function raceOrder(g) {
-  const progress = (e) => {
-    const done = g.finished.findIndex((f) => f.entry === e);
-    return done >= 0 ? 1e9 - done : raceDistance(g, e) - (e.out !== undefined ? 1e8 : 0);
-  };
-  return [...g.entries].sort((a, b) => progress(b) - progress(a));
-}
-
-// Cronometraje: cada auto anota a qué hora pasó por cada celda de la línea central, vuelta tras vuelta.
-// Así la distancia con el de adelante es cuánto hace que el de adelante pasó por donde está ahora el de atrás.
-function timePasses(g) {
-  const L = g.track.path.st[g.track.path.n];
-  for (const e of g.entries) {
-    const i = Math.floor(raceDistance(g, e) + L);
-    if (e.lastPass < 0) e.lastPass = i; // primera anotación: desde la grilla
-    // en la línea, la vuelta y la posición no cambian en el mismo cuadro: un salto grande se ignora
-    if (i <= e.lastPass || i - e.lastPass > 40 || i >= e.passTimes.length) continue;
-    e.passTimes.fill(g.raceTime, Math.max(0, e.lastPass + 1), i + 1);
-    e.lastPass = i;
-  }
-}
-
-// diferencia (s) del auto `behind` con el de adelante (`ahead`); o vueltas de diferencia
-function interval(g, ahead, behind) {
-  const fa = g.finished.find((f) => f.entry === ahead),
-    fb = g.finished.find((f) => f.entry === behind);
-  if (fa && fb) return `+${(fb.time - fa.time).toFixed(1)}`;
-  const L = g.track.path.st[g.track.path.n];
-  const da = raceDistance(g, ahead),
-    db = raceDistance(g, behind);
-  if (da - db > L) return `+${Math.floor((da - db) / L)} V`;
-  const t = ahead.passTimes[Math.floor(db + L)];
-  return t >= 0 && db > -L ? `+${(g.raceTime - t).toFixed(1)}` : '';
+// distancia con el de adelante, como en la TV: segundos o vueltas
+function gapText(g, ahead, behind) {
+  const gap = g.race.gap(ahead, behind);
+  if (!gap) return '';
+  return gap.laps ? `+${gap.laps} V` : `+${gap.time.toFixed(1)}`;
 }
 
 // tabla de posiciones (como la de la TV): posición, auto y distancia con el de adelante
@@ -859,16 +669,16 @@ let towerClock = 0;
 function drawTower(g, time) {
   if (time - towerClock < 200) return; // 5 veces por segundo alcanza, y se lee mejor
   towerClock = time;
-  const order = raceOrder(g);
+  const order = g.race.order();
   const rows = order.map((e, i) => {
     const gap =
       e.out !== undefined
         ? 'AB'
         : i === 0
-          ? g.finished.some((f) => f.entry === e)
+          ? g.race.finished.some((f) => f.entry === e)
             ? 'Final'
             : 'Líder'
-          : interval(g, order[i - 1], e);
+          : gapText(g, order[i - 1], e);
     const me = e === g.player ? ' class="me"' : '';
     return `<tr${me}><td>${i + 1}</td><td><i style="background:${e.color}"></i>${e.code}<small>${e.number}</small></td><td>${gap}</td></tr>`;
   });
@@ -878,12 +688,12 @@ function drawTower(g, time) {
 
 // tabla de resultados: aparece cuando terminás
 function drawResults(g) {
-  const show = g.finished.some((f) => f.entry === g.player) || g.player.out !== undefined;
+  const show = g.race.finished.some((f) => f.entry === g.player) || g.player.out !== undefined;
   hud.results.classList.toggle('show', show);
   if (!show) return;
-  const first = g.finished[0]?.time;
-  const rows = raceOrder(g).map((e, i) => {
-    const f = g.finished.find((x) => x.entry === e);
+  const first = g.race.finished[0]?.time;
+  const rows = g.race.order().map((e, i) => {
+    const f = g.race.finished.find((x) => x.entry === e);
     const gap =
       e.out !== undefined ? 'Abandono' : !f ? 'en pista' : i === 0 ? fmt(f.time) : `+${(f.time - first).toFixed(3)}`;
     const me = e === g.player ? ' class="me"' : '';
@@ -891,20 +701,6 @@ function drawResults(g) {
   });
   const html = `<h3>Resultado</h3><table>${rows.join('')}</table><p>R para correr de nuevo · Esc menú</p>`;
   if (hud.results.innerHTML !== html) hud.results.innerHTML = html;
-}
-
-function completeLap(g) {
-  g.lap++;
-  g.player.race.laps = g.lap;
-  if (g.lap === g.laps) finish(g, g.player);
-  g.last = g.lapTime;
-  if (g.best === null || g.lapTime < g.best) {
-    g.best = g.lapTime;
-    if (g.trial) g.ghost = Float32Array.from(g.rec); // el fantasma es la mejor vuelta de contrarreloj
-    flash(`¡Mejor vuelta! ${fmt(g.lapTime)}`);
-  } else {
-    flash(`Vuelta ${fmt(g.lapTime)}`);
-  }
 }
 
 let flashTimer = 0;
@@ -1180,10 +976,10 @@ async function draw(time) {
   const { track } = g;
   const heightAt = (x, y) => sampleField(track.height, track.W, x, y);
   const models = [];
-  if (g.trial && g.ghost && g.running && g.ghost.length >= 4) {
+  if (g.trial && g.ghost && g.player.lap.started && g.ghost.length >= 4) {
     // la vuelta se grabó 30 veces por segundo y se dibuja más seguido: interpolamos entre muestras
     // para que avance suave, y el rumbo sale de puntos un poco antes y un poco después, para que no tiemble
-    const u = g.lapTime / GHOST_STEP - 1;
+    const u = g.player.lap.time / GHOST_STEP - 1;
     const [gx, gy] = ghostAt(g.ghost, u);
     const [ax, ay] = ghostAt(g.ghost, u - 3);
     const [bx, by] = ghostAt(g.ghost, u + 3);
@@ -1196,7 +992,7 @@ async function draw(time) {
 
   // rivales
   for (const e of g.entries) {
-    if (!e.driver || e.car.gone) continue;
+    if (e === g.player || e.car.gone) continue;
     const c = e.car;
     models.push({
       // arriba del piano o de la salchicha, el auto sube y se inclina con las ruedas que se levantan
@@ -1317,7 +1113,7 @@ async function draw(time) {
   await renderer.render(track, cam, sprites, models);
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
 
-  if (g.countdown > 0 || g.raceTime < 1) drawLights(g);
+  if (!g.race.started || g.race.time < 1) drawLights(g);
 
   // HUD
   hud.speed.textContent = Math.round(Math.abs(car.speed) * 3.6);
@@ -1331,15 +1127,16 @@ async function draw(time) {
   const leds = hud.lights.children;
   for (let i = 0; i < SHIFT_LIGHTS; i++) leds[i].className = i < lit ? (i < 5 ? 'g' : i < 10 ? 'r' : 'b') : '';
   hud.lights.classList.toggle('flash', lit >= SHIFT_LIGHTS && Math.floor(time / 80) % 2 === 0);
-  hud.lap.textContent = g.trial ? g.lap + 1 : `${Math.min(g.laps, g.lap + 1)}/${g.laps}`;
-  hud.pos.textContent = `${raceOrder(g).indexOf(g.player) + 1}/${g.entries.length}`;
+  const lap = g.player.lap;
+  hud.lap.textContent = g.trial ? lap.laps + 1 : `${Math.min(g.laps, lap.laps + 1)}/${g.laps}`;
+  hud.pos.textContent = `${g.race.order().indexOf(g.player) + 1}/${g.entries.length}`;
   drawTower(g, time);
   drawDamage(g, time);
   drawTyres(car, time);
   drawResults(g);
-  hud.time.textContent = g.running ? fmt(g.lapTime) : fmt(null);
-  hud.last.textContent = fmt(g.last);
-  hud.best.textContent = fmt(g.best);
+  hud.time.textContent = lap.started ? fmt(lap.time) : fmt(null);
+  hud.last.textContent = fmt(lap.last);
+  hud.best.textContent = fmt(lap.best);
   if (g.wrongWay && flashTimer <= 0) {
     hud.msg.textContent = '¡CONTRAMANO!';
     hud.msg.classList.add('show');
@@ -1353,8 +1150,7 @@ async function draw(time) {
 // Semáforo de largada, como el de la F1: cinco columnas con dos luces rojas cada una.
 // Se prenden de a una por segundo y, después de una espera al azar, se apagan todas: ahí se larga.
 function drawLights(g) {
-  const elapsed = g.lightsTotal - Math.max(0, g.countdown);
-  const { lit } = lightsAt(elapsed, g.lightsTotal);
+  const { lit } = g.race.lights();
   const w = 26,
     gap = 6,
     x0 = 240 - (5 * w + 4 * gap) / 2,
@@ -1407,11 +1203,11 @@ function drawMinimap(g) {
   const k = minimap.width / W;
   mctx.clearRect(0, 0, minimap.width, minimap.height);
   mctx.drawImage(minimapBase, 0, 0, minimap.width, minimap.height);
-  if (g.trial && g.ghost && g.running) {
-    const i = Math.min(Math.floor(g.lapTime / GHOST_STEP), g.ghost.length / 2 - 1) * 2;
+  if (g.trial && g.ghost && g.player.lap.started) {
+    const i = Math.min(Math.floor(g.player.lap.time / GHOST_STEP), g.ghost.length / 2 - 1) * 2;
     dot(g.ghost[i] * k, g.ghost[i + 1] * k, '#3aa0ff');
   }
-  for (const e of g.entries) if (e.driver && !e.car.gone) dot(e.car.x * k, e.car.y * k, e.color, 3);
+  for (const e of g.entries) if (e !== g.player && !e.car.gone) dot(e.car.x * k, e.car.y * k, e.color, 3);
   dot(g.car.x * k, g.car.y * k, g.player.color);
 }
 
