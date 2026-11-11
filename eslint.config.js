@@ -16,6 +16,6 @@ export default [
   // el juego corre en el navegador
   { files: ['src/**/*.js', 'tracks/**/*.js'], languageOptions: { globals: globals.browser } },
   { files: ['src/terrainworker.js'], languageOptions: { globals: globals.worker } },
-  // el entrenamiento y las herramientas, en Node
-  { files: ['rl/**/*.js', 'tools/**/*.js', '*.config.js'], languageOptions: { globals: globals.node } },
+  // el entrenamiento, las herramientas y los tests, en Node
+  { files: ['rl/**/*.js', 'tools/**/*.js', 'test/**/*.js', '*.config.js'], languageOptions: { globals: globals.node } },
 ];

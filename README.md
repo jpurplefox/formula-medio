@@ -473,6 +473,12 @@ grilla está sobre la recta, el trazado se reconoció entero.
 
 ## Antes de refactorizar
 
+`npm test` corre los tests de `test/` (`node:test`, menos de un segundo): propiedades de la física (dynamics.js,
+lapsim.js, car.js: punta, frenada, alerones, altura, nafta, gomas), daños, choques, semáforo, equipos y grilla,
+sensores y una vuelta lanzada de la red del juego en Monza. Prueban propiedades con márgenes, no números exactos:
+siguen valiendo después de recalibrar el auto, y si un cambio a propósito los rompe, hay que revisar si el test
+sigue teniendo sentido.
+
 `npm install` una vez; `npm run lint` revisa errores (ESLint: variables sin uso, nombres sin definir, código
 inalcanzable) y formato (Prettier, sólo los `.js`), y `npm run format` formatea.
 El CI (`.github/workflows/check.yml`) corre el lint y la regresión en cada PR. La regresión corre en macOS arm64:
