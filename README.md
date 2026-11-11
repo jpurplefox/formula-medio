@@ -475,7 +475,9 @@ grilla está sobre la recta, el trazado se reconoció entero.
 
 `npm install` una vez; `npm run lint` revisa errores (ESLint: variables sin uso, nombres sin definir, código
 inalcanzable) y formato (Prettier, sólo los `.js`), y `npm run format` formatea.
-El CI (`.github/workflows/check.yml`) corre el lint y la regresión en cada PR.
+El CI (`.github/workflows/check.yml`) corre el lint y la regresión en cada PR. La regresión corre en macOS arm64:
+en x64 las funciones matemáticas pueden dar distinto en el último decimal y la base no coincide, así que la base se
+guarda en una Mac con Apple Silicon.
 
 `node tools/regress.js` corre carreras con semilla fija (los escenarios del currículum y la carrera del juego con
 daños, con la red del juego) y las compara con `tools/regress.base.txt`: si un cambio toca la física, los sensores,
