@@ -286,7 +286,7 @@ Carrera tipo juego (`JUEGO=1`, Difícil de entonces, con el rescate en el pasto 
 `rl/curriculum.sh` entrena desde cero la receta de la red del juego: las fases 1–4 del tercer intento, las 5–6
 del cuarto y una 7 de ritmo contra rivales más rápidos (~3 h). En la fase 7 los rivales llevan 8 % más de agarre y
 potencia (`--rivals-boost 0.08`) y la IA de siempre corre a 1–1,1 de ritmo: entre redes iguales el ritmo sólo
-mejora hasta el del de adelante, así que hace falta tener adelante autos más rápidos. Hace falta `rl/.venv` y los circuitos exportados en `rl/tracks/` (README, "IA por refuerzo").
+mejora hasta el del de adelante, así que hace falta tener adelante autos más rápidos. Hace falta `rl/.venv` y los circuitos exportados en `rl/tracks/` (docs/ia.md, "Cómo se entrena").
 
 ```bash
 NOMBRE=v5 sh rl/curriculum.sh        # modelos en models/v5/, logs y checkpoints en rl/runs/v5faseN

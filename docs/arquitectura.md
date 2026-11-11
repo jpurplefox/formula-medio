@@ -52,14 +52,24 @@ falla.
 
 ## Cómo se revisa
 
-- `npm test`: los tests de `test/`, en menos de un segundo.
-- `npm run lint`: ESLint (errores y capas), Prettier (formato) y los tipos.
-- `npm run regress`: carreras con semilla fija comparadas bit a bit con `tools/regress.base.txt`. Cubre la física,
-  los choques, los daños, los sensores, la red, la carrera tipo juego y los dos simuladores de entrenamiento. Sólo da
-  idéntico en Apple Silicon (en x64 las funciones matemáticas difieren en el último decimal); el CI la corre en
-  macOS.
+`npm install` una vez, y después:
 
-El CI (`.github/workflows/check.yml`) corre las tres cosas en cada PR.
+- `npm test`: los tests de `test/` (`node:test`, menos de un segundo): propiedades de la física (`dynamics.js`,
+  `lapsim.js`, `car.js`: punta, frenada, alerones, altura, nafta, gomas), daños, choques, semáforo, la carrera,
+  equipos y grilla, sensores y una vuelta lanzada de la red del juego en Monza. Prueban propiedades con márgenes, no
+  números exactos: siguen valiendo después de recalibrar el auto, y si un cambio a propósito los rompe, hay que
+  revisar si el test sigue teniendo sentido.
+- `npm run lint`: ESLint (errores y capas), Prettier (formato, sólo los `.js`) y los tipos (`npm run types`).
+  `npm run format` formatea.
+- `npm run regress` (`tools/regress.js`): carreras con semilla fija comparadas bit a bit con
+  `tools/regress.base.txt`. Cubre la física, los choques, los daños, los sensores, la red, la carrera tipo juego y
+  los dos simuladores de entrenamiento: si un cambio toca algo de eso, aunque sea en el último decimal, salta (~1
+  min). Cuando el cambio es a propósito, `node tools/regress.js guardar` actualiza la base. No cubre lo que es sólo
+  del navegador (cámara, HUD, menú, sonido).
+
+El CI (`.github/workflows/check.yml`) corre las tres cosas en cada PR. La regresión corre en macOS arm64: en x64
+las funciones matemáticas pueden dar distinto en el último decimal y la base no coincide, así que la base se guarda
+en una Mac con Apple Silicon.
 
 ## Dónde va cada cosa nueva
 
