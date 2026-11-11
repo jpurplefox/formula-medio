@@ -12,7 +12,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Car, limitsOn } from '../src/car.js';
 import { racingLine } from '../src/racingline.js';
-import { Policy, NeuralDriver } from '../src/policy.js';
+import { GAME_NET, Policy, NeuralDriver } from '../src/policy.js';
 import { stationAt } from '../src/track.js';
 import { gridSlots } from '../src/ai.js';
 import { carLimits, airDensity } from '../src/dynamics.js';
@@ -32,7 +32,7 @@ function recordPath(id) {
   if (existsSync(file)) return JSON.parse(readFileSync(file, 'utf8'));
   const track = loadTrack(id), M = track.meters;
   const profile = JSON.parse(readFileSync(root('cars/f1-2025.json'), 'utf8'));
-  const driver = new NeuralDriver(new Policy(JSON.parse(readFileSync(root('models/v5/fase7.json'), 'utf8'))));
+  const driver = new NeuralDriver(new Policy(JSON.parse(readFileSync(root(GAME_NET), 'utf8'))));
   const slot = gridSlots(track, 1)[0];
   const car = new Car(slot.x, slot.y, slot.angle, profile);
   const line = racingLine(track, limitsOn(profile, track), { brakeUse: 0.93 });
@@ -83,7 +83,7 @@ export function blur(v, ds) {
   return out;
 }
 
-export function circuits(ids = TRACK_IDS) {
+function circuits(ids = TRACK_IDS) {
   return ids.map((id) => {
     const def = TRACKS.find((t) => t.id === id);
     const real = realLap(def);
@@ -102,7 +102,7 @@ export function circuits(ids = TRACK_IDS) {
 // Los equipos eligen la puesta a punto más rápida para cada circuito: con más o menos alerón (los dos, o uno solo)
 // la vuelta no tendría que salir más rápida. Devuelve lo que se ganaría con el mejor cambio (s, 0 si ninguno gana).
 const NEIGHBORS = [[1, 1], [-1, -1], [2, 2], [-2, -2], [1, 0], [-1, 0], [0, 1], [0, -1]];
-export function tuneGain(car, c, base) {
+function tuneGain(car, c, base) {
   const air = airDensity(c.def.altitude), t = c.def.tune;
   let gain = 0;
   for (const [df, dr] of NEIGHBORS) {
@@ -194,7 +194,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 }
 
 // Gráfico de la velocidad simulada (como la vería la telemetría) contra la real, para ver dónde no ajusta
-export function chartHtml(car, cs, file) {
+function chartHtml(car, cs, file) {
   const W = 1000, H = 240, pad = 34, max = 100;
   const X = (f) => pad + f * (W - pad - 8), Y = (v) => H - 20 - (v / max) * (H - 30);
   const line = (pts, cls) => `<path class="${cls}" d="M${pts.map(([f, v]) => `${X(f).toFixed(1)},${Y(v).toFixed(1)}`).join('L')}"/>`;

@@ -46,10 +46,10 @@ import { NO_DAMAGE } from './damage.js';
 import { LIGHTS_OUT } from './lights.js';
 import { halfWidthAt, sampleField, stationAt } from './track.js';
 
-export const RAY_ANGLES = [-90, -60, -40, -28, -18, -11, -6, -3, -1, 0, 1, 3, 6, 11, 18, 28, 40, 60, 90]
+const RAY_ANGLES = [-90, -60, -40, -28, -18, -11, -6, -3, -1, 0, 1, 3, 6, 11, 18, 28, 40, 60, 90]
   .map((d) => (d * Math.PI) / 180);
 export const LOOK_AHEAD = [20, 40, 70, 100, 140, 180, 230, 290, 360, 450]; // m
-export const OPPONENTS = 6;
+const OPPONENTS = 6;
 const CAR_VALUES = 12;
 export const SETUP_VALUES = SETUP_KEYS.length + 1; // la variación del auto y el desgaste de las gomas
 export const SETUP_START = CAR_VALUES; // dónde empiezan (las redes viejas no los tienen)
@@ -64,9 +64,9 @@ export const LIMIT_VALUES = 5;
 export const DAMAGE_VALUES = 15;
 const MORE_OPPONENTS = 2; // el 7.º y el 8.º, al final
 const RIVAL_VALUES = 7; // acelerador, freno, volante, motor, agarre, daño y lado de la pista de cada rival
-export const ALL_OPPONENTS = OPPONENTS + MORE_OPPONENTS;
+const ALL_OPPONENTS = OPPONENTS + MORE_OPPONENTS;
 export const OPPONENT_INPUT_SIZE = MORE_OPPONENTS * OPPONENT_VALUES + ALL_OPPONENTS * RIVAL_VALUES;
-export const AHEAD_START = CAR_VALUES + SETUP_VALUES + POSITION_VALUES; // dónde empiezan los puntos de LOOK_AHEAD
+const AHEAD_START = CAR_VALUES + SETUP_VALUES + POSITION_VALUES; // dónde empiezan los puntos de LOOK_AHEAD
 export const OPPONENT_START = CAR_VALUES + SETUP_VALUES + POSITION_VALUES + LOOK_AHEAD.length + RAY_ANGLES.length;
 export const OPPONENT_SIZE = OPPONENTS * OPPONENT_VALUES; // dónde empiezan los rivales y cuántos valores son
 export const OPPONENT_INPUT_START = OPPONENT_START + OPPONENT_SIZE + WHEEL_VALUES + LIMIT_VALUES + DAMAGE_VALUES;
@@ -76,14 +76,14 @@ export const START_VALUES = 3;
 export const ACTIONS = 4;
 export const START_INPUT_START = OPPONENT_INPUT_START + OPPONENT_INPUT_SIZE;
 export const TYRE_VALUES = 10; // temperatura y desgaste de cada goma, nafta y reparto de frenos
-export const TYRE_INPUT_START = START_INPUT_START + START_VALUES;
-export const RISK_VALUES = 3; // por rival: zona de al lado, choque que pega el propio auto, choque que pega el otro
-export const RISK_INPUT_START = TYRE_INPUT_START + TYRE_VALUES;
+const TYRE_INPUT_START = START_INPUT_START + START_VALUES;
+const RISK_VALUES = 3; // por rival: zona de al lado, choque que pega el propio auto, choque que pega el otro
+const RISK_INPUT_START = TYRE_INPUT_START + TYRE_VALUES;
 export const RISK_INPUT_SIZE = ALL_OPPONENTS * RISK_VALUES;
 export const FAR_AHEAD = [560, 690, 840, 1010]; // m: tramos de 110, 130, 150 y 170 m, siguiendo a los de LOOK_AHEAD
-export const FAR_INPUT_START = RISK_INPUT_START + RISK_INPUT_SIZE;
+const FAR_INPUT_START = RISK_INPUT_START + RISK_INPUT_SIZE;
 export const OBS_SIZE = FAR_INPUT_START + FAR_AHEAD.length;
-export const RISK_HORIZON = 5; // s
+const RISK_HORIZON = 5; // s
 const RISK_STEP = 0.1; // s entre cada punto de la predicción
 const RISK_POINTS = Math.round(RISK_HORIZON / RISK_STEP);
 // la zona de al lado: el otro auto encimado a lo largo (centros a menos de un largo) y a menos de ZONE_MARGIN m de

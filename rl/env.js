@@ -23,9 +23,9 @@ import { halfWidthAt } from '../src/track.js';
 import { OBS_SIZE, observe, stationAt, trackHeading } from '../src/sensors.js';
 import { loadTrack } from './tracks.js';
 
-export const PHYSICS_DT = 1 / 60;
+const PHYSICS_DT = 1 / 60;
 export const SUBSTEPS = 3;
-export const EPISODE_STEPS = 2400; // 2 minutos
+const EPISODE_STEPS = 2400; // 2 minutos
 const PROGRESS_REWARD = 0.02; // por metro
 const GRASS_PENALTY = 0.1; // por decisión en el pasto
 const WALL_PENALTY = 1; // por un golpe a fondo

@@ -5,6 +5,10 @@ import { rescue } from './ai.js';
 import { aheadFromCar, DAMAGE_VALUES, LIMIT_VALUES, OBS_SIZE, observe, OPPONENT_INPUT_SIZE, SETUP_START, SETUP_VALUES, FAR_AHEAD, RISK_INPUT_SIZE, START_INPUT_START, START_VALUES, TYRE_VALUES, WHEEL_VALUES } from './sensors.js';
 import { stationAt } from './track.js';
 
+// La red con la que manejan los rivales en el juego (rl/CURRICULO.md). Es la única referencia: la usan también el
+// chequeo de regresión, la calibración y rl/curriculum.sh, así que para cambiar de red alcanza con cambiarla acá.
+export const GAME_NET = 'models/v22/fase18.json';
+
 export class Policy {
   // opponents: si aprendió a mirar a los demás autos (etapa 2); si no, se le pasan en cero, como al entrenar
   constructor({ obs_size, layers, opponents = false }) {
@@ -68,7 +72,7 @@ function floats(b64) {
 }
 
 // Piloto con la red: decide 20 veces por segundo (como al entrenar) y entre medio mantiene los controles
-export const DECISION_DT = 1 / 20;
+const DECISION_DT = 1 / 20;
 const STUCK_TIME = 3; // s casi quieta hasta que se la rescata
 const GRASS_TIME = 6; // s seguidos en el pasto hasta que se la rescata (como al entrenar)
 

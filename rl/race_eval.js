@@ -1,7 +1,7 @@
 // Mide una red en carrera: 22 autos desde la grilla, la mitad con la red y la mitad con la IA de siempre
 // (ritmos de Difícil), intercalados. Cuando el primero completa las vueltas se ordenan por distancia recorrida.
 //
-//   node rl/race_eval.js models/etapa2.json [circuitos separados por coma] [vueltas]
+//   node rl/race_eval.js models/v22/fase18.json [circuitos separados por coma] [vueltas]
 //
 // Informa la posición promedio de cada grupo, cuántos puestos ganó la red desde la largada, toques entre autos (cada
 // contacto que empieza después de medio segundo sin tocarse)

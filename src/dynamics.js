@@ -39,9 +39,9 @@ export const weightShift = (a, load) => Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT,
 export const BRAKE_BIAS_FWD = 0.08, BRAKE_BIAS_STEP = 0.012, BRAKE_TUNE_MAX = 5;
 export const brakeBias = (capF, capR, fwd = BRAKE_BIAS_FWD) => Math.min(0.85, Math.max(0.15, capF / (capF + capR) + fwd));
 // lo que se considera frenar y acelerar "a fondo" para la trazada: esta parte de lo más que aguantan las gomas
-export const BRAKE_NOMINAL = 0.93;
+const BRAKE_NOMINAL = 0.93;
 const TRACTION_NOMINAL = 0.92;
-export const CLEAN_AIR = Object.freeze([1, 1]); // carga aerodinámica de cada eje respecto de la del aire limpio
+const CLEAN_AIR = Object.freeze([1, 1]); // carga aerodinámica de cada eje respecto de la del aire limpio
 export const DEFAULT_TUNE = Object.freeze({ front: 5, rear: 5, balance: 0, brake: 0 });
 export const WING_MIN = 1, WING_MAX = 10, BALANCE_MAX = 5;
 

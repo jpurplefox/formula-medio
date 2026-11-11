@@ -331,7 +331,7 @@ function helmetAt(phi, w, out = 1) {
 // adelante STEERING.tilt rad. Todas sus piezas llevan `column` (el pivote y el eje), así el render las gira con la
 // dirección. La pantalla (slot 6) muestra la marcha y las luces de cambio: la dibuja cockpit.js en cada cuadro.
 export const STEERING = { x: 0.3, z: 0.6, tilt: 0.35, turn: 1 }; // turn: rad que gira con el volante a fondo
-export const SCREEN_TEX = { size: 1, screen: true }; // la textura la pone el juego (m.screen)
+const SCREEN_TEX = { size: 1, screen: true }; // la textura la pone el juego (m.screen)
 const GRIP = rgb(20, 20, 22), BUTTONS = ['#e23b3b', '#2c9be0', '#f2c230', '#41c46a'];
 // suit: color del buzo (los antebrazos); glove: el de los guantes
 function steeringParts(suit, glove) {

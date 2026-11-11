@@ -64,7 +64,7 @@ const DRAG_FROM = 15; // m/s
 const SURFACE_RATE = 5; // 1/s: al cambiar de superficie, el agarre y el freno de la rueda cambian en ~0,2 s
 // dónde apoya cada rueda, en m desde el centro del auto (adelante, a la derecha), como en carmodel.js:
 // delantera izquierda, delantera derecha, trasera izquierda, trasera derecha
-export const WHEELS = [[1.65, -0.8], [1.65, 0.8], [-1.7, -0.79], [-1.7, 0.79]];
+const WHEELS = [[1.65, -0.8], [1.65, 0.8], [-1.7, -0.79], [-1.7, 0.79]];
 const REVERSE_MAX = 8;
 const REVERSE_ACCEL = 5;
 const MAX_YAW = 1.6; // rad/s: giro máximo a baja velocidad
@@ -87,7 +87,7 @@ const DIRTY_FRONT = 0.6, DIRTY_REAR = 0.48, DIRTY_FADE = 3.5;
 const PITCH_AERO = 0.008, PITCH_MAX = 0.05;
 const YAW_AERO = 1, YAW_AERO_FREE = 0.1, YAW_AERO_MAX = 0.5;
 // nafta: cada kilo pesa (dynamics.js); el motor a fondo gasta los 100 kg/h del reglamento
-export const FUEL_FLOW = 100 / 3600; // kg/s
+const FUEL_FLOW = 100 / 3600; // kg/s
 export const FUEL_PER_KM = 0.37; // kg: lo que se carga por cada km de carrera
 // Gomas de costado (modelo de bicicleta: cada eje como una sola rueda). El auto tiene velocidad hacia adelante
 // (speed), de costado (slip) y de giro (omega); cada eje empuja de costado según su deriva (tyreCurve de
@@ -145,7 +145,7 @@ const LONG_SLIP = 0.02; // frenando o empujando sin bloquear, la goma desliza es
 const SPIN_SPEED = 6; // m/s que patina de más una rueda que perdió tracción
 const HOT_WEAR = 2; // una goma HOT_SPAN grados pasada se gasta esto más
 const LOCK_WEAR = 25; // y una bloqueada, estas veces más (el plano)
-export const tempGrip = (t) => 1 - (t < TEMP_LOW ? COLD_LOSS * Math.min(1, (TEMP_LOW - t) / COLD_SPAN) ** 1.5 : t > TEMP_HIGH ? HOT_LOSS * Math.min(1, (t - TEMP_HIGH) / HOT_SPAN) ** 1.5 : 0);
+const tempGrip = (t) => 1 - (t < TEMP_LOW ? COLD_LOSS * Math.min(1, (TEMP_LOW - t) / COLD_SPAN) ** 1.5 : t > TEMP_HIGH ? HOT_LOSS * Math.min(1, (t - TEMP_HIGH) / HOT_SPAN) ** 1.5 : 0);
 // el pie no llega a fondo de golpe: con teclado (todo o nada) el acelerador tarda un instante en abrirse, así
 // pisar en plena curva no suelta la cola de un saque (con joystick casi no se nota: va siguiendo al gatillo)
 const THROTTLE_RISE = 3; // 1/s: de nada a fondo en 1/3 s
@@ -165,7 +165,7 @@ const REV_BASE = 8000, REV_SPAN = 4000, REV_FOLLOW = 40000; // la red en la gril
 // acelerando, deslizando) y más las que más trabajan (las de afuera, las que patinan); gastadas del todo agarran y
 // frenan WEAR_GRIP menos, y al final (pasado WEAR_CLIFF_FROM) se caen de golpe otro WEAR_CLIFF
 const WEAR_GRIP = 0.08, WEAR_CLIFF = 0.06, WEAR_CLIFF_FROM = 0.85;
-export const wearGrip = (w) => 1 - WEAR_GRIP * w - WEAR_CLIFF * Math.max(0, (w - WEAR_CLIFF_FROM) / (1 - WEAR_CLIFF_FROM)) ** 2;
+const wearGrip = (w) => 1 - WEAR_GRIP * w - WEAR_CLIFF * Math.max(0, (w - WEAR_CLIFF_FROM) / (1 - WEAR_CLIFF_FROM)) ** 2;
 const WEAR_BASE = 0.3; // parte del desgaste que es sólo por andar, aunque sea derecho y suave
 const WEAR_USE = 1.9; // la otra parte se escala para que una vuelta normal promedie 1 (medido con rl/wear.js)
 
@@ -187,7 +187,7 @@ function yawRate(sp, grip) {
 // (ángulo ≈ distancia entre ejes × giro / velocidad, más lo que deriva la trompa de más). A baja velocidad doblan
 // mucho; a fondo, apenas. Es la ayuda para manejar con teclado: el volante va de 0 a lo justo, no de 0 a todo lo que
 // gira la dirección. grip: el agarre lateral (m/s²) con que se calcula; por defecto, el del auto sano en asfalto.
-export function steerLock(speed, limits, grip) {
+function steerLock(speed, limits, grip) {
   const sp = Math.max(4, Math.abs(speed)); // parado o casi, como a paso de hombre: con todo el giro
   const a = Math.atan((WHEELBASE * yawRate(sp, grip ?? limits.lateral(sp))) / sp) + LOCK_SLIP * PEAK_SLIP;
   return Math.min(MAX_WHEEL_ANGLE, a);
@@ -226,7 +226,7 @@ export function keyboardSteer(now, want, speed, dt) {
 // teniendo prioridad. Lo suelta y lo vuelve a pisar de a poco (KEY_TRAIL_RATE), no de golpe con cada toque de volante.
 // Despacio no suelta nada (maniobrando o en marcha atrás, que también va con el freno).
 // now: cómo está el freno (0..1); pressed: si la tecla está apretada; steer: el volante (-1..1); speed: m/s.
-export const KEY_TRAIL = 0.45; // cuánto freno suelta con el volante a fondo (queda el 55 %)
+const KEY_TRAIL = 0.45; // cuánto freno suelta con el volante a fondo (queda el 55 %)
 const KEY_TRAIL_RATE = 3; // 1/s: de freno a fondo a lo que corresponde en ~0,15 s
 const KEY_TRAIL_SPEED = [5, 15]; // m/s: por debajo de la primera no suelta; desde la segunda, todo
 export function keyboardBrake(now, pressed, steer, speed, dt) {
@@ -264,18 +264,6 @@ function pedal(x) {
 
 // Los límites de un auto con la puesta a punto y el aire de un circuito (para la trazada, antes de largar)
 export const limitsOn = (profile, track) => carLimits(profile, track.tune ?? DEFAULT_TUNE, track.air ?? SEA_AIR);
-
-// Interpola una tabla [[x, y], ...] ordenada por x; fuera del rango usa el extremo
-export function lookup(rows, x) {
-  if (x <= rows[0][0]) return rows[0][1];
-  for (let i = 1; i < rows.length; i++) {
-    if (x <= rows[i][0]) {
-      const [x0, y0] = rows[i - 1], [x1, y1] = rows[i];
-      return y0 + ((y1 - y0) * (x - x0)) / (x1 - x0);
-    }
-  }
-  return rows[rows.length - 1][1];
-}
 
 export class Car {
   constructor(x, y, angle, profile = DEFAULT_PROFILE) {

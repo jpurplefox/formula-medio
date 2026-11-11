@@ -4,7 +4,7 @@
 import { airDensity, DEFAULT_TUNE } from './dynamics.js';
 
 export const T = { GRASS: 0, ROAD: 1, WALL: 3 };
-export const KERB_W = 0.9; // ancho del piano por defecto (en celdas)
+const KERB_W = 0.9; // ancho del piano por defecto (en celdas)
 export const DEFAULT_KERB = [[235, 235, 235], [200, 30, 30]]; // blanco y rojo
 export const MAX_KERB_COLORS = 4;
 // Lo que hay al costado de la pista donde hay piano, de adentro hacia afuera:
@@ -367,20 +367,12 @@ export function stationAt(track, x, y) {
   return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
 }
 
-// Cuánto piano hay en este punto (0 = nada, 1 = ancho completo; en las puntas va de 0 a 1).
-// El piano va por fuera del borde: sdf entre -KERB_W·k y 0.
-export function kerbAt(track, x, y) {
-  const st = stationAt(track, x, y);
-  if (st < 0) return 0;
-  return kerbAmount(sampleField(track.lat, track.W, x, y) > 0 ? track.kerbRight : track.kerbLeft, st);
-}
-
 // Hasta dónde puede llegar lo que hay al costado de la pista (piano, verde y salchicha), en celdas desde el borde
 export const edgeReach = (style) => style.width + style.green + SAUSAGE_W;
 
 // Bordes de las franjas del costado (distancias al borde de la pista, negativas: hacia afuera), con k = cuánto
 // piano hay y q = cuánta salchicha: el piano va de kerb a 0, el verde de green a kerb y la salchicha de sausage a green
-export function edgeBounds(style, k, q) {
+function edgeBounds(style, k, q) {
   const kerb = -style.width * k;
   const green = kerb - style.green * k;
   return { kerb, green, sausage: green - SAUSAGE_W * q };
@@ -404,13 +396,6 @@ export function kerbLift(s, outer, k, st) {
   const r = st / RIDGE - Math.floor(st / RIDGE);
   const saw = r < 0.8 ? r / 0.8 : (1 - r) / 0.2;
   return KERB_H * k * Math.sin(Math.PI * t) * (1 - RIDGE_DEPTH * (1 - saw));
-}
-
-// Cuánta salchicha hay en este punto (0..1)
-export function sausageAt(track, x, y) {
-  const st = stationAt(track, x, y);
-  if (st < 0) return 0;
-  return kerbAmount(sampleField(track.lat, track.W, x, y) > 0 ? track.sausageRight : track.sausageLeft, st);
 }
 
 // Qué hay en un punto: 'road' (la pista), 'kerb' (el piano, por fuera del borde), 'green' (la franja verde detrás

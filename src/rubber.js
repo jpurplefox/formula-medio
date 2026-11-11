@@ -10,7 +10,7 @@
 // largar (la franja de la otra categoría), así que ahí da 1: fuera de la trazada se agarra un poco menos desde el
 // principio y, a medida que se marca, la trazada agarra cada vez más (y salirse para pasar cuesta más).
 
-export const RUBBER_LANES = 32;
+const RUBBER_LANES = 32;
 export const RUBBER_DARK = 0.4; // cuánto oscurece la goma al máximo (0..1)
 const BASE = 0.35; // la franja de la otra categoría: fracción del máximo en el centro de la trazada
 const BASE_W = 0.9; // medio ancho de esa franja (celdas)
@@ -21,7 +21,7 @@ const WHEEL_SPREAD_M = 0.35; // medio ancho de la marca de cada rueda (m)
 const PER_M = 0.4, PER_M_LIMIT = 1.6, SATURATION = 25;
 const REFRESH = 0.5; // cada cuánto se recalculan los bytes (s)
 const MAX_ROWS = 4096; // las texturas no pueden ser más largas
-export const RUBBER_GRIP = 0.06; // fuera de la trazada al largar, 2 % menos de agarre; con la trazada negra, 4 % más
+const RUBBER_GRIP = 0.06; // fuera de la trazada al largar, 2 % menos de agarre; con la trazada negra, 4 % más
 
 export class RubberMap {
   // offset: por dónde pasa la trazada ideal en cada celda de la línea central (racingline.js)

@@ -50,7 +50,7 @@ export function cornerSpeed(lim, c, gripUse = 1) {
 // Los límites del auto en una tabla por velocidad (cada TABLE_STEP m/s, interpolando): calcularlos cuesta (traslado
 // de peso, que se resuelve en varias vueltas) y el simulador los pide miles de veces por vuelta
 const TABLE_STEP = 1;
-export function tabulate(lim) {
+function tabulate(lim) {
   const n = Math.ceil(lim.topSpeed / TABLE_STEP) + 2;
   const table = (f) => {
     const y = Float64Array.from({ length: n }, (_, i) => f(i * TABLE_STEP));

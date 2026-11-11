@@ -59,7 +59,7 @@ export const LAP_OPTIONS = [1, 3, 5, 10];
 // Cómo viene el campeonato, del mejor equipo al peor (actualizarlo a medida que avanza la temporada). Los rivales
 // van en este orden: los de los mejores equipos largan adelante y reciben el ritmo (IA de siempre) o el agarre y la
 // potencia (red) más altos de la dificultad elegida.
-export const STANDINGS = ['merchoedes', 'hierrari', 'mclarron', 'redtoro', 'allpain', 'haash', 'alfatorito', 'audios',
+const STANDINGS = ['merchoedes', 'hierrari', 'mclarron', 'redtoro', 'allpain', 'haash', 'alfatorito', 'audios',
   'willyams', 'austin', 'cadillaque'];
 
 // Cuántos rivales se pueden elegir en el menú: con 10 (lo que viene elegido), uno de cada equipo rival; con todos, la

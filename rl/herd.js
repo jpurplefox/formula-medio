@@ -58,7 +58,6 @@ const DT = 1 / 60, SUBSTEPS = 3, DECISIONS = 20; // decisiones por segundo
 const RUBBER_LAID = 75;
 const PROGRESS_REWARD = 0.02, WALL_PENALTY = 1;
 const GRASS_LIMIT = 6, STUCK_LIMIT = 6, BACKWARDS_LIMIT = 30, RESCUE_PENALTY = 4, STALL_PENALTY = 1, RETIRE_PENALTY = 10;
-const PACE_FLOOR = 0.75, PACE_PENALTY = 1, FREE_ROAD = 40;
 const FLYING_GAP = 6, FLYING_SPEED = [0.6, 0.8]; // largada en movimiento: m entre autos y fracción de la trazada
 const PASS_HOLD = 2.5; // s que el de atrás tiene que seguir adelante, sin tocarse, para contar la pasada
 const CONTACT_GAP = 0.5; // s sin tocarse para que el siguiente contacto sea otro toque
@@ -69,7 +68,7 @@ const ZONE_TIME = 0.4, HIT_TIME = 2.5, GRASS_TIME = 0.8;
 const CHASE_HANDICAP = [0.2, 0.08];
 // vueltas de cada escenario y margen de tiempo (la vuelta de la trazada × SLACK, más unos segundos)
 // (start: lo que suele durar, en vueltas, para repartir los pasos de la mezcla y cortar si nadie llega)
-export const HERD_SCENARIOS = { solo: 2, grid: 2, rolling: 2, chase: 1, flying: 1, start: 0.25 };
+const HERD_SCENARIOS = { solo: 2, grid: 2, rolling: 2, chase: 1, flying: 1, start: 0.25 };
 const START_MARGIN = 10; // m antes del comienzo de la frenada donde termina el arranque
 const SLACK = 1.25, EXTRA = 25; // con una grilla de 16 los últimos tardan en completar las dos vueltas
 const DAMAGE_LEVELS = ['off', 'reduced', 'real'];

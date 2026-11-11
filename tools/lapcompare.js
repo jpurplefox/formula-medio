@@ -11,7 +11,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Car, limitsOn } from '../src/car.js';
-import { Policy, NeuralDriver } from '../src/policy.js';
+import { GAME_NET, Policy, NeuralDriver } from '../src/policy.js';
 import { racingLine } from '../src/racingline.js';
 import { stationAt } from '../src/track.js';
 import { gridSlots } from '../src/ai.js';
@@ -20,12 +20,11 @@ import { TRACKS } from '../tracks/index.js';
 import { realLap } from './openf1.js';
 
 const root = (p) => new URL('../' + p, import.meta.url);
-const NET = 'models/v5/fase7.json';
 const DT = 1 / 60;
 
 const [ids = TRACK_IDS.join(','), out = 'tools/.out/vueltas.html'] = process.argv.slice(2);
 const profile = JSON.parse(readFileSync(root('cars/f1-2025.json'), 'utf8'));
-const policy = new Policy(JSON.parse(readFileSync(root(NET), 'utf8')));
+const policy = new Policy(JSON.parse(readFileSync(root(GAME_NET), 'utf8')));
 
 // Una vuelta lanzada de la red sola en la pista: [{ s (fracción de la vuelta), v }] y tiempo
 function netLap(track, setup) {

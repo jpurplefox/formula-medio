@@ -114,7 +114,7 @@ export function recordPace(id, ratio) {
   xs.push(ratio);
   if (xs.length > LAUNCH_PACE.laps) xs.shift();
 }
-export function paceOf(id) {
+function paceOf(id) {
   const xs = paces.get(id);
   if (!xs || xs.length < LAUNCH_PACE.min) return LAUNCH_PACE.initial;
   const sorted = [...xs].sort((a, b) => a - b);

@@ -12,7 +12,7 @@ import { Cockpit } from './cockpit.js';
 import { CAMERA_MODES, CAMERA_NAMES, Recorder, replayCamera, tvCameras } from './replay.js';
 import { DEFAULT_RIVALS, DIFFICULTIES, LAP_OPTIONS, RIVAL_OPTIONS, TEAMS, car as teamCar, gridOrder, rivalCars, rivalPaces, rivalSetups } from './teams.js';
 import { EngineAudio } from './audio.js';
-import { NeuralDriver, Policy } from './policy.js';
+import { GAME_NET, NeuralDriver, Policy } from './policy.js';
 import { LIGHTS_OUT, lightsAt, lightsDuration, randomHold } from './lights.js';
 import { RubberMap } from './rubber.js';
 import { DESIGNS } from './teamliveries.js';
@@ -359,10 +359,9 @@ function pollPad() {
 let game = null;
 let lastGame = null; // la última carrera, para conservar el mejor tiempo y el fantasma al volver del menú
 let carProfile = DEFAULT_PROFILE;
-// Los rivales manejan con la red entrenada (rl/CURRICULO.md); con ?ia=models/fase7.json, con otra, y con ?ia=clasica,
-// con la IA de siempre (ai.js), que es también la que queda si la red no carga
-const CURRENT_NET = 'models/v22/fase18.json';
-const IA_PARAM = new URLSearchParams(location.search).get('ia') || CURRENT_NET;
+// Los rivales manejan con la red del juego (GAME_NET en policy.js); con ?ia=models/otra.json, con otra, y con
+// ?ia=clasica, con la IA de siempre (ai.js), que es también la que queda si la red no carga
+const IA_PARAM = new URLSearchParams(location.search).get('ia') || GAME_NET;
 const NEURAL_URL = IA_PARAM === 'clasica' ? null : IA_PARAM;
 let neuralPolicy = null;
 

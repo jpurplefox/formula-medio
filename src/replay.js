@@ -4,7 +4,7 @@
 import { lineFrame, pointAt } from './ai.js';
 import { halfWidthAt, sampleField } from './track.js';
 
-export const REPLAY_STEP = 1 / 30;
+const REPLAY_STEP = 1 / 30;
 const FIELDS = 10; // por auto y por muestra: x, y, angle, steer, speed, slope, dist (metros recorridos), rpm, throttle, gear
 
 export class Recorder {
