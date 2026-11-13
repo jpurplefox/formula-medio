@@ -1,4 +1,4 @@
-// Formato de las máscaras exportadas: ancho y alto (uint32) y después un bit por celda.
+// Format of the exported masks: width and height (uint32), then one bit per cell.
 
 export function packMask({ W, H, road }) {
   const out = new Uint8Array(8 + Math.ceil((W * H) / 8));

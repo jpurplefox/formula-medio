@@ -1,6 +1,6 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>Visor del auto</title>
+<title>Car viewer</title>
 <style>
   body { margin: 0; background: #8fa3b5; font: 13px system-ui; }
   canvas { display: block; }
@@ -10,17 +10,17 @@
 <div id="ui"></div>
 <canvas id="c"></canvas>
 <script type="module">
-// Visor del modelo del auto (src/render/carmodel.js) para revisar la forma: arrastrar para girar, rueda para acercar.
-// Dibuja las caras con su color plano y la luz del sol, de atrás para adelante (sin texturas).
+// Viewer for the car model (src/render/carmodel.js) to check its shape: drag to rotate, wheel to zoom.
+// Draws the faces with their flat color and sunlight, back to front (no textures).
 import { carModel } from '../src/render/carmodel.js';
 
 const q = new URLSearchParams(location.search);
 const model = carModel(q.get('color') ?? '#d8261c');
-const only = q.get('pieza'); // ?pieza=helmet muestra sólo las piezas con ese tag
+const only = q.get('part'); // ?part=helmet shows only the parts with that tag
 const c = document.getElementById('c'), ctx = c.getContext('2d');
-const views = { '3/4 adelante': [35, 22], 'costado': [90, 2], 'arriba': [90, 89], 'frente': [0, 6], '3/4 atrás': [145, 25], 'abajo-costado': [70, 10] };
-let [yaw, pitch] = views[q.get('vista')] ?? views['3/4 adelante'];
-let zoom = Number(q.get('zoom') ?? 1), wire = q.has('aristas'), target = [0, 0, 0.4];
+const views = { '3/4 front': [35, 22], 'side': [90, 2], 'top': [90, 89], 'front': [0, 6], '3/4 rear': [145, 25], 'low-side': [70, 10] };
+let [yaw, pitch] = views[q.get('view')] ?? views['3/4 front'];
+let zoom = Number(q.get('zoom') ?? 1), wire = q.has('edges'), target = [0, 0, 0.4];
 const ui = document.getElementById('ui');
 for (const name of Object.keys(views)) {
   const b = document.createElement('button');
@@ -29,7 +29,7 @@ for (const name of Object.keys(views)) {
   ui.appendChild(b);
 }
 const wb = document.createElement('button');
-wb.textContent = 'aristas';
+wb.textContent = 'edges';
 wb.onclick = () => { wire = !wire; draw(); };
 ui.appendChild(wb);
 
@@ -38,7 +38,7 @@ function draw() {
   c.width = innerWidth; c.height = innerHeight;
   ctx.fillStyle = '#8fa3b5'; ctx.fillRect(0, 0, c.width, c.height);
   const a = yaw * Math.PI / 180, p = pitch * Math.PI / 180;
-  // cámara: mira al centro del auto desde la dirección (yaw, pitch); yaw 0 = desde adelante
+  // camera: looks at the car's center from direction (yaw, pitch); yaw 0 = from the front
   const fwd = [-Math.cos(p) * Math.cos(a), -Math.cos(p) * Math.sin(a), -Math.sin(p)];
   const right = [Math.sin(a), -Math.cos(a), 0];
   const up = [fwd[1] * right[2] - fwd[2] * right[1], fwd[2] * right[0] - fwd[0] * right[2], fwd[0] * right[1] - fwd[1] * right[0]];
@@ -75,7 +75,7 @@ onpointermove = (e) => {
 };
 c.onwheel = (e) => { zoom *= e.deltaY < 0 ? 1.1 : 0.9; draw(); };
 onresize = draw;
-// setView(yaw, pitch, zoom, [x, y, z] del punto al que mira), para la consola
+// setView(yaw, pitch, zoom, [x, y, z] of the point it looks at), for the console
 window.setView = (y, p, z = zoom, t = target) => { yaw = y; pitch = p; zoom = z; target = t; draw(); };
 draw();
 </script>

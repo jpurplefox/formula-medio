@@ -1,20 +1,20 @@
-// Música del menú: "Gran Premio", un tema original de estilo cinematográfico, sintetizado con Web Audio.
-// Re menor, 140 bpm, un loop de 16 compases:
-// - compases 1–4, introducción: cuerdas en ostinato "al galope" sobre Re, timbales y un colchón que crece;
-// - compases 5–12, tema: la melodía en los metales, con taikos y platillo al entrar;
-// - compases 13–16, remate: golpes de metales, redoblante que crece y un platillo que sube para volver a empezar.
-// Todo pasa por una reverberación de sala (una respuesta al impulso hecha de ruido que se apaga).
-// Las notas se programan un poquito antes de que suenen, con el reloj del audio, revisando cada 25 ms.
+// Menu music: "Gran Premio", an original cinematic-style theme, synthesized with Web Audio.
+// D minor, 140 bpm, a 16-bar loop:
+// - bars 1–4, introduction: strings in a "galloping" ostinato over D, timpani and a pad that grows;
+// - bars 5–12, theme: the melody in the brass, with taikos and a cymbal on entry;
+// - bars 13–16, ending: brass hits, a growing snare roll and a rising cymbal to start over.
+// Everything goes through a hall reverb (an impulse response made of decaying noise).
+// Notes are scheduled slightly before they sound, with the audio clock, checking every 25 ms.
 
 const BPM = 140;
-const STEP = 60 / BPM / 4; // una semicorchea (s)
-const BAR = 16; // semicorcheas por compás
+const STEP = 60 / BPM / 4; // a sixteenth note (s)
+const BAR = 16; // sixteenth notes per bar
 const LOOKAHEAD = 0.12;
-const LEVEL = 0.7; // volumen de salida: el tema llega a picos de ~1,3, así queda margen
+const LEVEL = 0.7; // output volume: the theme peaks at ~1.3, this leaves headroom
 
 const midi = (m) => 440 * 2 ** ((m - 69) / 12);
 
-// acordes (fundamental en la octava grave y notas del acorde), compás por compás
+// chords (root in the low octave and chord notes), bar by bar
 const DM = { root: 38, tones: [62, 65, 69] };
 const BB = { root: 34, tones: [62, 65, 70] };
 const F = { root: 41, tones: [60, 65, 69] };
@@ -25,7 +25,7 @@ const SONG = [
   DM,
   DM,
   BB,
-  C, // introducción
+  C, // introduction
   DM,
   BB,
   F,
@@ -33,16 +33,16 @@ const SONG = [
   DM,
   BB,
   GM,
-  A, // tema
+  A, // theme
   GM,
   BB,
   C,
-  A, // remate
+  A, // ending
 ];
 const INTRO = 4,
   THEME = 12;
 
-// melodía de los metales en el tema, por compás: [nota, semicorchea en que empieza, duración en semicorcheas]
+// brass melody in the theme, per bar: [note, sixteenth it starts on, duration in sixteenths]
 const MELODY = [
   [
     [69, 0, 6],
@@ -84,10 +84,10 @@ const MELODY = [
   ],
   [[73, 0, 16]],
 ];
-// ritmo del galope: corchea y dos semicorcheas (1 = toca); y qué nota del arpegio toca cada semicorchea
+// gallop rhythm: an eighth and two sixteenths (1 = plays); and which arpeggio note each sixteenth plays
 const GALLOP = [1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1];
 const GALLOP_NOTE = [0, 0, 0, 0, 1, 1, 0, 0, 2, 2, 0, 0, 1, 1, 0, 0];
-// golpes de metales en el remate (semicorcheas del compás)
+// brass hits in the ending (sixteenths of the bar)
 const STABS = [0, 6, 12];
 
 export class MenuMusic {
@@ -96,7 +96,7 @@ export class MenuMusic {
     this.out = ctx.createGain();
     this.out.gain.value = 0;
     this.out.connect(out);
-    // reverberación: una sala de unos 2,5 s
+    // reverb: a hall of about 2.5 s
     this.reverb = ctx.createConvolver();
     this.reverb.buffer = this.hall(2.5);
     const wet = ctx.createGain();
@@ -108,7 +108,7 @@ export class MenuMusic {
     this.timer = null;
   }
 
-  // respuesta al impulso de una sala: ruido estéreo que se apaga de a poco
+  // impulse response of a hall: stereo noise that decays gradually
   hall(seconds) {
     const rate = this.ctx.sampleRate,
       n = Math.round(rate * seconds);
@@ -149,7 +149,7 @@ export class MenuMusic {
     }
   }
 
-  // todo lo que suena en una semicorchea
+  // everything that sounds in one sixteenth note
   play(step, t) {
     const bar = Math.floor(step / BAR),
       s = step % BAR;
@@ -158,22 +158,22 @@ export class MenuMusic {
       theme = bar >= INTRO && bar < THEME,
       finale = bar >= THEME;
 
-    // cuerdas: el galope, sobre la fundamental (y en el remate, una octava más arriba)
+    // strings: the gallop, over the root (and in the ending, an octave higher)
     if (GALLOP[s]) {
       const tones = [chord.root + 24, chord.root + 31, chord.root + 36];
       const accent = s % 4 === 0 ? 1 : 0.7;
       this.strings(midi(tones[GALLOP_NOTE[s]] + (finale ? 12 : 0)), t, accent * (intro ? 0.05 + 0.012 * bar : 0.08));
     }
     if (s === 0) {
-      // bajo largo y colchón de coro durante todo el compás
+      // long bass and choir pad throughout the bar
       this.bass(midi(chord.root), t, STEP * BAR);
       if (!intro || bar >= 2) this.choir(chord.tones.map(midi), t, STEP * BAR, intro ? 0.02 : 0.035);
-      // timbal en el primer tiempo
+      // timpani on the first beat
       this.timpani(midi(chord.root + 12), t, intro ? 0.45 : 0.6);
-      // platillo al entrar el tema y el remate
+      // cymbal when the theme and the ending come in
       if (bar === INTRO || bar === THEME) this.crash(t);
     }
-    if (intro && bar === INTRO - 1 && s === 8) this.swell(t, STEP * 8); // platillo que sube hacia el tema
+    if (intro && bar === INTRO - 1 && s === 8) this.swell(t, STEP * 8); // rising cymbal toward the theme
     if (theme) {
       if (s === 0 || s === 8) this.taiko(t, s === 0 ? 0.55 : 0.4);
       for (const [note, start, len] of MELODY[bar - INTRO]) {
@@ -183,14 +183,14 @@ export class MenuMusic {
     }
     if (finale) {
       if (STABS.includes(s)) this.brassChord(chord.tones.map(midi), t, STEP * 2.5);
-      // redoblante que crece a lo largo del remate
+      // snare roll that grows through the ending
       const k = (bar - THEME + s / BAR) / (SONG.length - THEME);
       if (s % 2 === 0 || bar === SONG.length - 1) this.snare(t, 0.04 + k * 0.2);
       if (bar === SONG.length - 1 && s === 0) this.swell(t, STEP * BAR);
     }
   }
 
-  // ganancia con envolvente: sube en `attack`, se mantiene en `hold` hasta `length` y se apaga en `release`
+  // gain with envelope: rises over `attack`, holds in `hold` until `length` and fades in `release`
   envelope(t, peak, attack, length, release, hold = 0.8) {
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
@@ -200,7 +200,7 @@ export class MenuMusic {
     return g;
   }
 
-  // osciladores diente de sierra apenas desafinados entre sí, por un filtro, a la salida y a la reverb
+  // sawtooth oscillators slightly detuned from each other, through a filter, to the output and to the reverb
   saws(freqs, detunes, t, dur, gain, filter, reverb = 1) {
     for (const f of freqs) {
       for (const detune of detunes) {
@@ -249,7 +249,7 @@ export class MenuMusic {
     );
   }
 
-  // metales: tres sierras y la octava de abajo, con un filtro que se abre al atacar la nota
+  // brass: three saws and the octave below, with a filter that opens on the note attack
   brass(f, t, dur, peak) {
     this.saws(
       [f, f / 2],
@@ -272,7 +272,7 @@ export class MenuMusic {
     );
   }
 
-  // coro: senos y triángulos con un vibrato lento
+  // choir: sines and triangles with a slow vibrato
   choir(freqs, t, dur, peak) {
     const g = this.envelope(t, peak, dur * 0.35, dur - 0.2, 0.5, 1);
     const lfo = this.ctx.createOscillator();
@@ -297,7 +297,7 @@ export class MenuMusic {
     g.connect(this.reverb);
   }
 
-  // golpe con tono que cae (timbal, taiko)
+  // hit with a falling pitch (timpani, taiko)
   drum(t, from, to, peak, decay) {
     const o = this.ctx.createOscillator();
     o.frequency.setValueAtTime(from, t);
@@ -339,7 +339,7 @@ export class MenuMusic {
     this.noiseHit(t, 'highpass', 5000, 0.12, 0.005, 1.8);
   }
 
-  // platillo al revés: crece hasta el final de `dur`
+  // reverse cymbal: grows until the end of `dur`
   swell(t, dur) {
     this.noiseHit(t, 'highpass', 4500, 0.1, dur, 0.15);
   }

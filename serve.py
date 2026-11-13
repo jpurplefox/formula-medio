@@ -1,5 +1,5 @@
-# Servidor local que le pide al navegador no cachear nada,
-# así cada recarga usa siempre la última versión de los archivos.
+# Local server that tells the browser not to cache anything,
+# so every reload always uses the latest version of the files.
 import http.server
 import re
 import sys
@@ -13,7 +13,7 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
-    # rl/bake.html guarda acá la máscara de cada circuito, para armarlo en Node al entrenar la IA
+    # rl/bake.html saves each track's mask here, to build the track in Node when training the AI
     def do_PUT(self):
         m = re.fullmatch(r"/rl/tracks/([a-z0-9-]+)\.mask", self.path)
         if not m:
@@ -25,10 +25,10 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
 
-# el menú pide los trazados de todos los circuitos a la vez: con la cola de conexiones de siempre (5), macOS corta
-# las que no entran
+# the menu requests the layouts of all tracks at once: with the default connection queue (5), macOS drops the ones
+# that don't fit
 http.server.ThreadingHTTPServer.request_queue_size = 64
 
 port = int(sys.argv[1]) if len(sys.argv) > 1 else 8123
-print(f"Fórmula ½ en http://localhost:{port}")
+print(f"Fórmula ½ at http://localhost:{port}")
 http.server.ThreadingHTTPServer(("", port), NoCacheHandler).serve_forever()

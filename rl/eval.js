@@ -1,7 +1,7 @@
-// Mide una red exportada (rl/export.py): larga desde la grilla de cada circuito y da 3 vueltas, como en una
-// contrarreloj. Para comparar, también corre la IA clásica (ai.js) con el ritmo de Difícil más rápido.
+// Measures an exported network (rl/export.py): it starts from the grid of each track and drives 3 laps, as in a
+// time trial. For comparison, it also runs the classic AI (ai.js) at the fastest Difícil (hard) pace.
 //
-//   node rl/eval.js models/v22/fase18.json [circuitos separados por coma]
+//   node rl/eval.js models/v22/fase18.json [comma-separated tracks]
 
 import { readFileSync } from 'node:fs';
 import { Driver } from '../src/drivers/ai.js';
@@ -21,7 +21,7 @@ const DT = 1 / 60,
 
 function run(track, drive) {
   const slot = gridSlots(track, 1)[0];
-  const car = Object.assign(new Car(slot.x, slot.y, slot.angle, profile), RIVAL_AIDS); // con las ayudas del juego
+  const car = Object.assign(new Car(slot.x, slot.y, slot.angle, profile), RIVAL_AIDS); // with the game's driving aids
   car.launch();
   car.throttle = 1;
   let prev = stationAt(track, car.x, car.y),
@@ -46,9 +46,9 @@ function run(track, drive) {
 }
 
 const fmt = ({ laps, grass, hits }) =>
-  `${laps.length ? laps.map((l) => l.toFixed(1)).join(' ') : 'no completó vuelta'} (pasto ${grass.toFixed(1)} s, golpes ${hits})`;
+  `${laps.length ? laps.map((l) => l.toFixed(1)).join(' ') : 'no lap completed'} (grass ${grass.toFixed(1)} s, hits ${hits})`;
 
-// puntaje: promedio de (mejor vuelta de la red / mejor vuelta de la IA); menos es mejor, 2 si no completó
+// score: mean of (network's best lap / AI's best lap); lower is better, 2 if it did not finish
 const scores = [];
 for (const id of ids ? ids.split(',') : TRACK_IDS) {
   const track = loadTrack(id);
@@ -62,7 +62,7 @@ for (const id of ids ? ids.split(',') : TRACK_IDS) {
     if (s >= 0) st = s;
     return old.drive(DT, track, line, { car, st, lat: sampleField(track.lat, track.W, car.x, car.y) }, []);
   });
-  console.log(`${id.padEnd(12)} red: ${fmt(nn)}\n${''.padEnd(12)} IA:  ${fmt(ref)}`);
+  console.log(`${id.padEnd(12)} net: ${fmt(nn)}\n${''.padEnd(12)} AI:  ${fmt(ref)}`);
   scores.push(nn.laps.length < LAPS ? 2 : Math.min(...nn.laps) / Math.min(...ref.laps));
 }
-console.log(`puntaje ${(scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(3)}`);
+console.log(`score ${(scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(3)}`);

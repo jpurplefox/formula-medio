@@ -1,11 +1,12 @@
-// Repetición de la carrera: se graba la posición de todos los autos 30 veces por segundo y después se reproduce
-// (interpolando entre muestras) con distintas cámaras, como en una transmisión de TV.
+// Race replay: the position of all cars is recorded 30 times per second and then played back
+// (interpolating between samples) with different cameras, as in a TV broadcast.
 
 import { lineFrame, pointAt } from '../sim/lineframe.js';
 import { halfWidthAt, sampleField } from '../sim/track.js';
 
 const REPLAY_STEP = 1 / 30;
-const FIELDS = 10; // por auto y por muestra: x, y, angle, steer, speed, slope, dist (metros recorridos), rpm, throttle, gear
+// per car and per sample: x, y, angle, steer, speed, slope, dist (meters driven), rpm, throttle, gear
+const FIELDS = 10;
 
 export class Recorder {
   constructor(count) {
@@ -14,7 +15,7 @@ export class Recorder {
     this.clock = 0;
   }
 
-  // se llama en cada paso de la carrera; cars: [{ car, dist }]
+  // called on every race step; cars: [{ car, dist }]
   add(dt, cars) {
     this.clock += dt;
     while (this.clock >= REPLAY_STEP) {
@@ -28,7 +29,7 @@ export class Recorder {
     return (this.data.length / (FIELDS * this.count) - 1) * REPLAY_STEP;
   }
 
-  // poses de todos los autos en el tiempo t (s desde la largada)
+  // poses of all cars at time t (s since the start)
   at(t) {
     const frames = this.data.length / (FIELDS * this.count);
     const u = Math.min(frames - 1.001, Math.max(0, t / REPLAY_STEP));
@@ -40,7 +41,7 @@ export class Recorder {
       const a = (i * this.count + k) * FIELDS,
         b = a + this.count * FIELDS;
       const lerp = (j) => d[a + j] + (d[b + j] - d[a + j]) * f;
-      // el ángulo, por el camino más corto
+      // the angle, along the shortest way
       let da = d[b + 2] - d[a + 2];
       da -= Math.round(da / (Math.PI * 2)) * Math.PI * 2;
       poses.push({
@@ -60,11 +61,11 @@ export class Recorder {
   }
 }
 
-// Cámaras de TV fijas al costado de la pista: una cada TV_SPACING metros, alternando de lado,
-// detrás de los muros y en altura
+// Fixed TV cameras beside the track: one every TV_SPACING meters, alternating sides,
+// behind the walls and up high
 const TV_SPACING = 230;
 const TV_HEIGHT = 12;
-const TV_BACK = 2; // metros por detrás del muro
+const TV_BACK = 2; // meters behind the wall
 export function tvCameras(track) {
   const f = lineFrame(track),
     M = track.meters;
@@ -88,12 +89,12 @@ export const CAMERA_NAMES = {
   front: 'Frontal',
 };
 export const CAMERA_MODES = Object.keys(CAMERA_NAMES);
-// orden de las tomas del director automático y cuánto dura cada una (s)
+// order of the automatic director's shots and how long each one lasts (s)
 const SHOTS = ['tv', 'chase', 'tv', 'heli', 'onboard', 'tv', 'front'];
 const SHOT_TIME = 5;
 
-// Elige la cámara y la arma para mirar al auto. state guarda qué cámara de TV se está usando (para no saltar
-// de una a otra a cada rato) y la toma actual del director.
+// Picks the camera and sets it up to look at the car. state keeps which TV camera is in use (so it doesn't jump
+// from one to another all the time) and the director's current shot.
 export function replayCamera(mode, pose, track, tvCams, state, t, P) {
   if (mode === 'auto') mode = SHOTS[Math.floor(t / SHOT_TIME) % SHOTS.length];
   const M = track.meters;
@@ -102,10 +103,10 @@ export function replayCamera(mode, pose, track, tvCams, state, t, P) {
   const ca = Math.cos(pose.angle),
     sa = Math.sin(pose.angle);
   const at = (fwd, up) => ({ x: pose.x + (ca * fwd) / M, y: pose.y + (sa * fwd) / M, up });
-  let cam, look; // posición de la cámara y punto al que mira
+  let cam, look; // camera position and the point it looks at
   let zoom = 1;
   if (mode === 'tv' && tvCams.length) {
-    // la cámara más cercana; cambia sólo si otra queda bastante más cerca
+    // the nearest camera; it changes only if another one is much closer
     const dist = (c) => Math.hypot(c.x - pose.x, c.y - pose.y);
     let best = state.tv ?? 0;
     tvCams.forEach((c, k) => {
@@ -117,7 +118,7 @@ export function replayCamera(mode, pose, track, tvCams, state, t, P) {
     look = at(0, 0.6);
     zoom = Math.max(1, Math.min(5, (dist(c) * M) / 22));
   } else if (mode === 'onboard') {
-    cam = at(-0.28, 1.13); // arriba de la toma de aire, apenas delante de la T (si no, se ve su borde en el horizonte)
+    cam = at(-0.28, 1.13); // above the airbox, just in front of the T (otherwise its edge shows on the horizon)
     look = at(30, 0);
   } else if (mode === 'heli') {
     cam = at(-35, 20);
@@ -135,7 +136,7 @@ export function replayCamera(mode, pose, track, tvCams, state, t, P) {
   const dx = look.x - cam.x,
     dy = look.y - cam.y;
   const angle = Math.atan2(dy, dx);
-  // inclinación: el horizonte se corre para que el punto mirado quede en el medio de la pantalla
+  // pitch: the horizon shifts so the point looked at ends up in the middle of the screen
   const d = Math.max(0.5, Math.hypot(dx, dy));
   const pitch = -((z - (carZ + look.up / M)) * P * zoom) / d;
   return { x: cam.x, y: cam.y, z, ground, angle, pitch, zoom, mode };

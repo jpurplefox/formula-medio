@@ -1,14 +1,14 @@
-// Chequeo de regresión: corre carreras con semilla fija y compara con las guardadas. Sirve para refactorizar
-// tranquilo: si un cambio "de prolijidad" toca la física, los sensores, los choques, los daños o la IA, salta.
+// Regression check: runs races with a fixed seed and compares them with the saved ones. It makes refactoring safe:
+// if a "cleanup" change touches the physics, sensors, collisions, damage or AI, it shows up.
 //
-//   node tools/regress.js           compara con tools/regress.base.txt (sale con error si algo cambió)
-//   node tools/regress.js guardar   guarda los resultados actuales como base (cuando el cambio es a propósito)
+//   node tools/regress.js        compares with tools/regress.base.txt (exits with an error if something changed)
+//   node tools/regress.js save   saves the current results as the baseline (when the change is intended)
 //
-// Tres partes, todas con la red del juego:
-// - los escenarios del currículum anterior (rl/race.js, 4 autos) y los del entrenamiento en manada (rl/herd.js, 22
-//   autos, con el que se entrena la red hoy): en cada paso se toma el estado completo de cada auto (todos sus
-//   números, con todos los decimales) y las recompensas, y se resume en un hash por escenario;
-// - la carrera del juego (rl/race_eval.js con JUEGO=1 y daños reales) en dos circuitos: su informe, tal cual.
+// Three parts, all with the game network:
+// - the scenarios of the earlier curriculum (rl/race.js, 4 cars) and those of herd training (rl/herd.js, 22 cars,
+//   which is how the network is trained today): at each step the full state of every car (all its numbers, with
+//   every decimal) and the rewards are taken and summarized in one hash per scenario;
+// - the game race (rl/race_eval.js with GAME=1 and real damage) on two tracks: its report, as is.
 
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -23,13 +23,13 @@ import { rng } from '../rl/env.js';
 import { TRACK_IDS } from '../rl/tracks.js';
 
 const NET = GAME_NET;
-const RACES = 2; // carreras por escenario de rl/race.js
-const HERD_STEPS = 600; // de la manada, una carrera y sólo los primeros 30 s (son 22 autos: entera tarda minutos)
+const RACES = 2; // races per rl/race.js scenario
+const HERD_STEPS = 600; // for the herd, one race and only the first 30 s (22 cars: a whole race takes minutes)
 const GAME_TRACKS = 'monza,interlagos';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const BASE = new URL('regress.base.txt', import.meta.url);
 
-// todos los números de un objeto (y de sus objetos y listas adentro), en orden, con todos los decimales
+// all the numbers in an object (and in the objects and arrays inside it), in order, with every decimal
 function numbers(value, out, seen = new Set()) {
   if (typeof value === 'number') out.push(value);
   else if (typeof value === 'boolean') out.push(value ? 1 : 0);
@@ -41,8 +41,8 @@ function numbers(value, out, seen = new Set()) {
   return out;
 }
 
-// Corre `races` carreras de una simulación de entrenamiento (cada una hasta que termina o hasta maxSteps pasos) y
-// resume todo lo que pasó en un hash
+// Runs `races` races of a training simulation (each until it ends or for maxSteps steps) and summarizes everything
+// that happened in a hash
 function simHash(label, policy, sim, races, maxSteps = Infinity) {
   Math.random = rng(777);
   setDamageRandom(rng(778));
@@ -55,9 +55,9 @@ function simHash(label, policy, sim, races, maxSteps = Infinity) {
       obs.forEach((o, k) => actions.set(policy.act(o), ACTIONS * k));
       const results = sim.step(actions);
       obs = results.map((r) => r.next ?? r.obs);
-      // el auto entero: posición, velocidad, gomas, temperatura, daños... (los autos se cruzan entre sí, por eso
-      // cada uno se recorre aparte y sin seguir referencias a otros autos; la goma de la pista es de todos y es
-      // grande: va una vez al final de cada carrera)
+      // the whole car: position, speed, tyres, temperature, damage... (cars reference each other, so each one is
+      // walked separately without following references to other cars; the track rubber is shared by all and is
+      // large: it goes once at the end of each race)
       const state = [];
       for (const e of sim.cars) {
         const skip = new Set(sim.cars.map((o) => o.car).filter((c) => c !== e.car));
@@ -70,7 +70,7 @@ function simHash(label, policy, sim, races, maxSteps = Infinity) {
     }
     if (sim.rubber) hash.update(new Uint8Array(new Float64Array(numbers(sim.rubber, [])).buffer));
   }
-  return `${label.padEnd(13)} ${steps} pasos ${hash.digest('hex').slice(0, 16)}`;
+  return `${label.padEnd(13)} ${steps} steps ${hash.digest('hex').slice(0, 16)}`;
 }
 
 const raceSim = (scenario) =>
@@ -89,30 +89,30 @@ function report() {
   const policy = new Policy(JSON.parse(readFileSync(new URL(`../${NET}`, import.meta.url), 'utf8')));
   const lines = [
     ...Object.keys(SCENARIOS).map((s) => simHash(s, policy, raceSim(s), RACES)),
-    ...Object.keys(HERD_SCENARIOS).map((s) => simHash(`manada ${s}`, policy, herdSim(s), 1, HERD_STEPS)),
+    ...Object.keys(HERD_SCENARIOS).map((s) => simHash(`herd ${s}`, policy, herdSim(s), 1, HERD_STEPS)),
   ];
   const game = execFileSync('node', ['rl/race_eval.js', NET, GAME_TRACKS, '2'], {
     cwd: ROOT,
-    env: { ...process.env, JUEGO: '1', DANOS: 'real' },
+    env: { ...process.env, GAME: '1', DAMAGE: 'real' },
     encoding: 'utf8',
   });
   return [...lines, ...game.trim().split('\n')].join('\n') + '\n';
 }
 
 const now = report();
-if (process.argv[2] === 'guardar') {
+if (process.argv[2] === 'save') {
   writeFileSync(BASE, now);
-  console.log(`guardado en tools/regress.base.txt\n${now}`);
+  console.log(`saved to tools/regress.base.txt\n${now}`);
 } else {
   const base = readFileSync(BASE, 'utf8');
-  if (base === now) console.log('igual que la base ✓');
+  if (base === now) console.log('same as the baseline ✓');
   else {
     const a = base.split('\n'),
       b = now.split('\n');
     for (let i = 0; i < Math.max(a.length, b.length); i++) {
       if (a[i] !== b[i]) console.log(`- ${a[i] ?? ''}\n+ ${b[i] ?? ''}`);
     }
-    console.log('CAMBIÓ: si el cambio es a propósito, node tools/regress.js guardar');
+    console.log('CHANGED: if the change is intended, node tools/regress.js save');
     process.exit(1);
   }
 }

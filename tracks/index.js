@@ -1,42 +1,43 @@
-// Definición de circuitos.
-// Los de F1 salen de la telemetría (tools/layout.py): línea central en metros, alturas y largo de vuelta.
-//   layout     → trazado generado con tools/layout.py
-//   circuit    → nombre corto del circuito en OpenF1 (tools/layout.py, tools/lapcompare.js)
-//   altitude   → metros sobre el nivel del mar: más arriba el aire es menos denso (menos apoyo y menos resistencia)
-//   tune       → puesta a punto por defecto (src/sim/dynamics.js): alerones de 1 a 10 y balance mecánico de -5 a 5,
-//                como la llevan los equipos ahí (poco alerón donde importa la recta, mucho donde hay curvas)
-//   rotate     → (opcional) grados para girar el trazado (la telemetría viene en otra orientación que los dibujos)
-//   widthMeters → ancho de la pista en metros
-//   runoff     → celdas de escapatoria entre la pista y los muros
-//   elevationScale → (opcional) exagera o suaviza las alturas; 1 = pendientes reales
-//   surfaces   → (opcional, también en los de imagen) qué hay en la escapatoria, pisando lo que sale solo (asfalto
-//                por fuera de las curvas lentas, leca por fuera de las rápidas, pasto en el resto; ver track.js):
-//                [[desde, hasta, lado, material], ...], en metros desde la largada; lado 'left', 'right' o 'both';
-//                material 'grass', 'gravel' (leca) o 'asphalt'
-//   kerb       → (opcional) colores [r, g, b] de las franjas de los pianos, que se repiten en orden (hasta 4);
-//                si no, blanco y rojo
-//   kerbStyle  → (opcional) cómo son los pianos (KERB_STYLE de src/sim/track.js): stripe (largo de cada franja, celdas),
-//                width (ancho del piano, celdas), line (línea blanca entre la pista y el piano), green (ancho de la
-//                franja verde abrasiva detrás del piano, 0 = sin verde), sausage (salchichas en las curvas más cerradas)
-// Un circuito propio (o uno sin telemetría) sale de una imagen; las coordenadas (start, towards) están en píxeles
-// de la imagen original.
-//   image      → imagen del trazado: línea oscura sobre fondo claro
-//   scale      → cuántos píxeles de la imagen forman una celda del mapa
-//   threshold  → luminancia (0-255) por debajo de la cual un píxel es pista
-//   widen      → celdas extra para ensanchar la pista
-//   runoff     → celdas de escapatoria entre la pista y los muros
-//   start      → un punto sobre la línea de largada
-//   towards    → un punto hacia donde se corre desde la largada
-//   elevation  → (opcional) perfil de alturas generado con tools/elevation.py
-//   elevationScale → (opcional) exagera o suaviza las alturas; 1 = pendientes reales
-//   widthMeters → (opcional) ancho de la pista en metros; si no, el del dibujo
-//   lengthMeters → (opcional) largo de la vuelta en metros, si no hay perfil de alturas (que ya lo trae)
-//   open       → (opcional) borra las líneas de menos de 2·open+1 celdas de ancho pegadas al trazado
-//                (calle de boxes, variantes viejas, mástil de la bandera)
-//   paint      → (opcional) tramos a repasar en negro, en píxeles de la imagen: [[x0, y0, x1, y1, ancho], ...]
-//                (donde la bandera a cuadros corta la pista; un tramo de largo 0 es un punto)
-//   smooth     → (opcional) pasadas de suavizado de la línea central; más en imágenes chicas, donde las
-//                líneas quedan escalonadas y el auto frenaría en las rectas (por defecto 3)
+// Track definitions.
+// The F1 ones come from telemetry (tools/layout.py): centerline in meters, heights and lap length.
+//   layout     → layout generated with tools/layout.py
+//   circuit    → short name of the track in OpenF1 (tools/layout.py, tools/lapcompare.js)
+//   altitude   → meters above sea level: higher up the air is less dense (less downforce and less drag)
+//   tune       → default setup (src/sim/dynamics.js): wings from 1 to 10 and mechanical balance from -5 to 5,
+//                as the teams run there (little wing where the straight matters, a lot where there are corners)
+//   rotate     → (optional) degrees to rotate the layout (telemetry comes in another orientation than the drawings)
+//   widthMeters → track width in meters
+//   runoff     → cells of runoff between the track and the walls
+//   elevationScale → (optional) exaggerates or softens the heights; 1 = real slopes
+//   surfaces   → (optional, also on image tracks) what is in the runoff, overriding the automatic choice (asphalt
+//                outside slow corners, gravel outside fast ones, grass elsewhere; see track.js):
+//                [[from, to, side, material], ...], in meters from the start line; side 'left', 'right' or 'both';
+//                material 'grass', 'gravel' or 'asphalt'
+//   kerb       → (optional) [r, g, b] colors of the kerb stripes, repeated in order (up to 4);
+//                otherwise white and red
+//   kerbStyle  → (optional) what the kerbs look like (KERB_STYLE in src/sim/track.js): stripe (length of each stripe,
+//                cells), width (kerb width, cells), line (white line between the track and the kerb), green (width of
+//                the abrasive green strip behind the kerb, 0 = no green), sausage (sausage kerbs in the tightest
+//                corners)
+// A custom track (or one without telemetry) comes from an image; the coordinates (start, towards) are in pixels of
+// the original image.
+//   image      → image of the layout: a dark line on a light background
+//   scale      → how many image pixels make up one map cell
+//   threshold  → luminance (0-255) below which a pixel is track
+//   widen      → extra cells to widen the track
+//   runoff     → cells of runoff between the track and the walls
+//   start      → a point on the start line
+//   towards    → a point in the direction of travel from the start
+//   elevation  → (optional) height profile generated with tools/elevation.py
+//   elevationScale → (optional) exaggerates or softens the heights; 1 = real slopes
+//   widthMeters → (optional) track width in meters; otherwise, the drawing's
+//   lengthMeters → (optional) lap length in meters, if there is no height profile (which already includes it)
+//   open       → (optional) erases lines narrower than 2·open+1 cells touching the layout
+//                (pit lane, old chicanes, the flag pole)
+//   paint      → (optional) segments to retrace in black, in image pixels: [[x0, y0, x1, y1, width], ...]
+//                (where the checkered flag cuts the track; a segment of length 0 is a point)
+//   smooth     → (optional) smoothing passes over the centerline; more on small images, where the lines come out
+//                stepped and the car would brake on the straights (default 3)
 export const TRACKS = [
   {
     id: 'interlagos',
@@ -52,7 +53,7 @@ export const TRACKS = [
       [0, 156, 59],
       [255, 214, 0],
       [0, 56, 150],
-    ], // Brasil: verde, amarillo y azul
+    ], // Brazil: green, yellow and blue
     kerbStyle: { stripe: 1.6, width: 0.9, green: 0.8 },
   },
   {
@@ -69,8 +70,8 @@ export const TRACKS = [
       [0, 140, 69],
       [240, 240, 240],
       [205, 33, 42],
-    ], // Italia: verde, blanco y rojo
-    kerbStyle: { stripe: 2.4, width: 1.0, green: 0.6 }, // franjas largas
+    ], // Italy: green, white and red
+    kerbStyle: { stripe: 2.4, width: 1.0, green: 0.6 }, // long stripes
   },
   {
     id: 'albertpark',
@@ -85,8 +86,8 @@ export const TRACKS = [
     kerb: [
       [0, 132, 61],
       [255, 205, 0],
-    ], // Australia: verde y dorado
-    kerbStyle: { stripe: 1.4, width: 0.8, green: 0, sausage: false }, // circuito callejero en un parque: sin verde
+    ], // Australia: green and gold
+    kerbStyle: { stripe: 1.4, width: 0.8, green: 0, sausage: false }, // street circuit in a park: no green
   },
   {
     id: 'barcelona',
@@ -101,7 +102,7 @@ export const TRACKS = [
     kerb: [
       [200, 16, 46],
       [255, 196, 0],
-    ], // España: rojo y amarillo
+    ], // Spain: red and yellow
     kerbStyle: { stripe: 1.6, width: 0.9, green: 1.0 },
   },
   {
@@ -117,8 +118,8 @@ export const TRACKS = [
     kerb: [
       [216, 6, 33],
       [240, 240, 240],
-    ], // Canadá: rojo y blanco
-    kerbStyle: { stripe: 1.2, width: 0.7, green: 0, line: false }, // pianos angostos pegados al asfalto
+    ], // Canada: red and white
+    kerbStyle: { stripe: 1.2, width: 0.7, green: 0, line: false }, // narrow kerbs right against the asphalt
   },
   {
     id: 'spa',
@@ -134,7 +135,7 @@ export const TRACKS = [
       [30, 30, 30],
       [253, 218, 36],
       [239, 51, 64],
-    ], // Bélgica: negro, amarillo y rojo
+    ], // Belgium: black, yellow and red
     kerbStyle: { stripe: 2.0, width: 1.0, green: 0.8 },
   },
   {
@@ -151,7 +152,7 @@ export const TRACKS = [
       [1, 33, 105],
       [240, 240, 240],
       [200, 16, 46],
-    ], // Reino Unido: azul, blanco y rojo
+    ], // United Kingdom: blue, white and red
     kerbStyle: { stripe: 1.6, width: 0.9, green: 1.0 },
   },
   {
@@ -167,7 +168,7 @@ export const TRACKS = [
     kerb: [
       [237, 41, 57],
       [240, 240, 240],
-    ], // Austria: rojo y blanco
-    kerbStyle: { stripe: 1.6, width: 0.9, green: 1.2 }, // mucho verde abrasivo detrás de los pianos
+    ], // Austria: red and white
+    kerbStyle: { stripe: 1.6, width: 0.9, green: 1.2 }, // lots of abrasive green behind the kerbs
   },
 ];

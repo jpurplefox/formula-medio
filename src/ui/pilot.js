@@ -1,30 +1,30 @@
-// El piloto y el auto, para dibujarlos: cómo se inclina la carrocería (suspensión), hacia dónde mira el piloto y
-// cómo se le va la cabeza con las fuerzas, las levas de cambio y lo que tiembla el volante. No cambia cómo anda el
-// auto: es sólo lo que se ve.
+// The driver and the car, for drawing them: how the body leans (suspension), where the driver looks and how
+// their head moves with the forces, the shift paddles and how much the steering wheel shakes. It doesn't change how
+// the car drives: it is only what is seen.
 import { lineFrame, pointAt } from '../sim/lineframe.js';
 import { stationAt } from '../sim/track.js';
 
-// 1/s: qué tan rápido sigue el volante a la dirección
-const PADDLE_TIME = 0.2; // s: lo que dura el tirón de la leva al cambiar
-const PADDLE_PULL = 0.018; // m: cuánto la acerca el piloto
-const BUZZ = 0.05; // rad: lo que tiembla el volante en el pasto (en los pianos, la mitad)
-// la cabeza se inclina con las mismas fuerzas que la carrocería, bastante más: hacia afuera en las curvas y hacia
-// adelante al frenar (veces el rolido y el cabeceo de la suspensión)
+// 1/s: how fast the steering wheel follows the steering
+const PADDLE_TIME = 0.2; // s: how long the paddle pull lasts when shifting
+const PADDLE_PULL = 0.018; // m: how far the driver pulls it
+const BUZZ = 0.05; // rad: how much the steering wheel shakes on the grass (on the kerbs, half)
+// the head leans with the same forces as the body, quite a bit more: outward in corners and forward
+// under braking (times the suspension's roll and pitch)
 const HEAD_ROLL = 6;
 const HEAD_DIVE = 5;
 
-// ---------- suspensión: rolido y cabeceo de la carrocería ----------
-// La carrocería se inclina hacia afuera en las curvas (según la aceleración de costado) y baja la trompa al frenar
-// (la sube un poco al acelerar). La sigue un resorte amortiguado: tarda un instante en inclinarse y en volver.
-// Un F1 es muy duro, así que es poquito.
-const ROLL_MAX = 0.026; // rad (1,5°) con ROLL_G de aceleración de costado
+// ---------- suspension: body roll and pitch ----------
+// The body leans outward in corners (with the lateral acceleration) and the nose dips under braking
+// (it rises a bit when accelerating). A damped spring follows it: it takes a moment to lean and to come back.
+// An F1 car is very stiff, so it is very little.
+const ROLL_MAX = 0.026; // rad (1.5°) at ROLL_G of lateral acceleration
 const ROLL_G = 45; // m/s²
-const DIVE_PER = 0.0004; // rad de cabeceo por cada m/s² de frenada (a fondo, ~1,1°)
+const DIVE_PER = 0.0004; // rad of pitch per m/s² of braking (full braking, ~1.1°)
 const DIVE_MAX = 0.022; // rad
-const SPRING = 90; // 1/s²: rigidez del resorte
-const DAMPING = 14; // 1/s: amortiguación (un poco menos que la crítica: casi no rebota)
+const SPRING = 90; // 1/s²: spring stiffness
+const DAMPING = 14; // 1/s: damping (a bit less than critical: it barely bounces)
 
-// b: { roll, dive, vRoll, vDive }; aLat: aceleración de costado (+ doblando a la derecha), aLon: hacia adelante
+// b: { roll, dive, vRoll, vDive }; aLat: lateral acceleration (+ turning right), aLon: forward
 export function suspension(b, aLat, aLon, dt) {
   b ??= { roll: 0, dive: 0, vRoll: 0, vDive: 0 };
   const roll = Math.max(-1, Math.min(1, aLat / ROLL_G)) * ROLL_MAX;
@@ -36,20 +36,20 @@ export function suspension(b, aLat, aLon, dt) {
   return b;
 }
 
-// ---------- hacia dónde mira cada piloto ----------
-// En orden: el auto de adelante si hay uno cerca dentro de ±10° de su rumbo; si no, el vértice de la próxima curva;
-// si no hay curva a la vista, de frente. La cabeza gira de a poco y hasta cierto punto.
+// ---------- where each driver looks ----------
+// In order: the car ahead if there is one close within ±10° of its heading; if not, the apex of the next corner;
+// if there is no corner in sight, straight ahead. The head turns gradually and only up to a point.
 const LOOK_CONE = (10 * Math.PI) / 180;
-const LOOK_CAR = 60; // m: hasta dónde sigue a un auto
-const LOOK_AHEAD = [8, 140]; // m adelante donde busca la próxima curva
-const LOOK_CORNER = 0.9; // es curva si la trazada va ahí a menos de esta fracción de lo más rápido del tramo
-const LOOK_MAX = 0.5; // rad: lo más que gira la cabeza
+const LOOK_CAR = 60; // m: how far it follows a car
+const LOOK_AHEAD = [8, 140]; // m ahead where it looks for the next corner
+const LOOK_CORNER = 0.9; // a corner if the racing line there is below this fraction of the segment's top speed
+const LOOK_MAX = 0.5; // rad: the most the head turns
 const LOOK_RATE = 4; // 1/s
 
 const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
-// ángulo (rad, + a la derecha) hacia donde quiere mirar el piloto de car; cars: todos los autos (incluido él);
-// line: la trazada ideal del circuito (racingline.js), para encontrar la próxima curva
+// angle (rad, + to the right) where the driver of car wants to look; cars: all cars (including itself);
+// line: the track's racing line (racingline.js), to find the next corner
 export function lookYaw(car, cars, track, line) {
   const M = track.meters;
   let best = Infinity,
@@ -68,7 +68,7 @@ export function lookYaw(car, cars, track, line) {
   if (best < Infinity) return yaw;
   const u = stationAt(track, car.x, car.y);
   if (!line || u < 0) return 0;
-  // el punto más lento de la trazada en el tramo de adelante; si es un vértice de verdad, se mira ahí
+  // the slowest point of the racing line in the segment ahead; if it is a real apex, it looks there
   const L = line.speed.length,
     a = Math.round(u + LOOK_AHEAD[0] / M),
     b = Math.round(u + LOOK_AHEAD[1] / M);
@@ -88,7 +88,7 @@ export function lookYaw(car, cars, track, line) {
   return wrapAngle(Math.atan2(p.y - car.y, p.x - car.x) - car.angle);
 }
 
-// las levas: al subir de marcha el piloto tira de la derecha y al bajar, de la izquierda; el tirón va y vuelve
+// the paddles: on upshifts the driver pulls the right one and on downshifts, the left one; the pull goes and comes back
 export function paddles(p, gear, dt) {
   p ??= { gear, up: 0, down: 0 };
   if (gear > p.gear && p.gear > 0) p.up = PADDLE_TIME;
@@ -101,8 +101,8 @@ export function paddles(p, gear, dt) {
   return p;
 }
 
-// cuánto tiembla el volante: en el pasto, en la leca y en los pianos, más cuanto más rápido, y con el salto de la
-// salchicha (cambia en cada cuadro)
+// how much the steering wheel shakes: on the grass, on the gravel and on the kerbs, more the faster it goes, and with
+// the sausage kerb jump (changes every frame)
 export const buzz = (c) =>
   ((c.rough ?? c.grass) * Math.min(1, Math.abs(c.speed) / 25) +
     (c.onKerb ? Math.min(1, Math.abs(c.speed) / 35) * 0.5 : 0) +
@@ -110,7 +110,7 @@ export const buzz = (c) =>
   BUZZ *
   (Math.random() * 2 - 1);
 
-// la cabeza del piloto, inclinada por las fuerzas: [hacia el costado, hacia adelante]
+// the driver's head, tilted by the forces: [sideways, forward]
 export const headTilt = (body) => [(body?.roll ?? 0) * HEAD_ROLL, (body?.dive ?? 0) * HEAD_DIVE];
 
 export function turnHead(head = 0, target, dt) {

@@ -1,4 +1,4 @@
-// lapsim.js y racingline.js: la velocidad más alta en cada punto de una trazada, y la trazada sobre un circuito real.
+// lapsim.js and racingline.js: the highest speed at each point of a line, and the racing line on a real track.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { limitsOn } from '../src/sim/car.js';
@@ -10,7 +10,7 @@ import { kmh, PROFILE, track } from './helpers.js';
 
 const lim = carLimits(PROFILE);
 
-// un círculo de radio r (m), con puntos cada grado
+// a circle of radius r (m), with a point every degree
 const circle = (r) =>
   pathFromPoints(
     Array.from({ length: 360 }, (_, i) => [
@@ -20,7 +20,7 @@ const circle = (r) =>
     ]),
   );
 
-// un óvalo: dos rectas de `straight` m unidas por medias vueltas de radio r
+// an oval: two straights of `straight` m joined by half circles of radius r
 function oval(straight, r) {
   const pts = [];
   const half = (cx, from) => {
@@ -37,31 +37,31 @@ function oval(straight, r) {
 }
 
 describe('pathFromPoints', () => {
-  test('un círculo de radio r tiene curvatura 1/r y su largo', () => {
+  test('a circle of radius r has curvature 1/r and the right length', () => {
     const p = circle(100);
-    // salvo cerca de donde cierra la vuelta, que queda un tramo más corto que los demás
-    for (let i = 8; i < p.n - 8; i++) assert.ok(Math.abs(p.k[i] - 0.01) < 1e-4, `punto ${i}: ${p.k[i]}`);
+    // except near where the loop closes, where one segment is shorter than the rest
+    for (let i = 8; i < p.n - 8; i++) assert.ok(Math.abs(p.k[i] - 0.01) < 1e-4, `point ${i}: ${p.k[i]}`);
     assert.ok(Math.abs(p.n * p.ds - 2 * Math.PI * 100) < 2 * p.ds);
   });
-  test('la fracción de vuelta va de 0 a 1', () => {
+  test('the lap fraction goes from 0 to 1', () => {
     const p = circle(100);
     assert.ok(p.f[0] < 0.01 && p.f[p.n - 1] > 0.99);
   });
 });
 
 describe('cornerSpeed', () => {
-  test('en la velocidad de la curva, lo que pide doblar (v²/r) es lo que aguanta el agarre', () => {
+  test('at corner speed, what turning demands (v²/r) is what the grip can hold', () => {
     for (const r of [30, 60, 100]) {
       const v = cornerSpeed(lim, 1 / r);
-      assert.ok(Math.abs((v * v) / r - lim.lateral(v)) / lim.lateral(v) < 0.01, `radio ${r}`);
+      assert.ok(Math.abs((v * v) / r - lim.lateral(v)) / lim.lateral(v) < 0.01, `radius ${r}`);
     }
   });
-  test('una curva que se toma a fondo da la punta', () => {
+  test('a flat-out corner gives top speed', () => {
     const r = 1000;
     assert.equal(cornerSpeed(lim, 1 / r), lim.topSpeed);
     assert.ok(lim.topSpeed ** 2 / r <= lim.lateral(lim.topSpeed));
   });
-  test('más cerrada, más lenta; en recta, la punta; y usando menos agarre, más lenta', () => {
+  test('tighter means slower; on a straight, top speed; and using less grip, slower', () => {
     assert.ok(cornerSpeed(lim, 1 / 30) < cornerSpeed(lim, 1 / 100));
     assert.equal(cornerSpeed(lim, 0), lim.topSpeed);
     assert.ok(cornerSpeed(lim, 1 / 100, 0.9) < cornerSpeed(lim, 1 / 100));
@@ -69,20 +69,20 @@ describe('cornerSpeed', () => {
 });
 
 describe('lapSim', () => {
-  test('en un círculo va siempre a la velocidad de la curva', () => {
+  test('on a circle it always goes at corner speed', () => {
     const p = circle(100),
       v = cornerSpeed(lim, 0.01);
     const { time } = lapSim(p, lim);
     assert.ok(Math.abs(time - (p.n * p.ds) / v) / time < 0.01);
   });
-  test('en un óvalo acelera en las rectas, frena antes de las curvas y nunca pasa la punta', () => {
+  test('on an oval it accelerates on the straights, brakes before the corners and never exceeds top speed', () => {
     const p = oval(1000, 60);
     const { v, time } = lapSim(p, lim);
     const slowest = Math.min(...v),
       fastest = Math.max(...v);
     assert.ok(Math.abs(slowest - cornerSpeed(lim, 1 / 60)) / slowest < 0.05);
     assert.ok(fastest > 1.5 * slowest && fastest <= lim.topSpeed + 1e-9);
-    // más lento que ir siempre a fondo y más rápido que ir siempre a la velocidad de la curva
+    // slower than always flat out and faster than always at corner speed
     assert.ok(time > (p.n * p.ds) / fastest && time < (p.n * p.ds) / slowest);
   });
 });
@@ -90,16 +90,16 @@ describe('lapSim', () => {
 describe('racingLine', () => {
   const t = track('monza');
   const line = racingLine(t, limitsOn(PROFILE, t));
-  test('da una velocidad por punto de la línea central, todas razonables', () => {
+  test('gives one speed per centerline point, all reasonable', () => {
     assert.ok(Math.abs(line.speed.length - t.length) <= 2);
     for (const v of line.speed) assert.ok(v > 15 && v < 110);
   });
-  test('en Monza: punta de más de 320 km/h y las chicanas por debajo de 120 km/h', () => {
+  test('at Monza: top speed over 320 km/h and the chicanes below 120 km/h', () => {
     assert.ok(kmh(Math.max(...line.speed)) > 320);
     assert.ok(kmh(Math.min(...line.speed)) < 120);
   });
-  test('la línea no se sale de la pista', () => {
-    // offset: celdas desde la línea central, en cada posición de la línea central (de a una celda)
-    for (let u = 0; u < t.length; u++) assert.ok(Math.abs(line.offset[u]) <= halfWidthAt(t, u), `posición ${u}`);
+  test('the line stays on the track', () => {
+    // offset: cells from the centerline, at each centerline position (one cell apart)
+    for (let u = 0; u < t.length; u++) assert.ok(Math.abs(line.offset[u]) <= halfWidthAt(t, u), `position ${u}`);
   });
 });

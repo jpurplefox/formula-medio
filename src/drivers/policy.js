@@ -1,5 +1,5 @@
-// La red entrenada (rl/): recibe lo que ve el auto (sensors.js) y devuelve volante y pedal.
-// Los pesos vienen de rl/export.py: capas lineales con tanh entre ellas.
+// The trained network (rl/): takes what the car sees (sensors.js) and returns steering and pedal.
+// The weights come from rl/export.py: linear layers with tanh between them.
 
 import { rescue } from './ai.js';
 import {
@@ -20,16 +20,17 @@ import {
 } from './sensors.js';
 import { stationAt } from '../sim/track.js';
 
-// La red con la que manejan los rivales en el juego (rl/CURRICULO.md). Es la única referencia: la usan también el
-// chequeo de regresión, la calibración y rl/curriculum.sh, así que para cambiar de red alcanza con cambiarla acá.
+// The network the rivals drive with in the game (rl/CURRICULUM.md). It is the only reference: the regression check,
+// the calibration and rl/curriculum.sh use it too, so changing the network only takes changing it here.
 export const GAME_NET = 'models/v22/fase18.json';
 
 export class Policy {
-  // opponents: si aprendió a mirar a los demás autos (etapa 2); si no, se le pasan en cero, como al entrenar
+  // opponents: whether it learned to look at the other cars (stage 2); if not, they are passed as zeros, as in training
   constructor({ obs_size, layers, opponents = false }) {
-    // las redes de antes de los tramos de pista, del riesgo con cada rival, de las gomas y la nafta, del semáforo, de los pedales de los rivales, de los daños, de los límites (puesta a punto y aire) y del
-    // agarre por rueda leen sólo lo de adelante (van al final); las de antes del desgaste y la variación de autos,
-    // además, no reciben esos valores: se les sacan
+    // networks from before the track segments, the risk per rival, the tyres and fuel, the start lights, the rivals'
+    // pedals, the damage, the limits (setup and air) and the per-wheel grip read only the leading part (those inputs
+    // go at the end); networks from before wear and car variation, in addition, don't receive those values: they are
+    // removed
     this.size = obs_size;
     const reads = [OBS_SIZE];
     for (const n of [
@@ -45,14 +46,14 @@ export class Policy {
       reads.push(reads.at(-1) - n);
     this.legacy = obs_size === reads.at(-1) - SETUP_VALUES;
     if (!reads.includes(obs_size) && !this.legacy) {
-      throw new Error(`La red espera ${obs_size} valores y los sensores dan ${OBS_SIZE}`);
+      throw new Error(`The network expects ${obs_size} values and the sensors give ${OBS_SIZE}`);
     }
     this.opponents = opponents;
-    // las de antes de los tramos de pista (todas las que no leen el vector entero) veían cada punto respecto del auto
+    // networks from before the track segments (all that don't read the whole vector) saw each point relative to the car
     this.fromCar = obs_size < OBS_SIZE;
     this.scratch = new Float32Array(OBS_SIZE);
-    // si ve el semáforo y sube y baja las rpm ella (dos salidas más): si no, larga con las vueltas y la reacción de la IA
-    // clásica
+    // whether it sees the start lights and raises and lowers the rpm itself (two more outputs): if not, it starts with
+    // the revs and the reaction of the classic AI
     this.lights = obs_size >= START_INPUT_START + START_VALUES && layers.at(-1).out >= 4;
     this.layers = layers.map((l) => {
       const w = floats(l.w);
@@ -64,7 +65,7 @@ export class Policy {
     return new Policy(await fetch(url).then((r) => r.json()));
   }
 
-  // obs → [volante, pedal] y, en las redes que ven el semáforo, [subir rpm, bajar rpm]: todos entre -1 y 1
+  // obs → [steering, pedal] and, in networks that see the start lights, [rpm up, rpm down]: all between -1 and 1
   act(obs) {
     if (this.fromCar) obs = aheadFromCar(obs, this.scratch);
     let x = obs.subarray(0, this.legacy ? this.size + SETUP_VALUES : this.size);
@@ -88,7 +89,7 @@ export class Policy {
   }
 }
 
-// float32 en base64 (como los escribe rl/export.py)
+// float32 in base64 (as rl/export.py writes them)
 function floats(b64) {
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
@@ -96,13 +97,13 @@ function floats(b64) {
   return new Float32Array(bytes.buffer);
 }
 
-// Piloto con la red: decide 20 veces por segundo (como al entrenar) y entre medio mantiene los controles
+// Network driver: decides 20 times per second (as in training) and holds the controls in between
 const DECISION_DT = 1 / 20;
-const STUCK_TIME = 3; // s casi quieta hasta que se la rescata
-const GRASS_TIME = 6; // s seguidos en el pasto hasta que se la rescata (como al entrenar)
+const STUCK_TIME = 3; // s almost still until it is rescued
+const GRASS_TIME = 6; // s in a row on the grass until it is rescued (as in training)
 
 export class NeuralDriver {
-  // opponents: si le pasa los demás autos a la red (por defecto, si la red aprendió a mirarlos)
+  // opponents: whether it passes the other cars to the network (by default, if the network learned to look at them)
   constructor(policy, { opponents = policy.opponents } = {}) {
     this.policy = policy;
     this.opponents = opponents;
@@ -114,20 +115,20 @@ export class NeuralDriver {
     this.input = { throttle: 0, brake: 0, steer: 0 };
   }
 
-  // si la red ve el semáforo (sensors.js): entonces maneja su largada (race/race.js)
+  // whether the network sees the start lights (sensors.js): then it handles its own start (race/race.js)
   get seesLights() {
     return !!this.policy.lights;
   }
 
-  // Misma forma que Driver.drive de ai.js: me y others son { car, ... }
+  // Same shape as Driver.drive in ai.js: me and others are { car, ... }
   drive(dt, track, line, { car }, others = []) {
     const u = stationAt(track, car.x, car.y);
     if (u >= 0) this.u = u;
-    // trabada (contra un muro o en un amontonamiento): vuelve a la pista, como la IA clásica. Al entrenar
-    // también se la rescata, pero a los 6 s: acá se le da la mitad para que no frene la carrera
+    // stuck (against a wall or in a pile-up): goes back to the track, like the classic AI. In training it is also
+    // rescued, but after 6 s: here it gets half that so it doesn't hold up the race
     this.stuck = Math.abs(car.speed) < 1 ? this.stuck + dt : 0;
-    // perdida en el pasto: al entrenar se la rescata a los 6 s, así que nunca aprendió a volver de lejos (y en el
-    // pasto no se queda quieta: anda a ~90 km/h)
+    // lost on the grass: in training it is rescued after 6 s, so it never learned to come back from far away (and on
+    // the grass it doesn't stay still: it goes at ~90 km/h)
     this.grass = car.onGrass ? this.grass + dt : 0;
     if (this.stuck > STUCK_TIME || this.grass > GRASS_TIME) {
       rescue(track, line, car, this.u);
@@ -144,9 +145,9 @@ export class NeuralDriver {
     return this.input;
   }
 
-  // Quieta en la grilla (con el semáforo prendido, o apagado sin haber largado todavía): sólo decide, sin rescates.
-  // revUp y revDown suben y bajan las vueltas (car.revBy); quien llama suelta el embrague cuando acelera con las luces
-  // apagadas (car.lights: cómo está el semáforo)
+  // Still on the grid (with the start lights on, or off without having started yet): it only decides, no rescues.
+  // revUp and revDown raise and lower the revs (car.revBy); the caller releases the clutch when it accelerates with
+  // the lights out (car.lights: the state of the start lights)
   grid(dt, track, { car }, others = []) {
     const u = stationAt(track, car.x, car.y);
     if (u >= 0) this.u = u;

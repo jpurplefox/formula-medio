@@ -1,24 +1,24 @@
-// Daños: qué se rompe en un golpe, según dónde pega y qué tan fuerte, y qué le hace eso al auto.
+// Damage: what breaks in a hit, depending on where it strikes and how hard, and what that does to the car.
 //
-// Piezas (cada una de 0 = sana a 1 = rota), con su lado para cuando haya que dibujarlas:
-//   frontWing   alerón delantero [izquierda, derecha]: los flaps primero, después el alerón entero. Se pierde su
-//               apoyo: en curva lenta casi no se nota (el agarre mecánico queda) y en las rápidas no dobla
-//   rearWing    alerón trasero [izquierda, derecha]: menos apoyo atrás (sobrevira en las rápidas) y menos resistencia
-//   sidepod     pontón y piso [izquierda, derecha]: el piso da la mayor parte del apoyo, y por el pontón respira
-//               el radiador: el motor recalienta y rinde menos
-//   suspension  suspensión de cada rueda [DI, DD, TI, TD] (en las de adelante, con la dirección): torcida, esa
-//               rueda agarra menos y el auto tira para un lado; rota, abandono
-//   tyre        pinchazo de cada rueda [DI, DD, TI, TD]: 0 sana; al pincharse se va desinflando hasta 1 en DEFLATE
-//               segundos: casi sin agarre, frena y tira para ese lado
-// Con daño de un solo lado, el auto agarra distinto según para dónde dobla: en una curva el peso va a las ruedas
-// de afuera, así que un alerón roto a la izquierda se nota más doblando a la derecha.
+// Parts (each from 0 = intact to 1 = broken), with their side for when they need to be drawn:
+//   frontWing   front wing [left, right]: the flaps first, then the whole wing. Its downforce is lost: in a slow
+//               corner it is barely noticeable (mechanical grip remains) and in fast ones the car won't turn
+//   rearWing    rear wing [left, right]: less rear downforce (oversteers in fast corners) and less drag
+//   sidepod     sidepod and floor [left, right]: the floor gives most of the downforce, and the radiator breathes
+//               through the sidepod: the engine overheats and delivers less
+//   suspension  suspension of each wheel [FL, FR, RL, RR] (on the fronts, with the steering): bent, that wheel
+//               grips less and the car pulls to one side; broken, retirement
+//   tyre        puncture of each wheel [FL, FR, RL, RR]: 0 intact; once punctured it deflates up to 1 in DEFLATE
+//               seconds: almost no grip, it drags and pulls to that side
+// With damage on one side only, the car grips differently depending on which way it turns: in a corner the weight
+// goes to the outside wheels, so a wing broken on the left is more noticeable turning right.
 //
-// El objeto de daños no se modifica: cada golpe arma uno nuevo (así car.limits sabe cuándo recalcular).
+// The damage object is not modified: each hit builds a new one (so car.limits knows when to recompute).
 
 export const DAMAGE_LEVELS = [
-  { id: 'off', name: 'No' }, // Los choques no le hacen nada al auto
-  { id: 'reduced', name: 'Reducidos' }, // Los choques dañan el auto y lo hacen más lento, pero siempre podés terminar la carrera
-  { id: 'real', name: 'Reales' }, // Un choque fuerte puede pinchar una goma o romper una rueda y dejarte afuera de la carrera
+  { id: 'off', name: 'No' }, // Crashes do nothing to the car
+  { id: 'reduced', name: 'Reducidos' }, // Crashes damage the car and slow it down, but you can always finish the race
+  { id: 'real', name: 'Reales' }, // A hard crash can puncture a tyre or break a wheel and take you out of the race
 ];
 
 export const NO_DAMAGE = Object.freeze({
@@ -30,45 +30,46 @@ export const NO_DAMAGE = Object.freeze({
   retired: null,
 });
 
-// Zonas de golpe: rectángulos en metros desde el centro del auto (x adelante, y a la derecha), como el modelo 3D.
-// part: la pieza que se daña; side: el lado (0 izquierda, 1 derecha; null: según dónde pegó); wheel: qué rueda
+// Hit zones: rectangles in meters from the car's center (x forward, y to the right), like the 3D model.
+// part: the part that gets damaged; side: the side (0 left, 1 right; null: depending on where it hit); wheel: which
+// wheel
 export const ZONES = [
   { part: 'frontWing', x: [2.25, 2.8], y: [-0.95, 0.95] },
-  { part: 'frontWing', x: [1.0, 2.25], y: [-0.25, 0.25] }, // la trompa: se lleva el alerón
+  { part: 'frontWing', x: [1.0, 2.25], y: [-0.25, 0.25] }, // the nose: takes the wing with it
   { part: 'wheel', wheel: 0, x: [1.3, 2.0], y: [-1.0, -0.6] },
   { part: 'wheel', wheel: 1, x: [1.3, 2.0], y: [0.6, 1.0] },
   { part: 'sidepod', x: [-1.3, 1.0], y: [-0.8, 0.8] },
   { part: 'wheel', wheel: 2, x: [-2.05, -1.35], y: [-1.0, -0.6] },
   { part: 'wheel', wheel: 3, x: [-2.05, -1.35], y: [0.6, 1.0] },
-  { part: 'rearWing', x: [-2.3, -1.3], y: [-0.45, 0.45] }, // caja y motor: el golpe sube al alerón
+  { part: 'rearWing', x: [-2.3, -1.3], y: [-0.45, 0.45] }, // gearbox and engine: the hit goes up to the wing
   { part: 'rearWing', x: [-2.8, -2.3], y: [-0.5, 0.5] },
 ];
 
-// Cuánto se rompe cada pieza con un golpe: desde `from` (m/s de cambio de velocidad en el punto de contacto) empieza
-// a dañarse y con `full` se rompe de una; los golpes se suman. Ajustado con tools/damage_hits.js para que los roces
-// de una carrera normal no rompan casi nada.
+// How much each part breaks in a hit: from `from` (m/s of speed change at the contact point) it starts to get
+// damaged and at `full` it breaks at once; hits add up. Tuned with tools/damage_hits.js so that the light contacts
+// of a normal race break almost nothing.
 export const STRENGTH = {
   frontWing: { from: 5, full: 24 },
   rearWing: { from: 6, full: 26 },
   sidepod: { from: 7, full: 28 },
   suspension: { from: 7, full: 26 },
 };
-const PUNCTURE_HIT = 5; // m/s: un alerón ajeno contra una goma la puede cortar desde acá...
-const PUNCTURE_CHANCE = 0.12; // ...con esta probabilidad (más con golpes más fuertes)
-const WHEEL_PUNCTURE_HIT = 12; // y dos ruedas que se golpean fuerte, también
-const DEFLATE = 4; // s hasta desinflarse del todo
-const REDUCED_MAX = 0.6; // con daños reducidos, lo más que se rompe una pieza
+const PUNCTURE_HIT = 5; // m/s: another car's wing against a tyre can cut it from here on...
+const PUNCTURE_CHANCE = 0.12; // ...with this probability (more with harder hits)
+const WHEEL_PUNCTURE_HIT = 12; // and two wheels hitting hard, too
+const DEFLATE = 4; // s until fully deflated
+const REDUCED_MAX = 0.6; // with reduced damage, the most a part can break
 
-// Efecto en el auto
-const FRONT_WING_SHARE = 0.6; // del apoyo delantero de la carrocería, lo que es del alerón (con el alerón al mínimo)
-const REAR_WING_SHARE = 0.35; // y del trasero
-const REAR_WING_DRAG = 0.25; // de la resistencia de la carrocería, lo que es del alerón trasero
-const FLOOR_LOSS = 0.4; // apoyo del piso que se pierde con un pontón destrozado
-const COOLING_LOSS = 0.08; // y potencia
-const BENT_GRIP = 0.3; // una rueda con la suspensión casi rota agarra esto menos
-const BENT_PULL = 0.06; // y tuerce la dirección (en unidades de volante)
-const FLAT_GRIP = 0.55; // una goma desinflada agarra esto menos
-const FLAT_DRAG = 3; // y frena (m/s², como el pasto)
+// Effect on the car
+const FRONT_WING_SHARE = 0.6; // of the body's front downforce, the wing's share (with the wing at minimum)
+const REAR_WING_SHARE = 0.35; // and of the rear
+const REAR_WING_DRAG = 0.25; // of the body's drag, the rear wing's share
+const FLOOR_LOSS = 0.4; // floor downforce lost with a destroyed sidepod
+const COOLING_LOSS = 0.08; // and power
+const BENT_GRIP = 0.3; // a wheel with nearly broken suspension grips this much less
+const BENT_PULL = 0.06; // and twists the steering (in steering units)
+const FLAT_GRIP = 0.55; // a deflated tyre grips this much less
+const FLAT_DRAG = 3; // and drags (m/s², like the grass)
 
 let random = Math.random;
 export const setDamageRandom = (fn) => (random = fn);
@@ -76,8 +77,8 @@ export const setDamageRandom = (fn) => (random = fn);
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const set = (arr, i, v) => arr.map((x, k) => (k === i ? v : x));
 
-// La zona de un punto del auto (en metros desde su centro, en el marco del auto): la que lo contiene o, si
-// ninguna (un punto del borde del rectángulo que no cae en ninguna pieza), la más cercana
+// The zone of a point on the car (in meters from its center, in the car's frame): the one that contains it or, if
+// none does (a point on the edge of the rectangle that falls in no part), the nearest one
 export function zoneAt(lx, ly) {
   let best = null,
     bestD = Infinity;
@@ -90,8 +91,8 @@ export function zoneAt(lx, ly) {
   return best;
 }
 
-// Un golpe de intensidad hit (m/s) en el punto (lx, ly) del auto. other: la zona del otro auto que pegó (null: muro).
-// level: 'reduced' o 'real'. Devuelve el daño nuevo (o el mismo si no se rompió nada).
+// A hit of intensity hit (m/s) at point (lx, ly) of the car. other: the zone of the other car that hit (null: a
+// wall). level: 'reduced' or 'real'. Returns the new damage (or the same one if nothing broke).
 export function applyHit(damage, lx, ly, hit, other, level) {
   if (level === 'off' || damage.retired) return damage;
   const z = zoneAt(lx, ly),
@@ -107,7 +108,7 @@ export function applyHit(damage, lx, ly, hit, other, level) {
       d = { ...d, suspension: set(d.suspension, w, now) };
       if (now >= 1) d = { ...d, retired: w < 2 ? 'Dirección rota' : 'Suspensión rota' };
     }
-    // pinchazo: cortada por un alerón ajeno o en un golpe fuerte rueda contra rueda
+    // puncture: cut by another car's wing or in a hard wheel-to-wheel hit
     if (level === 'real' && !d.tyre[w]) {
       const cut =
         other?.part === 'frontWing' &&
@@ -119,9 +120,9 @@ export function applyHit(damage, lx, ly, hit, other, level) {
   } else {
     const a = amount(z.part);
     if (a > 0) {
-      // la trompa y el centro del alerón trasero reparten el golpe entre los dos lados
+      // the nose and the center of the rear wing split the hit between both sides
       const both = (z.part === 'frontWing' && z.x[0] < 2) || z.part === 'rearWing' || Math.abs(ly) < 0.3;
-      // con daños reducidos nada se rompe del todo
+      // with reduced damage nothing breaks completely
       const cur = d[z.part],
         max = level === 'reduced' ? REDUCED_MAX : 1;
       d = {
@@ -133,8 +134,8 @@ export function applyHit(damage, lx, ly, hit, other, level) {
   return d;
 }
 
-// Daños al azar, para entrenar con autos ya rotos: una o dos piezas, con un poco o del todo (con daños reducidos,
-// como mucho REDUCED_MAX y sin pinchazos); nunca un abandono
+// Random damage, to train with already broken cars: one or two parts, slightly or completely (with reduced damage,
+// at most REDUCED_MAX and no punctures); never a retirement
 export function randomDamage(rand, level) {
   let d = NO_DAMAGE;
   const max = level === 'reduced' ? REDUCED_MAX : 1;
@@ -150,7 +151,7 @@ export function randomDamage(rand, level) {
   return d;
 }
 
-// Las gomas pinchadas se van desinflando
+// Punctured tyres gradually deflate
 export function deflate(damage, dt) {
   if (!damage.tyre.some((t) => t > 0 && t < 1)) return damage;
   return { ...damage, tyre: damage.tyre.map((t) => (t > 0 ? Math.min(1, t + dt / DEFLATE) : 0)) };
@@ -160,9 +161,9 @@ export const damaged = (d) =>
   d !== NO_DAMAGE &&
   (d.retired || [d.frontWing, d.rearWing, d.sidepod, d.suspension, d.tyre].some((p) => p.some((x) => x > 0)));
 
-// Para dynamics.js: cuánto apoyo y resistencia se pierde. Coeficientes del auto sano → del auto dañado.
-//   body: carga de la carrocería adelante y atrás (sin los alerones regulables); wingF, wingR: lo que agregan los
-//   alerones; cd: resistencia. Devuelve, para cada lado (0 izquierda, 1 derecha), la carga de cada eje.
+// For dynamics.js: how much downforce and drag is lost. Coefficients of the intact car → of the damaged car.
+//   body: body downforce front and rear (without the adjustable wings); wingF, wingR: what the wings add; cd: drag.
+//   Returns, for each side (0 left, 1 right), the downforce on each axle.
 export function damagedAero(damage, { bodyF, bodyR, wingF, wingR, cd, cdWingF, cdWingR }) {
   const fw = damage.frontWing,
     rw = damage.rearWing,
@@ -182,12 +183,12 @@ export function damagedAero(damage, { bodyF, bodyR, wingF, wingR, cd, cdWingF, c
 
 export const powerLoss = (damage) => 1 - (COOLING_LOSS * (damage.sidepod[0] + damage.sidepod[1])) / 2;
 
-// Para car.js, rueda por rueda: cuánto agarra (1 sana) y cuánto frena de más (m/s²)
+// For car.js, wheel by wheel: how much it grips (1 intact) and how much extra it drags (m/s²)
 export function wheelGrip(damage, i) {
   return (1 - BENT_GRIP * damage.suspension[i] ** 2) * (1 - FLAT_GRIP * damage.tyre[i]);
 }
 export const wheelDrag = (damage, i) => FLAT_DRAG * damage.tyre[i];
 
-// Para dónde tira la dirección con la suspensión torcida (volante: + derecha): una rueda delantera torcida se va
-// hacia afuera, y el auto hacia ese lado
+// Which way the steering pulls with bent suspension (steering: + right): a bent front wheel goes outward, and the
+// car goes toward that side
 export const steerPull = (damage) => BENT_PULL * (damage.suspension[1] ** 2 - damage.suspension[0] ** 2);

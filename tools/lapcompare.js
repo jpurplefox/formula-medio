@@ -1,13 +1,13 @@
-// Compara la vuelta de la pole real (clasificación 2025, OpenF1) con el auto del juego, circuito por circuito: la
-// velocidad a lo largo de la vuelta, el tiempo, la velocidad punta y la de cada curva. Sirve para calibrar la física.
+// Compares the real pole lap (2025 qualifying, OpenF1) with the game car, track by track: the speed along the lap,
+// the time, the top speed and the speed in each corner. It is used to calibrate the physics.
 //
-// La vuelta real sale de tools/openf1.js: la velocidad es lo que avanzan sobre el dibujo del circuito por segundo
-// (ojo: los tiempos de las posiciones bailan, así que la punta sale unos km/h de más; la de verdad es la trampa).
-// Del juego salen dos curvas:
-//   límite  la trazada ideal con todo el agarre y la frenada (racingline.js): lo máximo que da la física
-//   red     la red del juego dando una vuelta lanzada sola: lo que de verdad hace el auto
+// The real lap comes from tools/openf1.js: the speed is the distance covered on the track drawing per second
+// (careful: the position timestamps jitter, so the top speed comes out a few km/h too high; the true one is the trap).
+// The game gives two curves:
+//   limit    the racing line with all the grip and braking (racingline.js): the most the physics allows
+//   network  the game network driving a flying lap alone: what the car really does
 //
-//   node tools/lapcompare.js [circuitos separados por coma] [salida.html]
+//   node tools/lapcompare.js [comma-separated tracks] [output.html]
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Car, limitsOn } from '../src/sim/car.js';
@@ -22,11 +22,11 @@ import { realLap } from './openf1.js';
 const root = (p) => new URL('../' + p, import.meta.url);
 const DT = 1 / 60;
 
-const [ids = TRACK_IDS.join(','), out = 'tools/.out/vueltas.html'] = process.argv.slice(2);
+const [ids = TRACK_IDS.join(','), out = 'tools/.out/laps.html'] = process.argv.slice(2);
 const profile = JSON.parse(readFileSync(root('cars/f1-2025.json'), 'utf8'));
 const policy = new Policy(JSON.parse(readFileSync(root(GAME_NET), 'utf8')));
 
-// Una vuelta lanzada de la red sola en la pista: [{ s (fracción de la vuelta), v }] y tiempo
+// A flying lap by the network alone on the track: [{ s (lap fraction), v }] and time
 function netLap(track, setup) {
   const slot = gridSlots(track, 1)[0];
   const car = new Car(slot.x, slot.y, slot.angle, profile);
@@ -45,7 +45,7 @@ function netLap(track, setup) {
     if (u < 0) continue;
     if (u - prev < -track.length / 2) {
       lap++;
-      if (lap === 3) return { pts, lapTime: t - t0 }; // la segunda vuelta entera: lanzada
+      if (lap === 3) return { pts, lapTime: t - t0 }; // the whole second lap: a flying lap
       t0 = t;
       pts = [];
     }
@@ -55,8 +55,8 @@ function netLap(track, setup) {
   return null;
 }
 
-// La trazada ideal al límite: velocidad por celda y tiempo aproximado (con el largo de la línea central, un poco más
-// larga que la trazada)
+// The racing line at the limit: speed per cell and approximate time (using the centerline length, a bit longer than
+// the racing line)
 function limitLap(track) {
   const line = racingLine(track, limitsOn(profile, track), { gripUse: 1, brakeUse: 1 });
   const L = line.speed.length - 1;
@@ -65,8 +65,8 @@ function limitLap(track) {
   return { pts: Array.from(line.speed.subarray(0, L), (v, u) => ({ s: u / L, v })), lapTime: t };
 }
 
-// Lo que se compara de cada vuelta: punta y mínimo de cada curva (los valles de la velocidad: lo más lento en
-// ±100 m y al menos 40 km/h menos que lo más rápido en ±300 m). s en fracción de la vuelta.
+// What is compared for each lap: top speed and the minimum of each corner (the speed valleys: the slowest point within
+// ±100 m and at least 40 km/h below the fastest within ±300 m). s as a lap fraction.
 function summary(pts, length) {
   const top = Math.max(...pts.map((p) => p.v));
   const valleys = [];
@@ -96,7 +96,7 @@ function chart(id, real, lines) {
   const series = [`<path d="${path(real.pts, (p) => p.s / real.length)}" class="real"/>`].concat(
     lines.map((l) => `<path d="${path(l.pts, (p) => p.s)}" class="${l.cls}"/>`),
   );
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="velocidad en ${id}">${g}${series.join('')}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="speed at ${id}">${g}${series.join('')}</svg>`;
 }
 
 const rows = [],
@@ -105,7 +105,7 @@ for (const id of ids.split(',')) {
   const def = TRACKS.find((t) => t.id === id);
   const real = realLap(def);
   if (!real) {
-    console.log(`${id}: no hay clasificación en el caché`);
+    console.log(`${id}: no qualifying session in the cache`);
     continue;
   }
   const track = loadTrack(id);
@@ -117,28 +117,28 @@ for (const id of ids.split(',')) {
   );
   const ls = summary(limit.pts, real.length);
   const ns = net && summary(net.pts, real.length);
-  // cada curva real con la del juego más cerca (en la vuelta)
+  // each real corner paired with the nearest game corner (along the lap)
   const near = (s, list) => list?.reduce((a, b) => (Math.abs(b.s - s) < Math.abs(a.s - s) ? b : a), list[0]);
   const corners = rs.valleys.map((c) => [c.v, near(c.s, ls.valleys)?.v, near(c.s, ns?.valleys)?.v]);
   const ratio = (k) => corners.reduce((a, c) => a + (c[k] ?? c[0]) / c[0], 0) / corners.length;
   rows.push({ id, real, limit, net, rs, ls, ns, corners, curveLimit: ratio(1), curveNet: ratio(2) });
   console.log(
-    `${id.padEnd(12)} real ${real.lapTime.toFixed(2)} s (${real.driver}), punta ${kmh(rs.top)} · ` +
-      `límite ${limit.lapTime.toFixed(2)} s, punta ${kmh(ls.top)}, curvas ×${ratio(1).toFixed(2)} · ` +
+    `${id.padEnd(12)} real ${real.lapTime.toFixed(2)} s (${real.driver}), top ${kmh(rs.top)} · ` +
+      `limit ${limit.lapTime.toFixed(2)} s, top ${kmh(ls.top)}, corners ×${ratio(1).toFixed(2)} · ` +
       (net
-        ? `red ${net.lapTime.toFixed(2)} s, punta ${kmh(ns.top)}, curvas ×${ratio(2).toFixed(2)}`
-        : 'red: no completó'),
+        ? `network ${net.lapTime.toFixed(2)} s, top ${kmh(ns.top)}, corners ×${ratio(2).toFixed(2)}`
+        : 'network: did not finish'),
   );
   charts.push(`<section><h2>${def.name} <small>pole ${real.driver} ${real.lapTime.toFixed(3)} s</small></h2>${chart(
     id,
     real,
     [{ pts: limit.pts, cls: 'limit' }, ...(net ? [{ pts: net.pts, cls: 'net' }] : [])],
   )}
-    <p class="corners">curvas (km/h, real / límite / red): ${corners.map((c) => c.map((v) => (v ? kmh(v) : '–')).join('/')).join(' · ')}</p></section>`);
+    <p class="corners">corners (km/h, real / limit / network): ${corners.map((c) => c.map((v) => (v ? kmh(v) : '–')).join('/')).join(' · ')}</p></section>`);
 }
 
 const td = (x) => `<td>${x}</td>`;
-const table = `<table><tr><th>Circuito</th><th>Real</th><th>Límite</th><th>Red</th><th>Punta real</th><th>Punta límite</th><th>Punta red</th><th>Curvas límite/real</th><th>Curvas red/real</th></tr>${rows
+const table = `<table><tr><th>Track</th><th>Real</th><th>Limit</th><th>Network</th><th>Real top</th><th>Limit top</th><th>Network top</th><th>Corners limit/real</th><th>Corners network/real</th></tr>${rows
   .map(
     (r) =>
       `<tr>${td(r.id)}${td(r.real.lapTime.toFixed(2))}${td(r.limit.lapTime.toFixed(2))}${td(r.net ? r.net.lapTime.toFixed(2) : '–')}${td(kmh(r.rs.top))}${td(kmh(r.ls.top))}${td(r.ns ? kmh(r.ns.top) : '–')}${td('×' + r.curveLimit.toFixed(2))}${td('×' + r.curveNet.toFixed(2))}</tr>`,
@@ -146,7 +146,7 @@ const table = `<table><tr><th>Circuito</th><th>Real</th><th>Límite</th><th>Red<
   .join('')}</table>`;
 writeFileSync(
   out,
-  `<!doctype html><meta charset="utf-8"><title>Vuelta real vs juego</title>
+  `<!doctype html><meta charset="utf-8"><title>Real lap vs game</title>
 <style>
 body{font:14px system-ui;margin:16px;background:#fff;color:#222}h2{font-size:15px;margin:18px 0 4px}small{color:#777;font-weight:400}
 svg{width:100%;height:auto;background:#fafafa}.grid{stroke:#e4e4e4}.ax{font-size:10px;fill:#888;text-anchor:end}
@@ -154,7 +154,7 @@ path{fill:none;stroke-width:1.4}.real{stroke:#222}.limit{stroke:#2a73d6}.net{str
 table{border-collapse:collapse}td,th{padding:3px 8px;border-bottom:1px solid #eee;text-align:right}.corners{color:#555;font-size:12px;margin:2px 0}
 .key span{display:inline-block;width:18px;height:3px;margin:0 4px 3px 12px;vertical-align:middle}
 </style>
-<h1>Vuelta real vs juego</h1><p class="key"><span style="background:#222"></span>pole real 2025<span style="background:#2a73d6"></span>límite de la física<span style="background:#e8002d"></span>red del juego</p>
+<h1>Real lap vs game</h1><p class="key"><span style="background:#222"></span>real 2025 pole<span style="background:#2a73d6"></span>physics limit<span style="background:#e8002d"></span>game network</p>
 ${table}${charts.join('')}`,
 );
 console.log(`→ ${out}`);

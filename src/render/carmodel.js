@@ -1,8 +1,9 @@
-// Modelo 3D del auto de fórmula, armado en código con piezas redondeadas (secciones unidas entre sí, tubos y ruedas).
-// Coordenadas en metros, con el origen en el piso debajo del centro del auto:
-// x hacia adelante, y hacia la derecha, z hacia arriba.
-// Cada pieza es una serie de secciones (anillos de puntos) unidas por caras; la normal de cada cara se calcula
-// al armar el modelo y apunta hacia afuera, así el renderer sabe qué caras se ven y cómo las ilumina el sol.
+// 3D model of the formula car, built in code from rounded pieces (sections joined together, tubes and wheels).
+// Coordinates in meters, with the origin on the ground below the center of the car:
+// x forward, y to the right, z up.
+// Each piece is a series of sections (rings of points) joined by faces; each face's normal is computed
+// when the model is built and points outward, so the renderer knows which faces are visible and how the sun lights
+// them.
 
 import { rgb } from './renderer.js';
 import { carbonTexture } from './textures.js';
@@ -31,30 +32,30 @@ const COCKPIT = rgb(16, 16, 18);
 const TYRE = rgb(26, 26, 28);
 const SIDEWALL = rgb(52, 52, 56);
 const RIM = rgb(118, 120, 128);
-const RIM_FACE = rgb(90, 94, 102); // cara de la llanta (lleva la textura con los rayos)
-const BARREL = rgb(44, 45, 50); // el interior de la llanta, del lado de adentro (en sombra)
+const RIM_FACE = rgb(90, 94, 102); // rim face (carries the texture with the spokes)
+const BARREL = rgb(44, 45, 50); // the inside of the rim, on the inner side (in shadow)
 const MIRROR = rgb(120, 140, 160);
-const PADDING = rgb(32, 33, 38); // acolchado de la cabina
+const PADDING = rgb(32, 33, 38); // cockpit padding
 const RAIN_LIGHT = rgb(255, 60, 60);
 const VISOR = rgb(20, 22, 28);
-const CARBON_S = 400; // texeles de carbono por metro (cada celda del tejido, 2 cm)
+const CARBON_S = 400; // carbon texels per meter (each weave cell, 2 cm)
 
-export const WHEEL_R = 0.36; // radio de las ruedas (m)
-const HUB_IN = -0.05; // la punta de los brazos de la suspensión, hacia adentro del costado de la goma (m):
-// negativa, queda metida adentro de la llanta, donde va la mangueta
-const WHEEL_SEGMENTS = 32; // lados del polígono de cada rueda
-const SHOULDER_R = 0.05; // radio del hombro de la goma (m): el borde redondeado entre la banda y el flanco
-const SHOULDER_STEPS = 4; // anillos con que se redondea cada hombro
-const TREAD_TILES = 4; // veces que la textura de la banda da la vuelta a la rueda
+export const WHEEL_R = 0.36; // wheel radius (m)
+const HUB_IN = -0.05; // the tip of the suspension arms, inward from the tyre's side (m):
+// negative, it sits inside the rim, where the upright goes
+const WHEEL_SEGMENTS = 32; // sides of each wheel's polygon
+const SHOULDER_R = 0.05; // tyre shoulder radius (m): the rounded edge between the tread and the sidewall
+const SHOULDER_STEPS = 4; // rings used to round each shoulder
+const TREAD_TILES = 4; // times the tread texture wraps around the wheel
 
-// color '#rrggbb', multiplicado por k (k < 1 lo oscurece)
+// color '#rrggbb', multiplied by k (k < 1 darkens it)
 function hex(s, k = 1) {
   const n = parseInt(s.slice(1), 16);
   return rgb((n >> 16) * k, ((n >> 8) & 255) * k, (n & 255) * k);
 }
 
-// sección rectangular con las esquinas redondeadas (radio r, n tramos por esquina), perpendicular al eje x:
-// centrada en yc, de medio ancho hw, entre z0 y z1
+// rectangular section with rounded corners (radius r, n segments per corner), perpendicular to the x axis:
+// centered at yc, with half width hw, between z0 and z1
 function sec(x, yc, hw, z0, z1, r = 0, n = 3) {
   r = Math.min(r, hw, (z1 - z0) / 2);
   const corners = [
@@ -73,8 +74,8 @@ function sec(x, yc, hw, z0, z1, r = 0, n = 3) {
   return pts;
 }
 
-// sección perpendicular al eje x con la forma de un polígono convexo (puntos [y, z]) de esquinas redondeadas:
-// radii[i] es el radio de la esquina i (se achica si no entra en los lados vecinos), n tramos por esquina
+// section perpendicular to the x axis shaped like a convex polygon (points [y, z]) with rounded corners:
+// radii[i] is the radius of corner i (it shrinks if it doesn't fit the neighboring sides), n segments per corner
 function rounded(x, poly, radii, n = 4) {
   const pts = [],
     k = poly.length;
@@ -87,7 +88,7 @@ function rounded(x, poly, radii, n = 4) {
     const ua = [(a[0] - p[0]) / la, (a[1] - p[1]) / la],
       ub = [(b[0] - p[0]) / lb, (b[1] - p[1]) / lb];
     const half = Math.acos(Math.max(-1, Math.min(1, ua[0] * ub[0] + ua[1] * ub[1]))) / 2;
-    // el arco toca los dos lados a una distancia t de la esquina
+    // the arc touches both sides at a distance t from the corner
     const r = Math.min(radii[i], 0.45 * Math.min(la, lb) * Math.tan(half)),
       t = r / Math.tan(half);
     const bis = [ua[0] + ub[0], ua[1] + ub[1]],
@@ -105,7 +106,7 @@ function rounded(x, poly, radii, n = 4) {
   return pts;
 }
 
-// elipse perpendicular al eje x, de radios ry y rz, con n puntos
+// ellipse perpendicular to the x axis, with radii ry and rz, with n points
 function ellipse(x, yc, ry, zc, rz, n = 12) {
   return [...Array(n).keys()].map((i) => {
     const a = (i / n) * Math.PI * 2;
@@ -116,7 +117,7 @@ function ellipse(x, yc, ry, zc, rz, n = 12) {
 const center = (ring) =>
   ring.reduce((c, p) => [c[0] + p[0] / ring.length, c[1] + p[1] / ring.length, c[2] + p[2] / ring.length], [0, 0, 0]);
 
-// normal de un polígono (método de Newell), orientada para alejarse del punto ref
+// normal of a polygon (Newell's method), oriented to point away from the point ref
 function normal(pts, ref) {
   let nx = 0,
     ny = 0,
@@ -144,8 +145,8 @@ function normal(pts, ref) {
   return [nx / len, ny / len, nz / len];
 }
 
-// Pieza que une dos o más secciones (con la misma cantidad de puntos), cerrada con tapas en las puntas.
-// side(i): color del lado i (para las franjas de las gomas)
+// Piece that joins two or more sections (with the same number of points), closed with caps at the ends.
+// side(i): color of side i (for the tyre bands)
 function loft(rings, color, capColor = color, side = null) {
   const k = rings[0].length,
     m = rings.length;
@@ -162,7 +163,7 @@ function loft(rings, color, capColor = color, side = null) {
       ),
     });
   const all = [...Array(k).keys()];
-  // las tapas miran hacia afuera de la pieza: lejos de la sección vecina
+  // the caps face outward from the piece: away from the neighboring section
   face(all, capColor, centers[1]);
   face(
     all.map((i) => (m - 1) * k + i),
@@ -181,8 +182,9 @@ function loft(rings, color, capColor = color, side = null) {
   return { verts, faces };
 }
 
-// tubo que pasa por los puntos de path: de sección cuadrada (medio lado t) o, con sides > 4, redondo (radio t; con
-// un radio por punto, se afina o se ensancha a lo largo). flat < 1 lo aplasta en la dirección "hacia arriba" (sección ovalada, como un perfil)
+// tube through the points of path: square section (half side t) or, with sides > 4, round (radius t; with
+// one radius per point, it narrows or widens along the way). flat < 1 squashes it in the "up" direction (oval section,
+// like an airfoil)
 function tube(path, t, color, sides = 4, flat = 1) {
   const rings = path.map((p, i) => {
     const a = path[Math.max(0, i - 1)],
@@ -194,7 +196,7 @@ function tube(path, t, color, sides = 4, flat = 1) {
     dx /= l;
     dy /= l;
     dz /= l;
-    // dos direcciones perpendiculares al tubo: una horizontal y otra "hacia arriba"
+    // two directions perpendicular to the tube: one horizontal and one "up"
     let ux = -dy,
       uy = dx,
       uz = 0;
@@ -231,20 +233,20 @@ function tube(path, t, color, sides = 4, flat = 1) {
   return loft(rings, color);
 }
 
-// placa fina (el alerón del casco): de una sección en x0 a otra en x1, cada una con su altura de abajo y su espesor
+// thin plate (the helmet's wing): from a section at x0 to another at x1, each with its bottom height and thickness
 const plate = (x0, z0, x1, z1, hw, t, color, yc = 0) =>
   loft([sec(x0, yc, hw, z0, z0 + t), sec(x1, yc, hw, z1, z1 + t)], color);
 
-// Perfil de ala (sección en el plano x-z, a la altura y): del borde de ataque `le` ([x, z], adelante) al de fuga
-// `te`, con espesor máximo t (m) cerca del frente y combado hacia abajo, como las alas invertidas de un F1 que
-// empujan el auto contra el piso. n puntos por cara, más juntos en los bordes.
+// Wing airfoil (section in the x-z plane, at height y): from the leading edge `le` ([x, z], front) to the trailing
+// edge `te`, with maximum thickness t (m) near the front and cambered downward, like the inverted wings of an F1 car
+// that push the car into the ground. n points per face, closer together at the edges.
 function airfoil(y, le, te, t, camber = 0.05, n = 6) {
   const c = Math.hypot(te[0] - le[0], te[1] - le[1]);
   const ux = (te[0] - le[0]) / c,
     uz = (te[1] - le[1]) / c;
   const nx = uz * Math.sign(-ux),
-    nz = -ux * Math.sign(-ux); // perpendicular a la cuerda, hacia arriba
-  // medio espesor de un perfil NACA de 4 cifras (máximo 0,5 en un 30 % de la cuerda), con el borde de fuga cerrado
+    nz = -ux * Math.sign(-ux); // perpendicular to the chord, upward
+  // half thickness of a 4-digit NACA airfoil (maximum 0.5 at 30 % of the chord), with a closed trailing edge
   const half = (u) =>
     (t / 0.2) * (0.2969 * Math.sqrt(u) - 0.126 * u - 0.3516 * u * u + 0.2843 * u ** 3 - 0.1036 * u ** 4);
   const at = (u, side) => {
@@ -261,7 +263,8 @@ function airfoil(y, le, te, t, camber = 0.05, n = 6) {
   ];
 }
 
-// Ala de punta a punta (y de -hw a hw): wing(y) da { le, te, t } en cada estación, para que cambie a lo ancho
+// Wing from tip to tip (y from -hw to hw): wing(y) gives { le, te, t } at each station, so it can change across the
+// span
 function wing(hw, at, color, stations = 7) {
   return loft(
     [...Array(stations).keys()].map((i) => {
@@ -273,7 +276,7 @@ function wing(hw, at, color, stations = 7) {
   );
 }
 
-// recorta un polígono [x, z] a la franja za <= z <= zb
+// clips a polygon [x, z] to the band za <= z <= zb
 function band(pts, za, zb) {
   const cut = (poly, inside, z) =>
     poly.flatMap((p, i) => {
@@ -290,9 +293,9 @@ function band(pts, za, zb) {
   );
 }
 
-// placa lateral de un alerón: de perfil, un polígono convexo de esquinas redondeadas (puntos [x, z]),
-// de espesor t centrada en y. bend ([z, dy] de abajo hacia arriba) la dobla vista de atrás: corre la placa dy hacia
-// afuera (o adentro, si es negativo) a cada altura; entre dos alturas es un tramo plano inclinado
+// wing endplate: in profile, a convex polygon with rounded corners (points [x, z]),
+// of thickness t centered at y. bend ([z, dy] from bottom to top) bends it as seen from behind: shifts the plate dy
+// outward (or inward, if negative) at each height; between two heights it is a flat slanted segment
 function endplate(y, poly, radii, t, color, bend = null) {
   const outline = rounded(0, poly, radii, 3).map(([, x, z]) => [x, z]);
   const piece = (pts, za = 0, da = 0, zb = 1, db = 0) => {
@@ -313,7 +316,7 @@ function endplate(y, poly, radii, t, color, bend = null) {
 const box = (x0, x1, yc, hw, z0, z1, color, r = 0) =>
   loft([sec(x0, yc, hw, z0, z1, r), sec(x1, yc, hw, z0, z1, r)], color);
 
-// cilindro con el eje en y (ruedas y llantas)
+// cylinder with its axis along y (wheels and rims)
 function cylinder(x, z, r, y0, y1, n, color, capColor, side) {
   const ring = (y) =>
     [...Array(n).keys()].map((i) => {
@@ -323,15 +326,15 @@ function cylinder(x, z, r, y0, y1, n, color, capColor, side) {
   return loft([ring(y0), ring(y1)], color, capColor, side);
 }
 
-// Goma: anillos alrededor del eje que siguen el perfil de un costado al otro. La banda es plana y los hombros
-// se redondean en un cuarto de círculo hasta el flanco (las tapas, con el dibujo del flanco).
-// Cada cara de la banda y los hombros lleva sus coordenadas en la textura de la banda: u alrededor de la rueda,
-// v a lo ancho, siguiendo el perfil.
+// Tyre: rings around the axis that follow the profile from one side to the other. The tread is flat and the shoulders
+// are rounded in a quarter circle down to the sidewall (the caps, with the sidewall artwork).
+// Each face of the tread and shoulders carries its coordinates in the tread texture: u around the wheel,
+// v across, following the profile.
 function tyre(x, y, width) {
   const hw = width / 2,
     rs = SHOULDER_R,
     n = WHEEL_SEGMENTS;
-  // perfil: [corrimiento a lo ancho, radio], de un flanco al otro
+  // profile: [offset across, radius], from one sidewall to the other
   const profile = [];
   for (let i = SHOULDER_STEPS; i >= 0; i--) {
     const a = (i / SHOULDER_STEPS) * (Math.PI / 2);
@@ -348,12 +351,12 @@ function tyre(x, y, width) {
     }),
   );
   const part = loft(rings, TYRE, SIDEWALL);
-  // v: largo recorrido sobre el perfil, de 0 a 1
+  // v: distance traveled along the profile, from 0 to 1
   const along = [0];
   for (let i = 1; i < profile.length; i++)
     along.push(along[i - 1] + Math.hypot(profile[i][0] - profile[i - 1][0], profile[i][1] - profile[i - 1][1]));
   const total = along[along.length - 1];
-  // las dos primeras caras son las tapas; después van de a n por cada tramo del perfil
+  // the first two faces are the caps; then come n for each segment of the profile
   part.faces.slice(2).forEach((f, k) => {
     const r = (k / n) | 0,
       i = k % n;
@@ -374,8 +377,8 @@ function tyre(x, y, width) {
   return part;
 }
 
-// Sólido de revolución alrededor del eje de la rueda: section es el corte (un polígono convexo de puntos
-// [corrimiento hacia afuera, radio]) que se gira alrededor del eje. Cada cara mira lejos del centro del corte.
+// Solid of revolution around the wheel axis: section is the cross-section (a convex polygon of points
+// [outward offset, radius]) rotated around the axis. Each face points away from the center of the cross-section.
 function revolve(x, y, s, section, n, color) {
   const verts = [],
     faces = [],
@@ -405,8 +408,8 @@ function revolve(x, y, s, section, n, color) {
   return { verts, faces };
 }
 
-// Llanta, del lado de afuera: un aro de metal que sobresale de la goma, la cara un poco hundida adentro del aro
-// (con los rayos dibujados en la textura) y la tuerca central, del color de los detalles del equipo.
+// Rim, on the outer side: a metal lip that sticks out of the tyre, the face slightly recessed inside the lip
+// (with the spokes drawn in the texture) and the center nut, in the team's detail color.
 function rim(x, out, s, nut) {
   const lip = revolve(
     x,
@@ -428,9 +431,10 @@ function rim(x, out, s, nut) {
   return [lip, face, hub];
 }
 
-// Lado de adentro de la rueda: el interior de la llanta, en sombra, y en el medio el tambor de carbono (chato)
-// que tapa el freno, con la toma de aire que le lleva aire fresco (adelante, a la altura del eje; atrás,
-// más chica y abajo). El tambor y la toma van montados en la mangueta: doblan con la rueda pero no giran (fixed).
+// Inner side of the wheel: the inside of the rim, in shadow, and in the middle the (flat) carbon drum
+// that covers the brake, with the duct that brings it fresh air (front, at axle height; rear,
+// smaller and lower). The drum and the duct are mounted on the upright: they steer with the wheel but don't spin
+// (fixed).
 function inner(x, inn, s, front) {
   const barrel = cylinder(x, WHEEL_R, 0.229, inn, inn - s * 0.004, 32, BARREL, BARREL);
   const ring = (r, dy) =>
@@ -439,7 +443,7 @@ function inner(x, inn, s, front) {
       return [x + r * Math.cos(t), inn - s * dy, WHEEL_R + r * Math.sin(t)];
     });
   const drum = loft([ring(0.165, -0.01), ring(0.165, 0.025), ring(0.155, 0.04), ring(0.12, 0.05)], CARBON);
-  // la toma: un caño ovalado que sale del frente del tambor y mira hacia adelante, con la boca oscura
+  // the duct: an oval pipe coming out of the front of the drum and facing forward, with a dark mouth
   const [dx, dz, ry, rz] = front ? [0.21, 0.0, 0.018, 0.04] : [0.19, -0.08, 0.015, 0.03];
   const duct = loft(
     [
@@ -454,9 +458,9 @@ function inner(x, inn, s, front) {
   return [barrel, drum, duct];
 }
 
-// rueda: goma y llanta, de los dos lados. Guarda su centro para girarla y, las de adelante, dónde está el eje
-// sobre el que doblan (pivot: corrimiento en y desde el centro hasta la punta de los brazos de la suspensión, así
-// los brazos siguen unidos al tambor cuando la rueda dobla)
+// wheel: tyre and rim, on both sides. Stores its center to spin it and, for the front ones, where the axis
+// they steer around is (pivot: offset in y from the center to the tip of the suspension arms, so
+// the arms stay attached to the drum when the wheel steers)
 function wheel(x, s, yc, width, front, nut) {
   const y = s * yc,
     out = s * (yc + width / 2),
@@ -467,37 +471,37 @@ function wheel(x, s, yc, width, front, nut) {
   return parts;
 }
 
-// Casco: cortes horizontales apilados de arriba hacia abajo, con la visera oscura que lo envuelve por delante y un
-// alerón chico arriba, atrás. Todo gira junto alrededor del cuello (head: el pivote) para que el piloto mire hacia
-// donde va. Se oculta en la vista de cabina, porque ahí está la cámara.
-// el piloto va sentado bien abajo: la parte de arriba del casco asoma apenas por encima del halo que lo protege
+// Helmet: horizontal slices stacked from top to bottom, with the dark visor wrapping around the front and a
+// small wing on top, at the back. Everything turns together around the neck (head: the pivot) so the driver looks
+// where he is going. It is hidden in the cockpit view, because the camera is there.
+// the driver sits very low: the top of the helmet barely shows above the halo that protects him
 const HELMET = { x: -0.08, z: 0.69, rx: 0.15, ry: 0.12, rz: 0.13 };
-// Un casco de verdad no es una pelota: abajo no se cierra (se angosta menos que arriba y termina en una base
-// plana, donde entra el cuello) y adelante, debajo de la visera, la mentonera baja casi recta, siguiendo la misma
-// superficie (sin escalón), en vez de curvarse hacia adentro como la nuca.
-// Punto de la superficie a la altura w (de -1 abajo a 1 arriba), en el ángulo phi alrededor del eje vertical
-// (0 = adelante); out > 1 lo saca un poco hacia afuera (para la visera).
+// A real helmet is not a ball: at the bottom it doesn't close (it narrows less than at the top and ends in a flat
+// base, where the neck goes in) and at the front, below the visor, the chin guard drops almost straight, following
+// the same surface (no step), instead of curving inward like the back of the head.
+// Point on the surface at height w (from -1 at the bottom to 1 at the top), at angle phi around the vertical axis
+// (0 = front); out > 1 pushes it slightly outward (for the visor).
 function helmetAt(phi, w, out = 1) {
   const { x: hx, z: hz, rx, ry, rz } = HELMET;
-  const chin = Math.max(0, Math.cos(phi)) ** 2; // 1 adelante, 0 a los costados y atrás
+  const chin = Math.max(0, Math.cos(phi)) ** 2; // 1 at the front, 0 at the sides and back
   const k = Math.sqrt(Math.max(0, 1 - (w < 0 ? (w / (1.25 + 0.9 * chin)) ** 2 : w * w))) * out;
   return [hx + rx * k * Math.cos(phi), ry * k * Math.sin(phi), hz + rz * w];
 }
-// Volante: se arma de frente (la cara mira hacia -x, al piloto) y se inclina sobre su columna, que baja hacia
-// adelante STEERING.tilt rad. Todas sus piezas llevan `column` (el pivote y el eje), así el render las gira con la
-// dirección. La pantalla (slot 6) muestra la marcha y las luces de cambio: la dibuja cockpit.js en cada cuadro.
-export const STEERING = { x: 0.3, z: 0.6, tilt: 0.35, turn: 1 }; // turn: rad que gira con el volante a fondo
-const SCREEN_TEX = { size: 1, screen: true }; // la textura la pone el juego (m.screen)
+// Steering wheel: built facing forward (the face looks toward -x, at the driver) and tilted on its column, which
+// drops forward by STEERING.tilt rad. All its pieces carry `column` (the pivot and the axis), so the renderer turns
+// them with the steering. The display (slot 6) shows the gear and the shift lights: cockpit.js draws it every frame.
+export const STEERING = { x: 0.3, z: 0.6, tilt: 0.35, turn: 1 }; // turn: rad it turns with the wheel at full lock
+const SCREEN_TEX = { size: 1, screen: true }; // the game supplies the texture (m.screen)
 const GRIP = rgb(20, 20, 22),
   BUTTONS = ['#e23b3b', '#2c9be0', '#f2c230', '#41c46a'];
-// suit: color del buzo (los antebrazos); glove: el de los guantes
+// suit: color of the race suit (the forearms); glove: the gloves' color
 function steeringParts(suit, glove) {
   const { x: px, z: pz, tilt } = STEERING,
     c = Math.cos(tilt),
     s = Math.sin(tilt);
-  // el eje apunta del volante hacia el piloto: así, doblando a la derecha (giro +), la parte de arriba va a la derecha
+  // the axis points from the steering wheel toward the driver: so, turning right (+ turn), the top goes right
   const column = { x: px, y: 0, z: pz, ax: -c, ay: 0, az: s };
-  // de la pieza armada de frente (x hacia adelante, z hacia arriba) a su lugar, inclinada sobre la columna
+  // from the piece built facing forward (x forward, z up) to its place, tilted on the column
   const place = (part) => {
     const tr = ([x, y, z]) => [px + x * c + z * s, y, pz - x * s + z * c];
     const rot = ([x, y, z]) => [x * c + z * s, y, -x * s + z * c];
@@ -506,9 +510,9 @@ function steeringParts(suit, glove) {
     return { ...part, column };
   };
   const parts = [
-    // cuerpo de carbono, más angosto abajo, y las empuñaduras de goma a los costados
+    // carbon body, narrower at the bottom, and the rubber grips at the sides
     loft([sec(-0.015, 0, 0.1, -0.05, 0.045, 0.02), sec(0.015, 0, 0.095, -0.045, 0.04, 0.02)], CARBON),
-    // (redondas y finas, un poco curvas hacia afuera abajo, como las de verdad): anillos horizontales apilados
+    // (round and thin, slightly curved outward at the bottom, like the real ones): stacked horizontal rings
     ...[-1, 1].map((k) =>
       loft(
         [
@@ -525,14 +529,14 @@ function steeringParts(suit, glove) {
         GRIP,
       ),
     ),
-    // levas de cambio, detrás de las empuñaduras (side: 0 la izquierda, que baja; 1 la derecha, que sube): las tira
-    // el piloto al cambiar (pull: cuánto se mueve la pieza con ese tirón)
+    // shift paddles, behind the grips (side: 0 the left one, downshift; 1 the right one, upshift): the driver
+    // pulls them when shifting (pull: how much the piece moves with that pull)
     ...[-1, 1].map((k) => ({
       ...box(0.024, 0.03, k * 0.1, 0.035, -0.02, 0.035, CARBON, 0.005),
       side: (k + 1) / 2,
       pull: 1,
     })),
-    // botones de colores a los costados de la pantalla
+    // colored buttons at the sides of the display
     ...BUTTONS.map((b, i) =>
       box(
         -0.019,
@@ -546,7 +550,7 @@ function steeringParts(suit, glove) {
       ),
     ),
   ];
-  // la pantalla: una placa oscura sobre la cara; su tapa de adelante (la que mira al piloto) lleva la textura
+  // the display: a dark plate on the face; its front cap (the one facing the driver) carries the texture
   const screen = box(-0.019, -0.015, 0, 0.05, -0.022, 0.034, COCKPIT, 0.004);
   const face = screen.faces[0];
   face.tex = SCREEN_TEX;
@@ -556,13 +560,13 @@ function steeringParts(suit, glove) {
     return [(y + 0.05) / 0.1, (0.034 - z) / 0.056];
   });
   parts.push(screen);
-  // las manos del piloto, agarradas de las empuñaduras: giran con el volante, así se ve cuánto dobla cada uno.
-  // Mate, como la tela. El dorso es un óvalo apoyado del lado de afuera de la empuñadura; los cuatro dedos la rodean
-  // por delante (del índice, arriba, al meñique, más corto) y el pulgar se apoya sobre la cara del volante, junto a
-  // los botones. Después, el puño del guante, con una tira del color del buzo, que sigue en el antebrazo.
-  // El índice y el mayor siguen hasta apoyarse detrás de la leva y al cambiar la tiran junto con ella; el resto
-  // de la mano acompaña un poco (pull)
-  const GY = 0.126; // centro de la empuñadura, a cada lado
+  // the driver's hands, holding the grips: they turn with the steering wheel, so you can see how much each one steers.
+  // Matte, like fabric. The back of the hand is an oval resting on the outer side of the grip; the four fingers wrap
+  // around it in front (from the index, on top, to the shorter little finger) and the thumb rests on the face of the
+  // wheel, next to the buttons. Then the glove cuff, with a strip in the suit color, which continues into the forearm.
+  // The index and middle fingers reach behind the paddle and pull it along when shifting; the rest
+  // of the hand follows a little (pull)
+  const GY = 0.126; // center of the grip, on each side
   const blob = (cx, cy, cz, rx, ry, rz) =>
     loft(
       [...Array(9).keys()].map((i) => {
@@ -575,7 +579,7 @@ function steeringParts(suit, glove) {
       }),
       glove,
     );
-  // arco alrededor de la empuñadura a la altura z, de un ángulo a otro (0: adelante; +: hacia afuera)
+  // arc around the grip at height z, from one angle to another (0: forward; +: outward)
   const around = (k, z, r, a0, a1) =>
     [...Array(5).keys()].map((i) => {
       const a = a0 + ((a1 - a0) * i) / 4;
@@ -584,8 +588,8 @@ function steeringParts(suit, glove) {
   for (const k of [-1, 1]) {
     parts.push(
       ...[
-        [blob(-0.012, k * 0.14, -0.016, 0.027, 0.023, 0.05), 0.4], // el dorso y la palma
-        // índice y mayor: rodean la empuñadura y se apoyan detrás de la leva
+        [blob(-0.012, k * 0.14, -0.016, 0.027, 0.023, 0.05), 0.4], // the back of the hand and the palm
+        // index and middle fingers: wrap around the grip and rest behind the paddle
         ...[
           [0.016, 0.0105],
           [-0.004, 0.0105],
@@ -593,12 +597,12 @@ function steeringParts(suit, glove) {
           tube([...around(k, z, 0.026, 2.1, 0.5), [0.037, k * 0.118, z], [0.038, k * 0.104, z]], r, glove, 6),
           1,
         ]),
-        // anular y meñique: rodean la empuñadura por debajo de la leva
+        // ring and little fingers: wrap around the grip below the paddle
         ...[
           [-0.028, 0.01, -1.25],
           [-0.049, 0.009, -1.05],
         ].map(([z, r, end]) => [tube(around(k, z, 0.026, 2.1, end), r, glove, 6), 0.6]),
-        // el pulgar: ancho en la base, metida en la palma, se afina hasta la punta redondeada, apoyada sobre la cara
+        // the thumb: wide at the base, tucked into the palm, tapers to the rounded tip, resting on the face
         [
           tube(
             [
@@ -626,7 +630,7 @@ function steeringParts(suit, glove) {
             8,
           ),
           0.2,
-        ], // el puño del guante
+        ], // the glove cuff
         [
           tube(
             [
@@ -638,14 +642,15 @@ function steeringParts(suit, glove) {
             8,
           ),
           0.2,
-        ], // la tira del puño
+        ], // the cuff strip
       ].map(([p, pull]) => ({ ...p, suit: true, side: (k + 1) / 2, pull })),
     );
   }
   const placed = parts.map(place);
-  // los brazos: el antebrazo va de la muñeca (que gira entera con el volante) al codo (que queda quieto, al costado
-  // del cuerpo); en el medio gira de a poco (follow: cuánto sigue al volante cada vértice), así se dobla en vez de
-  // salirse de la cabina. El brazo, del hombro al codo, no se mueve (y no se ve desde la cabina, como los hombros)
+  // the arms: the forearm goes from the wrist (which turns fully with the steering wheel) to the elbow (which stays
+  // still, at the side of the body); in between it turns gradually (follow: how much each vertex follows the wheel), so
+  // it bends instead of leaving the cockpit. The upper arm, shoulder to elbow, doesn't move (and isn't seen from the
+  // cockpit, like the shoulders)
   for (const k of [-1, 1]) {
     const [wx, wy, wz] = [-0.065, k * 0.15, -0.068],
       wrist = [px + wx * c + wz * s, wy, pz - wx * s + wz * c];
@@ -663,19 +668,20 @@ const HELMET_LEVELS = [0.99, 0.94, 0.85, 0.72, 0.56, 0.38, 0.18, 0, -0.15, -0.3,
 function helmetParts(color) {
   const { x: hx, z: hz, rz } = HELMET;
   const ring = (w, out) => [...Array(24).keys()].map((i) => helmetAt((i / 24) * Math.PI * 2, w, out));
-  // el último corte, un poco más chico, redondea el borde de la base
+  // the last slice, a bit smaller, rounds the edge of the base
   const rings = [...HELMET_LEVELS.map((w) => ring(w, 1)), ring(-0.79, 0.9)];
   const shell = loft(rings, color);
-  // visera: una banda que sigue la superficie del casco de -78° a 78° alrededor del frente, apenas por fuera.
-  // Es espejada, como los vidrios de los retrovisores (ver skin)
+  // visor: a band that follows the helmet surface from -78° to 78° around the front, just outside it.
+  // It is mirrored, like the glass of the rear-view mirrors (see skin)
   const at = (phi, z, out) => helmetAt(phi, (z - hz) / rz, out);
   const visor = [];
   for (let i = 0; i <= 12; i++) {
     const phi = (-78 + i * 13) * (Math.PI / 180);
-    // un poco más alta en el centro, como la abertura de los cascos de verdad
+    // a bit taller in the center, like the opening of real helmets
     const z0 = hz - 0.028 - 0.006 * Math.cos(phi),
       z1 = hz + 0.052 + 0.01 * Math.cos(phi * 1.3);
-    // con un punto en el medio de la cara de afuera, que sigue la curva del casco (si no, el casco la atraviesa)
+    // with a point in the middle of the outer face, which follows the helmet's curve (otherwise the helmet pokes
+    // through it)
     visor.push([
       at(phi, z0, 0.97),
       at(phi, z0, 1.04),
@@ -684,19 +690,19 @@ function helmetParts(color) {
       at(phi, z1, 0.97),
     ]);
   }
-  // alerón: una plaquita sobre la parte de atrás, apenas inclinada
+  // wing: a small plate on the back, slightly tilted
   const spoiler = plate(-0.17, hz + 0.12, -0.225, hz + 0.105, 0.065, 0.012, color);
-  const pivot = { x: hx, y: 0, z: hz - rz }; // el cuello: ahí gira y se inclina
+  const pivot = { x: hx, y: 0, z: hz - rz }; // the neck: it turns and tilts there
   return [shell, loft(visor, VISOR), spoiler].map((p) => ({ ...p, tag: 'helmet', head: pivot }));
 }
 
-// Texturas: cada cara se proyecta sobre el plano al que más mira (desde arriba, de costado o de frente)
-// y de ahí salen sus coordenadas en la textura (u, v, en texeles), una por vértice.
-// Las caras del color de la carrocería llevan la decoración; las de carbono, el tejido; los flancos de las gomas,
-// su dibujo (centrado en la rueda, así gira con ella); la banda y los hombros, el caucho gastado (sus coordenadas
-// vienen de tyre()). El resto queda de un solo color.
-// La cara de la llanta lleva sus rayos, centrados en la rueda como el flanco.
-// slot: qué textura es, para el renderer de WebGL (1 decoración, 2 carbono, 3 flanco, 4 banda, 5 llanta)
+// Textures: each face is projected onto the plane it faces most (from above, from the side or from the front)
+// and that gives its texture coordinates (u, v, in texels), one per vertex.
+// Faces in the bodywork color carry the livery; carbon ones, the weave; the tyre sidewalls,
+// their artwork (centered on the wheel, so it spins with it); the tread and shoulders, the worn rubber (their
+// coordinates come from tyre()). The rest stays a single color.
+// The rim face carries its spokes, centered on the wheel like the sidewall.
+// slot: which texture it is, for the WebGL renderer (1 livery, 2 carbon, 3 sidewall, 4 tread, 5 rim)
 let carbon = null,
   sidewall = null,
   tread = null,
@@ -717,8 +723,8 @@ function skin(parts, body, livery, sharp = 1) {
         side = !top && ay >= ax;
       let uv = null;
       if (f.color === body) {
-        // lo que mira hacia abajo (los bajos de los pontones, que se ven de costado) sigue el dibujo del costado,
-        // no el de arriba
+        // whatever faces down (the undersides of the sidepods, seen from the side) follows the side artwork,
+        // not the top one
         if (top && f.n[2] > 0)
           uv = pts.map(([x, y]) => [(x + HALF_L) * LIVERY_S * sharp, (TOP + (y + HALF_W) * LIVERY_S) * sharp]);
         else if (side || top) {
@@ -744,9 +750,9 @@ function skin(parts, body, livery, sharp = 1) {
         Object.assign(f, { tex: tread, slot: 4, dens: TREAD_SIZE * 2.5 });
       }
       if (uv) f.uv = uv;
-      // cuánto brilla y refleja: pintura y casco con barniz, carbono un poco, gomas, cockpit y buzo nada
-      // (el vidrio de los espejos, 2: refleja de frente también, como un espejo; la visera, 3: igual, pero un reflejo
-      // borroso, sin horizonte marcado)
+      // how much it shines and reflects: paint and helmet with clear coat, carbon a little, tyres, cockpit and suit
+      // none (the mirror glass, 2: also reflects head-on, like a mirror; the visor, 3: the same, but a blurry
+      // reflection, with no sharp horizon)
       f.gloss =
         f.color === MIRROR
           ? 2
@@ -764,14 +770,14 @@ function skin(parts, body, livery, sharp = 1) {
   return parts;
 }
 
-// Arma el auto con el color de la carrocería, el del casco y el de los detalles de la decoración (en '#rrggbb')
-// y su número.
-// Devuelve una lista de piezas { verts: [[x,y,z]...], faces: [{ idx, color, n, gloss, tex?, uv?, dens? }], wheel?, head?, tag? }.
-// cámara de arriba (la "T"): como en la F1, negra en el primer auto de cada equipo y amarilla en el segundo
+// Builds the car with the bodywork color, the helmet color and the livery detail color (as '#rrggbb')
+// and its number.
+// Returns a list of pieces { verts: [[x,y,z]...], faces: [{ idx, color, n, gloss, tex?, uv?, dens? }], wheel?, head?,
+// tag? }. roof camera (the "T"): as in F1, black on each team's first car and yellow on the second
 export const TCAM = ['#161616', '#f2e600'];
 
-// sharp: decoración con más resolución (para el auto propio, que desde la cabina se ve de muy cerca); design: la
-// pintura y los sponsors del equipo (teamliveries.js; si no, una franja del color accent)
+// sharp: higher-resolution livery (for the player's own car, which is seen very close up from the cockpit); design:
+// the team's paint and sponsors (teamliveries.js; otherwise, a band in the accent color)
 export function carModel(
   color = '#d8261c',
   helmet = '#ffd400',
@@ -789,12 +795,12 @@ export function carModel(
     fn(-1);
   };
 
-  // piso y difusor. Visto de arriba el piso no es un rectángulo: nace angosto detrás de las ruedas de adelante con
-  // el borde redondeado, se abre hasta su ancho máximo al costado de los pontones y antes de las ruedas de atrás se
-  // mete hacia adentro en curva, para dejarles lugar; atrás sigue el difusor, entre las dos ruedas
-  // (cada estación: x y medio ancho)
-  // (adelante nace pegado a los costados de la trompa y se abre en una curva cóncava, cada vez más rápido, hasta
-  // su ancho de siempre; las aletas van más afuera, sobre su propia base)
+  // floor and diffuser. Seen from above the floor is not a rectangle: it starts narrow behind the front wheels with
+  // a rounded edge, opens up to its maximum width beside the sidepods and, before the rear wheels, it
+  // curves inward to make room for them; at the back comes the diffuser, between the two wheels
+  // (each station: x and half width)
+  // (at the front it starts flush with the sides of the nose and opens in a concave curve, faster and faster, up to
+  // its usual width; the fins go further out, on their own base)
   const FLOOR = [
     [1.42, 0.15],
     [1.32, 0.18],
@@ -819,11 +825,11 @@ export function carModel(
       CARBON,
     ),
   );
-  // aletas detrás de las ruedas de adelante, que ordenan el aire sucio que sale de la rueda y lo mandan por fuera
-  // de los pontones. Vistas de arriba van en diagonal: la grande nace casi en el borde de afuera de la rueda y se
-  // cierra un poco hacia atrás, por fuera del piso, parada sobre su propia base (una plancha angosta, aparte del
-  // piso); las dos chicas, más bajas y más cerradas, van paradas sobre el piso.
-  // fin(s, adelante [x, y], atrás [x, y], perfil [u, z] con u de 0 (adelante) a 1 (atrás), radios)
+  // fins behind the front wheels, which tidy up the dirty air coming off the wheel and send it around the outside
+  // of the sidepods. Seen from above they run diagonally: the big one starts almost at the outer edge of the wheel and
+  // closes in a bit toward the back, outside the floor, standing on its own base (a narrow plate, separate from the
+  // floor); the two small ones, lower and more closed, stand on the floor.
+  // fin(s, front [x, y], back [x, y], profile [u, z] with u from 0 (front) to 1 (back), radii)
   const fin = (s, [xa, ya], [xb, yb], profile, radii, t = 0.012) => {
     const len = Math.hypot(xb - xa, yb - ya),
       nx = -(yb - ya) / len,
@@ -837,13 +843,13 @@ export function carModel(
       ).map(([, u, z]) => [xa + (xb - xa) * (u / len) + nx * o, s * (ya + (yb - ya) * (u / len) + ny * o), z]);
     return loft([side(-t / 2), side(t / 2)], CARBON);
   };
-  // base de una aleta: una plancha angosta (medio ancho w) a lo largo de la aleta, con las puntas redondeadas
+  // base of a fin: a narrow plate (half width w) along the fin, with rounded ends
   const foot = (s, [xa, ya], [xb, yb], w) => {
     const len = Math.hypot(xb - xa, yb - ya),
       ux = (xb - xa) / len,
       uy = (yb - ya) / len;
     const ring = (u) => {
-      const k = Math.min(1, Math.sqrt(Math.max(0, 1 - ((2 * u) / len - 1) ** 8))) * w; // se angosta en las puntas
+      const k = Math.min(1, Math.sqrt(Math.max(0, 1 - ((2 * u) / len - 1) ** 8))) * w; // narrows at the ends
       const cx = xa + ux * u,
         cy = ya + uy * u;
       return [
@@ -860,11 +866,11 @@ export function carModel(
   };
   both((s) => {
     add(foot(s, [1.07, 0.935], [0.69, 0.88], 0.04));
-    // la base se une al piso: atrás, una plancha que se abre desde el borde del piso hasta la aleta, y adelante
-    // una lámina fina que cruza el hueco. La plancha de atrás no es un bloque: vista de arriba nace en punta junto a
-    // la base y se abre hacia atrás en curva hasta meterse en el piso, y de costado su techo baja en rampa desde la
-    // altura del piso hasta la de la base, así se lee como una sola pieza con los dos.
-    // (cada corte: x, borde de adentro, ya metido en el piso, y de afuera, sobre la base de la aleta)
+    // the base joins the floor: at the back, a plate that opens from the edge of the floor to the fin, and at the front
+    // a thin sheet that crosses the gap. The back plate is not a block: seen from above it starts as a point next to
+    // the base and opens backward in a curve until it merges into the floor, and from the side its top ramps down from
+    // the floor height to the base height, so it reads as one piece with both.
+    // (each slice: x, inner edge, already inside the floor, and outer edge, on the fin's base)
     add(
       loft(
         [
@@ -940,16 +946,16 @@ export function carModel(
   });
   add(loft([sec(-1.95, 0, 0.48, 0.03, 0.1, 0.03), sec(-2.55, 0, 0.46, 0.1, 0.35, 0.05)], CARBON));
 
-  // monocasco y trompa: una sola pieza que se angosta y baja hacia adelante. Donde va el piloto queda baja: la
-  // cabina es un hueco entre dos paredes (abajo), con el tablero adelante, así el volante queda adentro
+  // monocoque and nose: a single piece that narrows and drops toward the front. Where the driver sits it is low: the
+  // cockpit is a gap between two walls (below), with the dashboard in front, so the steering wheel sits inside
   add(
     loft(
       [
         sec(-0.45, 0, 0.42, 0.1, 0.5, 0.1),
         sec(0.42, 0, 0.37, 0.12, 0.5, 0.1),
         sec(0.5, 0, 0.36, 0.12, 0.64, 0.13),
-        // de perfil el lomo es una sola curva convexa suave, de la cabina a la punta: casi plano atrás y cayendo de a
-        // poco más rápido hacia adelante (sin quiebre a la altura de las ruedas ni tramo recto)
+        // in profile the spine is a single smooth convex curve, from the cockpit to the tip: almost flat at the back
+        // and dropping gradually faster toward the front (no break at the wheels and no straight section)
         sec(1.15, 0, 0.26, 0.16, 0.635, 0.11),
         sec(1.45, 0, 0.23, 0.16, 0.606, 0.1),
         sec(1.7, 0, 0.2, 0.16, 0.557, 0.09),
@@ -957,7 +963,7 @@ export function carModel(
         sec(2.1, 0, 0.16, 0.145, 0.448, 0.075),
         sec(2.4, 0, 0.135, 0.13, 0.345, 0.06),
         sec(2.62, 0, 0.12, 0.12, 0.259, 0.05),
-        // la punta: ancha hasta el final, como un hocico, y redondeada hasta el borde de ataque del alerón
+        // the tip: wide to the end, like a snout, and rounded up to the leading edge of the wing
         sec(2.74, 0, 0.11, 0.112, 0.209, 0.045),
         sec(2.82, 0, 0.097, 0.108, 0.174, 0.035),
         sec(2.87, 0, 0.078, 0.108, 0.151, 0.022),
@@ -966,9 +972,9 @@ export function carModel(
       body,
     ),
   );
-  // las paredes de la cabina y adentro el piso y el tablero, oscuros. Por fuera, el costado de la cabina es el
-  // techo de los pontones (que a la altura de la cabina arranca del borde de la abertura); la pared es sólo la cara
-  // de adentro, una lámina fina que queda tapada por el pontón
+  // the cockpit walls and, inside, the floor and dashboard, dark. On the outside, the side of the cockpit is the
+  // roof of the sidepods (which, alongside the cockpit, starts at the edge of the opening); the wall is only the inner
+  // face, a thin sheet hidden by the sidepod
   const wall = (x, top, s) =>
     rounded(
       x,
@@ -983,29 +989,30 @@ export function carModel(
   both((s) => add(loft([wall(-0.45, 0.7, s), wall(0.46, 0.645, s)], body)));
   add(box(-0.45, 0.46, 0, 0.245, 0.45, 0.52, COCKPIT, 0.02));
   add(loft([sec(0.4, 0, 0.245, 0.5, 0.6, 0.02), sec(0.47, 0, 0.245, 0.5, 0.645, 0.02)], COCKPIT));
-  // pontones a los costados: toma de aire adelante y se van cerrando hacia atrás, hasta morir contra la cubierta
-  // del motor (la "botella de Coca-Cola"). No son tubos sueltos: el lado de adentro queda metido en el monocasco
-  // y el techo es una rampa que baja desde el hombro del chasis hacia afuera, así la carrocería sigue de corrido
-  // hasta el borde del pontón. A la altura de la cabina el techo arranca del borde de la abertura: es el costado
-  // de la cabina. Abajo, el costado se mete hacia adentro (el undercut) y deja ver el piso.
-  // Cada estación: x, borde de adentro (in) y de afuera (out), altura del techo adentro y afuera, piso y undercut.
+  // sidepods at the sides: air intake in front, closing in toward the back until they die against the engine
+  // cover (the "Coke bottle"). They are not loose tubes: the inner side sits inside the monocoque
+  // and the roof is a ramp that drops from the chassis shoulder outward, so the bodywork flows continuously
+  // to the edge of the sidepod. Alongside the cockpit the roof starts at the edge of the opening: it is the side
+  // of the cockpit. Below, the side tucks inward (the undercut) and reveals the floor.
+  // Each station: x, inner (in) and outer (out) edge, roof height inside and outside, floor and undercut.
   const POD = [
-    // la boca nace del costado del chasis: su borde de adentro queda metido en el monocasco
+    // the mouth starts from the side of the chassis: its inner edge sits inside the monocoque
     { x: 0.58, in: 0.24, out: 0.63, top: 0.56, edge: 0.52, bot: 0.16, cut: 0.12 },
     { x: 0.46, in: 0.23, out: 0.66, top: 0.6, edge: 0.54, bot: 0.13, cut: 0.14 },
     { x: 0.3, in: 0.25, out: 0.67, top: 0.69, edge: 0.55, bot: 0.12, cut: 0.16 },
-    // detrás de la cabina se cierran en una curva convexa (vistos de arriba: aguantan el ancho y se cierran cada
-    // vez más rápido) y el techo cae hacia el piso, así llegan finos y bajos a las ruedas de atrás
+    // behind the cockpit they close in a convex curve (seen from above: they hold their width and close
+    // faster and faster) and the roof drops toward the floor, so they reach the rear wheels thin and low
     { x: -0.3, in: 0.25, out: 0.65, top: 0.7, edge: 0.49, bot: 0.12, cut: 0.15 },
     { x: -0.75, in: 0.23, out: 0.6, top: 0.6, edge: 0.4, bot: 0.12, cut: 0.12 },
     { x: -1.15, in: 0.2, out: 0.52, top: 0.47, edge: 0.3, bot: 0.12, cut: 0.08 },
     { x: -1.5, in: 0.15, out: 0.42, top: 0.36, edge: 0.22, bot: 0.12, cut: 0.05 },
     { x: -1.8, in: 0.1, out: 0.31, top: 0.3, edge: 0.19, bot: 0.12, cut: 0.03 },
-    // la cola se pega a la base del cubremotor: el techo arranca a la altura de su hombro y se afina con él
+    // the tail sticks to the base of the engine cover: the roof starts at its shoulder height and tapers with it
     { x: -2.05, in: 0.05, out: 0.15, top: 0.29, edge: 0.21, bot: 0.13, cut: 0.01 },
     { x: -2.3, in: 0.03, out: 0.075, top: 0.27, edge: 0.23, bot: 0.15, cut: 0.005 },
   ];
-  // altura del techo del pontón (sin los redondeos) en x, a la distancia y del centro, y cuánto cae hacia afuera
+  // height of the sidepod roof (without the roundings) at x, at distance y from the center, and how much it drops
+  // outward
   const podRoof = (x, y) => {
     let i = POD.findIndex((st) => st.x <= x);
     if (i <= 0) i = i < 0 ? POD.length - 1 : 1;
@@ -1016,15 +1023,15 @@ export function carModel(
     const slope = (lerp('top') - lerp('edge')) / (lerp('out') - lerp('in'));
     return { z: lerp('top') - (y - lerp('in')) * slope, slope };
   };
-  // cubierta del motor y toma de aire, de una sola forma: cada corte es una carpa angosta. Abajo queda metida en
-  // los pontones y el flanco arranca justo donde termina el techo de cada pontón (el hombro, casi sin redondear),
-  // así la carrocería sube de corrido desde el borde del pontón hasta la cresta. Detrás de la cabeza la cresta es
-  // la toma de aire; hacia atrás baja de a poco y se afina en la aleta, hasta morir antes del alerón. Adelante,
-  // los hombros suben a cada lado de la cabeza hasta donde se apoya el halo y de ahí bajan hacia atrás.
-  // Cada estación: x, medio ancho y altura de abajo, del hombro (donde arranca el flanco) y de la cresta.
-  // Con roof, el flanco cae recto desde el hombro hasta el techo del pontón y ahí dobla en ángulo recto con un
-  // radio chico (FILLET), en una pestaña que sigue el techo del pontón y se mete en él: la arista queda marcada
-  // pero la luz pasa de una cara a la otra de a poco.
+  // engine cover and air intake, in a single shape: each slice is a narrow tent. At the bottom it sits inside
+  // the sidepods and the flank starts right where each sidepod's roof ends (the shoulder, almost unrounded),
+  // so the bodywork rises continuously from the edge of the sidepod to the crest. Behind the head the crest is
+  // the air intake; toward the back it drops gradually and thins into the fin, dying out before the wing. At the front,
+  // the shoulders rise on each side of the head up to where the halo rests and from there they drop toward the back.
+  // Each station: x, half width and bottom height, shoulder height (where the flank starts) and crest height.
+  // With roof, the flank drops straight from the shoulder to the sidepod roof and there it bends at a right angle with
+  // a small radius (FILLET), into a flange that follows the sidepod roof and sinks into it: the edge stays sharp
+  // but the light passes gradually from one face to the other.
   const FILLET = 0.018;
   const tent = ({ x, bw, bz, sw, sz, tw, tz }, d = 0, roof = false) => {
     if (!roof) {
@@ -1061,7 +1068,7 @@ export function carModel(
   add(
     loft(
       [
-        // el frente, detrás del apoyacabeza: la cresta queda adentro de la toma y los hombros, donde se apoya el halo
+        // the front, behind the headrest: the crest sits inside the intake, and the shoulders, where the halo rests
         { x: -0.42, bw: 0.4, bz: 0.1, sw: 0.32, sz: 0.775, tw: 0.065, tz: 0.8 },
         { x: -0.6, bw: 0.38, bz: 0.1, sw: 0.3, sz: 0.75, tw: 0.09, tz: 0.97 },
         { x: -0.95, bw: 0.3, bz: 0.1, sw: 0.25, sz: 0.62, tw: 0.08, tz: 0.95 },
@@ -1073,9 +1080,9 @@ export function carModel(
       body,
     ),
   );
-  // la boca de la toma, sobre la cabeza del piloto: es la punta de la cresta, que se estira hacia adelante por
-  // encima del apoyacabeza y termina en la misma forma que tiene la cubierta (no es una pieza agregada).
-  // Está inclinada como la de los pontones, con un labio alrededor y adentro un bloque oscuro
+  // the intake mouth, above the driver's head: it is the tip of the crest, which stretches forward over
+  // the headrest and ends in the same shape as the cover (it is not an added piece).
+  // It is slanted like the sidepod ones, with a lip around it and a dark block inside
   const MOUTH_AT = { x: -0.3, bw: 0.085, bz: 0.69, sw: 0.105, sz: 0.8, tw: 0.075, tz: 0.955 };
   const tilt = (ring) => ring.map(([x, y, z]) => [x + (z - 0.8) * 0.25, y, z]);
   const LIP = 0.018;
@@ -1088,15 +1095,15 @@ export function carModel(
     ],
     body,
   );
-  // el frente del labio mira hacia adelante (loft lo orientaría hacia afuera del eje)
+  // the front of the lip faces forward (loft would orient it away from the axis)
   for (const f of scoop.faces.slice(2, 2 + scoop.verts.length / 4)) if (f.n[0] < 0) f.n = f.n.map((c) => -c);
   add(scoop);
   add(loft([tent({ ...MOUTH_AT, x: -0.6 }, LIP), tilt(tent({ ...MOUTH_AT, x: -0.315 }, LIP))], COCKPIT));
-  // cámara de TV en forma de T: un parante finito y arriba una barra a lo ancho, del color que distingue al auto
+  // T-shaped TV camera: a thin post and on top a crosswise bar, in the color that identifies the car
   add(box(-0.42, -0.34, 0, 0.025, 0.95, 1.07, hex(tcam), 0.01));
   add(box(-0.45, -0.31, 0, 0.17, 1.07, 1.11, hex(tcam), 0.018));
-  // pontones a los costados (sus estaciones, POD, van más arriba: la cubierta del motor se apoya en ellas)
-  // sección del pontón en una estación, achicada d metros hacia adentro (para la boca)
+  // sidepods at the sides (their stations, POD, are further up: the engine cover rests on them)
+  // sidepod section at a station, shrunk d meters inward (for the mouth)
   const podSec = (st, s, x = st.x, d = 0) =>
     rounded(
       x,
@@ -1109,10 +1116,10 @@ export function carModel(
       ].map(([y, z]) => [s * y, z]),
       [0.02, 0.04, 0.06, 0.12, 0.03],
     );
-  const POD_RING = 25; // puntos de cada sección (5 esquinas de 5 puntos)
-  // la boca está inclinada: arriba avanza más que abajo, como en los de verdad
+  const POD_RING = 25; // points of each section (5 corners of 5 points)
+  // the mouth is slanted: the top reaches further forward than the bottom, like the real ones
   const lean = (ring) => ring.map(([x, y, z]) => [x + (z - 0.35) * 0.35, y, z]);
-  const MOUTH = 0.035; // ancho del labio que rodea la abertura
+  const MOUTH = 0.035; // width of the lip around the opening
   both((s) => {
     const [mouth, ...rest] = POD;
     const pod = loft(
@@ -1125,14 +1132,14 @@ export function carModel(
       body,
       CARBON,
     );
-    // el frente del labio mira hacia adelante y hacia la boca (loft lo orientaría hacia afuera del eje)
+    // the front of the lip faces forward and toward the mouth (loft would orient it away from the axis)
     for (const f of pod.faces.slice(2, 2 + POD_RING)) if (f.n[0] < 0) f.n = f.n.map((c) => -c);
     add(pod);
-    // la abertura: un bloque oscuro que tapa la boca por dentro del labio
+    // the opening: a dark block that covers the mouth from inside the lip
     add(loft([podSec(mouth, s, mouth.x - 0.35, MOUTH), lean(podSec(mouth, s, mouth.x - 0.015, MOUTH))], COCKPIT));
   });
-  // espejos sobre su soporte: el vidrio mira hacia atrás, hundido en un marco, y la carcasa se redondea hacia
-  // adelante como una cáscara
+  // mirrors on their mount: the glass faces backward, recessed in a frame, and the housing rounds off toward
+  // the front like a shell
   both((s) => {
     const shell = (x, k) => sec(x, s * 0.54, 0.08 * k, 0.67 - 0.05 * k, 0.67 + 0.05 * k, 0.035 * k);
     const mirror = loft(
@@ -1140,10 +1147,10 @@ export function carModel(
       body,
       MIRROR,
     );
-    // el vidrio (la primera tapa) mira hacia atrás; la punta de adelante es carcasa
+    // the glass (the first cap) faces backward; the front tip is housing
     const [glass, tip] = mirror.faces;
     if (glass.n[0] > 0) glass.n = glass.n.map((c) => -c);
-    // posición sobre el vidrio, de -1 a 1 (el renderer la usa para curvar el reflejo, como un espejo convexo)
+    // position on the glass, from -1 to 1 (the renderer uses it to curve the reflection, like a convex mirror)
     glass.uv = glass.idx.map((i) => [(mirror.verts[i][1] - s * 0.54) / 0.068, (mirror.verts[i][2] - 0.67) / 0.0425]);
     tip.color = body;
     add(mirror);
@@ -1160,41 +1167,41 @@ export function carModel(
     );
   });
 
-  // piloto: hombros con el buzo del color del equipo y el collar HANS de carbono detrás de la nuca
+  // driver: shoulders with the suit in the team color and the carbon HANS collar behind the neck
   add({ ...box(-0.34, -0.02, 0, 0.2, 0.46, 0.55, hex(color, 0.7), 0.07), tag: 'helmet', suit: true });
   add({ ...loft([sec(-0.3, 0, 0.15, 0.49, 0.59, 0.05), sec(-0.17, 0, 0.13, 0.51, 0.6, 0.05)], CARBON), tag: 'helmet' });
   add(...helmetParts(head));
   add(...steeringParts(hex(color, 0.7), hex(accent, 0.62)));
-  // apoyacabeza acolchado alrededor del casco y un borde de carbono que rodea la abertura de la cabina
+  // padded headrest around the helmet and a carbon rim around the cockpit opening
   add(loft([sec(-0.45, 0, 0.25, 0.6, 0.72, 0.05), sec(-0.3, 0, 0.25, 0.6, 0.72, 0.05)], PADDING));
   both((s) =>
     add(loft([sec(-0.42, s * 0.205, 0.045, 0.6, 0.715, 0.03), sec(-0.2, s * 0.205, 0.04, 0.6, 0.7, 0.03)], PADDING)),
   );
   const rim = [];
   for (let i = 0; i <= 40; i++) {
-    const t = (i / 40) * Math.PI * 2; // un óvalo de esquinas redondeadas sobre el borde de las paredes
+    const t = (i / 40) * Math.PI * 2; // an oval with rounded corners on the edge of the walls
     const cx = Math.cos(t),
       cy = Math.sin(t);
     const x = 0.45 * Math.sign(cx) * Math.abs(cx) ** 0.4;
     rim.push([x, 0.245 * Math.sign(cy) * Math.abs(cy) ** 0.4, 0.703 - (0.055 * (x + 0.45)) / 0.9]);
   }
   add(tube(rim, 0.012, CARBON, 6));
-  // halo: un arco por encima del casco que se apoya en un pilar central adelante y atrás, detrás de la cabeza,
-  // sobre los hombros del cubremotor, casi sin bajar. De perfil sube de a poco hacia adelante
-  // (visto desde arriba es media elipse: adelante en x = 0,4, a la altura de los espejos, y atrás en x = -0,4)
+  // halo: an arch over the helmet resting on a central pillar at the front and, at the back, behind the head,
+  // on the shoulders of the engine cover, barely dropping. In profile it rises gradually toward the front
+  // (seen from above it is half an ellipse: in front at x = 0.4, level with the mirrors, and at the back at x = -0.4)
   const HALO_R = 0.024;
   const haloAt = (t) => [-0.4 + 0.8 * Math.cos(t), 0.29 * Math.sin(t), 0.78 + 0.08 * Math.max(0, Math.cos(t)) ** 0.8];
   const halo = [];
   for (let i = 0; i <= 40; i++) halo.push(haloAt(-Math.PI / 2 + (i / 40) * Math.PI));
   add(tube(halo, HALO_R, CARBON, 12));
-  // el pilar no cae vertical: baja inclinado hacia adelante (PILLAR_LEAN metros hacia adelante por cada metro
-  // que baja) desde el frente del arco hasta clavarse en la trompa
+  // the pillar is not vertical: it slants forward as it drops (PILLAR_LEAN meters forward for each meter
+  // it drops) from the front of the arch until it plunges into the nose
   const PILLAR_R = 0.017,
     PILLAR_LEAN = 0.9,
     PILLAR_DROP = 0.32;
   const [px, , pz] = haloAt(0);
-  const pillarX = (z) => px + PILLAR_LEAN * (pz - z); // x del eje del pilar a la altura z
-  // (arranca un poco debajo del eje del arco, para que no asome por encima)
+  const pillarX = (z) => px + PILLAR_LEAN * (pz - z); // x of the pillar axis at height z
+  // (it starts a bit below the arch axis, so it doesn't stick out above)
   add(
     tube(
       [
@@ -1206,18 +1213,18 @@ export function carModel(
       10,
     ),
   );
-  // unión del pilar con el arco: una lámina a los dos lados del pilar, que baja desde el arco con un borde
-  // cóncavo (un cuarto de elipse) que arranca tangente al arco y termina tangente al pilar, así el pilar se abre
-  // en curva hacia arriba en vez de formar una T. Sigue la inclinación del pilar.
+  // pillar-to-arch joint: a sheet on both sides of the pillar, dropping from the arch with a
+  // concave edge (a quarter ellipse) that starts tangent to the arch and ends tangent to the pillar, so the pillar
+  // flares upward in a curve instead of forming a T. It follows the pillar's slant.
   const FILLET_W = 0.09,
     FILLET_DROP = 0.1;
   const fillet = [];
   for (let j = 0; j <= 24; j++) {
     const y = -FILLET_W + (j / 24) * 2 * FILLET_W;
     const [x, , z] = haloAt(Math.asin(y / 0.29));
-    const g = Math.max(0, Math.abs(y) - PILLAR_R) / (FILLET_W - PILLAR_R); // 0 junto al pilar, 1 en el arco
+    const g = Math.max(0, Math.abs(y) - PILLAR_R) / (FILLET_W - PILLAR_R); // 0 next to the pillar, 1 at the arch
     const drop = FILLET_DROP * (1 - Math.sqrt(1 - (1 - g) ** 2));
-    // arriba va por el eje del arco (queda adentro del tubo) y abajo se corre hacia el pilar
+    // at the top it follows the arch axis (inside the tube) and at the bottom it shifts toward the pillar
     const bottom = pillarX(z - drop) * (1 - g) + x * g;
     fillet.push([
       [bottom - 0.02, y, z - drop],
@@ -1228,13 +1235,13 @@ export function carModel(
   }
   add(loft(fillet, CARBON));
 
-  // alerón delantero: tres elementos con perfil de ala, bien juntos (cada flap arranca apenas arriba y detrás del
-  // borde de fuga del anterior), que llegan hasta el lado de adentro de las ruedas. Visto de frente, en el medio
-  // son cóncavos: suben hacia la trompa, cada vez más empinados; hacia afuera son convexos: se levantan
-  // redondeados, como un hombro, hasta la placa. curve(y, hump, rise): cuánto suben a lo ancho. Visto desde arriba tienen flecha: el centro va más
-  // adelante y las puntas se redondean hacia atrás (sweep: cuánto retrocede el borde de ataque a lo ancho). Las
-  // placas laterales bajan hacia adelante con el borde redondeado
-  const FW = 0.63; // medio ancho de los planos: el lado de adentro de las ruedas delanteras
+  // front wing: three elements with airfoil sections, close together (each flap starts just above and behind the
+  // trailing edge of the previous one), reaching the inner side of the wheels. Seen from the front, in the middle
+  // they are concave: they rise toward the nose, steeper and steeper; further out they are convex: they lift
+  // rounded, like a shoulder, up to the endplate. curve(y, hump, rise): how much they rise across. Seen from above they
+  // are swept: the center is further forward and the tips curve back (sweep: how much the leading edge recedes across
+  // the span). The endplates drop toward the front with a rounded edge
+  const FW = 0.63; // half width of the planes: the inner side of the front wheels
   const curve = (y, hump, rise) => {
     const u = Math.abs(y / FW);
     const t = Math.min(1, u / 0.45),
@@ -1296,8 +1303,8 @@ export function carModel(
       ),
     ),
   );
-  // y de cada placa salen dos aletas hacia el costado, hasta la parte de afuera de la goma: abajo, sobre el piso,
-  // una casi plana que apenas sube y se va hacia atrás en la punta; arriba, una chica casi horizontal
+  // and from each endplate two fins go outward, to the outer side of the tyre: below, on the floor,
+  // an almost flat one that barely rises and sweeps back at the tip; above, a small almost horizontal one
   const blade = (s, n, at, color) =>
     loft(
       [...Array(n).keys()].map((i) => {
@@ -1338,14 +1345,14 @@ export function carModel(
     ),
   );
 
-  // alerón trasero: plano principal y flap con perfil de ala (un poco más bajos en el centro, como una cuchara),
-  // placas laterales con el borde de arriba redondeado, ala baja y pilar; abajo, la luz de lluvia. Va casi encima
-  // del eje trasero (sobresale poco detrás de las ruedas); la placa baja hacia atrás hasta el ala baja, que queda
-  // detrás de la cubierta, sobre el difusor
+  // rear wing: main plane and flap with airfoil sections (a bit lower in the center, like a spoon),
+  // endplates with a rounded top edge, beam wing and pillar; below, the rain light. It sits almost above
+  // the rear axle (it sticks out little behind the wheels); the endplate drops toward the back to the beam wing, which
+  // sits behind the cover, over the diffuser
   const spoon = (y) => -0.02 * (1 - (y / 0.51) ** 2);
   add(wing(0.51, (y) => ({ le: [-2.02, 0.765 + spoon(y)], te: [-2.31, 0.81 + spoon(y)], t: 0.045 }), CARBON));
   add(wing(0.51, (y) => ({ le: [-2.25, 0.865 + spoon(y)], te: [-2.45, 0.965 + spoon(y)], t: 0.03 }), body));
-  // vistas de atrás, las placas suben inclinadas hacia afuera desde el ala baja y arriba se paran derechas
+  // seen from behind, the endplates rise slanting outward from the beam wing and stand upright at the top
   const EP_BEND = [
     [0.34, -0.2],
     [0.58, -0.06],
@@ -1375,11 +1382,12 @@ export function carModel(
   add(box(-2.42, -2.12, 0, 0.03, 0.4, 0.78, CARBON, 0.01));
   add(box(-2.64, -2.58, 0, 0.05, 0.25, 0.32, RAIN_LIGHT));
 
-  // suspensión (dos triángulos por rueda, de la carrocería a la mangueta, adentro de la llanta) y ruedas. Además,
-  // la barra que lleva la carga al amortiguador: adelante empuja (pushrod, del triángulo de abajo hacia arriba del
-  // chasis) y atrás tira (pullrod, del de arriba hacia abajo); adelante, también la barra de la dirección.
-  // Cada triángulo nace adentro de la carrocería: in, el ancho donde se clava cada pata (la de atrás y la de
-  // adelante), y z, la altura de los dos triángulos (adelante el de arriba va bajo, para no asomar sobre la trompa)
+  // suspension (two wishbones per wheel, from the bodywork to the upright, inside the rim) and wheels. Also,
+  // the rod that takes the load to the damper: at the front it pushes (pushrod, from the lower wishbone to the top of
+  // the chassis) and at the back it pulls (pullrod, from the upper one downward); at the front, also the steering arm.
+  // Each wishbone starts inside the bodywork: in, the width where each leg plugs in (the rear and the
+  // front one), and z, the height of both wishbones (at the front the upper one sits low, so it doesn't show above the
+  // nose)
   for (const [x, y, w, front, inn, zs] of [
     [1.65, 0.8, 0.33, true, [0.2, 0.15], [0.25, 0.41]],
     [-1.7, 0.79, 0.42, false, [0.1, 0.15], [0.25, 0.45]],
@@ -1387,7 +1395,7 @@ export function carModel(
     both((s) => {
       const hub = s * (y - w / 2 - HUB_IN);
       for (const z of zs) {
-        // brazos de sección ovalada y chata, como los perfiles de los de verdad
+        // wishbones with a flat oval section, like the airfoil profiles of the real ones
         add(
           tube(
             [

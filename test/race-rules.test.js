@@ -1,4 +1,4 @@
-// Las reglas de la carrera: el semáforo de largada (lights.js) y los equipos, rivales y grilla (teams.js).
+// The race rules: the start lights (lights.js) and the teams, rivals and grid (teams.js).
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { LIGHT_FIRST, lightsAt, lightsDuration, randomHold } from '../src/sim/lights.js';
@@ -15,15 +15,15 @@ import {
 } from '../src/race/teams.js';
 import { rng } from '../rl/env.js';
 
-describe('semáforo', () => {
+describe('start lights', () => {
   const hold = 1.5,
     total = lightsDuration(hold);
 
-  test('dura la primera luz, cuatro más de a una por segundo y la espera', () => {
+  test('lasts the first light, four more at one per second, and the hold', () => {
     assert.equal(total, LIGHT_FIRST + 4 + hold);
   });
 
-  test('se prenden de a una por segundo hasta 5, y después de la espera se apagan', () => {
+  test('they come on one per second up to 5, and go out after the hold', () => {
     assert.deepEqual(lightsAt(0, total), { lit: 0, since: 0, out: false });
     const lit = [1.2, 2.2, 3.2, 4.2, 5.2].map((s) => lightsAt(s, total).lit);
     assert.deepEqual(lit, [1, 2, 3, 4, 5]);
@@ -32,7 +32,7 @@ describe('semáforo', () => {
     assert.deepEqual(lightsAt(total, total), { lit: 0, since: 0, out: true });
   });
 
-  test('la espera al azar queda entre 0,4 y 2,6 s', () => {
+  test('the random hold is between 0.4 and 2.6 s', () => {
     assert.equal(
       randomHold(() => 0),
       0.4,
@@ -46,8 +46,8 @@ describe('semáforo', () => {
   });
 });
 
-describe('equipos', () => {
-  test('11 equipos de 2 pilotos, con siglas y números sin repetir', () => {
+describe('teams', () => {
+  test('11 teams of 2 drivers, with unique codes and numbers', () => {
     assert.equal(TEAMS.length, 11);
     const drivers = TEAMS.flatMap((t) => t.drivers);
     assert.equal(drivers.length, 22);
@@ -55,14 +55,14 @@ describe('equipos', () => {
     assert.equal(new Set(drivers.map(([, , number]) => number)).size, 22);
   });
 
-  test('las dificultades van de más lenta a más rápida', () => {
+  test('difficulties go from slowest to fastest', () => {
     for (let i = 1; i < DIFFICULTIES.length; i++) {
       assert.ok(DIFFICULTIES[i].paces[0] > DIFFICULTIES[i - 1].paces[0]);
       assert.ok(DIFFICULTIES[i].setups[0] > DIFFICULTIES[i - 1].setups[0]);
     }
   });
 
-  test('ritmos y autos de los rivales: del más rápido al más lento, de punta a punta de la dificultad', () => {
+  test("rival paces and cars: fastest to slowest, spanning the difficulty's full range", () => {
     const d = DIFFICULTIES[1];
     const paces = rivalPaces(d, 10);
     assert.equal(paces.length, 10);
@@ -79,14 +79,14 @@ describe('equipos', () => {
 describe('rivalCars', () => {
   const mine = TEAMS[3];
 
-  test('por defecto, el primer piloto de cada uno de los otros equipos', () => {
+  test('by default, the first driver of each of the other teams', () => {
     const rivals = rivalCars(mine, DEFAULT_RIVALS);
     assert.equal(rivals.length, TEAMS.length - 1);
     assert.ok(rivals.every((r) => r.team !== mine && r.slot === 0));
     assert.equal(new Set(rivals.map((r) => r.team)).size, rivals.length);
   });
 
-  test('con la grilla completa, los 21 otros autos, tu compañero incluido', () => {
+  test('with the full grid, the 21 other cars, your teammate included', () => {
     for (const slot of [0, 1]) {
       const rivals = rivalCars(mine, 21, slot);
       assert.equal(rivals.length, 21);
@@ -96,7 +96,7 @@ describe('rivalCars', () => {
     }
   });
 
-  test('cada cantidad del menú da esa cantidad de autos distintos; con uno, el del mejor equipo', () => {
+  test("each menu count gives that many distinct cars; with one, the best team's car", () => {
     for (const n of RIVAL_OPTIONS) {
       const rivals = rivalCars(mine, n);
       assert.equal(rivals.length, n);
@@ -109,14 +109,14 @@ describe('rivalCars', () => {
     assert.equal(best.team.id, 'merchoedes');
   });
 
-  test('car arma el piloto de ese lugar del equipo', () => {
+  test('car builds the driver in that team slot', () => {
     const c = car(mine, 1);
     assert.deepEqual([c.name, c.code, c.number], mine.drivers[1]);
   });
 });
 
 describe('gridOrder', () => {
-  test('es un orden de largada: cada lugar una vez', () => {
+  test('is a starting order: each slot once', () => {
     const rand = rng(7);
     for (let k = 0; k < 50; k++) {
       const slots = gridOrder(21, rand);
@@ -126,7 +126,7 @@ describe('gridOrder', () => {
       );
     }
   });
-  test('sin azar respeta el campeonato, y con azar nadie se mueve más de 6 lugares', () => {
+  test('without randomness it follows the championship, and with it nobody moves more than 6 places', () => {
     assert.deepEqual(
       gridOrder(10, () => 0),
       Array.from({ length: 10 }, (_, i) => i),

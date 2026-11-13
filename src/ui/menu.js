@@ -1,7 +1,7 @@
-// El menú: una pantalla principal con el auto y el circuito elegidos (en tarjetas con su dibujo) y el modo, y una
-// pantalla aparte para cada cosa: elegir el auto, elegir el circuito, la puesta a punto y las opciones (dificultad,
-// vueltas, daños y sonido). Lo elegido queda en settings (ui/settings.js). Lo que es del juego (largar, el sonido,
-// los modelos de los autos) se lo pasa main.js con setupMenu.
+// The menu: a main screen with the chosen car and track (on cards with their drawing) and the mode, and a
+// separate screen for each thing: choosing the car, choosing the track, the setup and the options (difficulty,
+// laps, damage and sound). The choices are kept in settings (ui/settings.js). What belongs to the game (starting, the
+// sound, the car models) is passed in by main.js with setupMenu.
 import { TRACKS } from '../../tracks/index.js';
 import { cornerGrip, rearMargin } from '../sim/car.js';
 import { DAMAGE_LEVELS } from '../sim/damage.js';
@@ -16,15 +16,15 @@ const MODES = [
   { value: 'trial', label: 'Contrarreloj' },
 ];
 
-// app: { startRace(), toggleSound(), applySound(), audio, carProfile(), modelFor(auto) }
+// app: { startRace(), toggleSound(), applySound(), audio, carProfile(), modelFor(car) }
 let app = null;
 export function setupMenu(deps) {
   app = deps;
 }
 
-// Una pantalla principal con el auto y el circuito elegidos (en tarjetas con su dibujo) y el modo, y una pantalla
-// aparte para cada cosa: elegir el auto, elegir el circuito, la puesta a punto y las opciones (dificultad, vueltas,
-// daños y sonido)
+// A main screen with the chosen car and track (on cards with their drawing) and the mode, and a separate screen
+// for each thing: choosing the car, choosing the track, the setup and the options (difficulty, laps,
+// damage and sound)
 const menu = $('menu');
 export const menuOpen = () => menu.classList.contains('open');
 
@@ -44,14 +44,14 @@ export function showScreen(name) {
   for (const el of menu.querySelectorAll('.screen')) el.classList.toggle('on', el.dataset.screen === name);
   menu.scrollTop = 0;
   renderMenu();
-  // el foco: en la principal, en Largar; en las otras, en lo elegido
+  // focus: on the main screen, on Largar; on the others, on the chosen item
   const focus = name === 'main' ? $('menu-start') : menu.querySelector(`[data-screen="${name}"] button.on`);
   (focus ?? menu.querySelector(`[data-screen="${name}"] button`))?.focus({ preventScroll: true });
 }
 for (const b of menu.querySelectorAll('[data-go]')) b.addEventListener('click', () => showScreen(b.dataset.go));
 
-// una fila de botones: elegir uno lo marca, lo guarda en settings[key] y vuelve a dibujar el menú
-// (o.html: el contenido del botón; o.el: le agrega ese elemento al final)
+// a row of buttons: choosing one marks it, saves it in settings[key] and redraws the menu
+// (o.html: the button content; o.el: appends that element at the end)
 function choices(el, options, key, onChange) {
   el.replaceChildren(
     ...options.map((o) => {
@@ -116,8 +116,8 @@ function renderMain() {
     .join(' · ');
 }
 
-// ---- el auto ----
-let carView = { yaw: 0.75, pitch: 0.28 }; // desde dónde se mira el auto grande (se gira arrastrándolo)
+// ---- the car ----
+let carView = { yaw: 0.75, pitch: 0.28 }; // where the big car is viewed from (it is rotated by dragging it)
 const carPreviewModel = (team) => app.modelFor(teamCar(team, settings.driver));
 function drawCarPreview(canvas, team, view) {
   drawCar(canvas, carPreviewModel(team), view);
@@ -141,10 +141,10 @@ function renderCars() {
   );
 }
 
-// El auto grande gira solo, despacio, como en una vitrina; arrastrándolo se lo gira a mano (y un poco para arriba o
-// abajo), y al soltarlo sigue girando solo después de un rato
+// The big car turns by itself, slowly, as in a showcase; dragging it rotates it by hand (and a bit up or
+// down), and after releasing it, it turns by itself again after a while
 const TURNTABLE = 0.35; // rad/s
-const TURNTABLE_WAIT = 2.5; // s quieto después de soltarlo
+const TURNTABLE_WAIT = 2.5; // s still after releasing it
 let carDrag = null,
   carIdleSince = 0;
 {
@@ -168,10 +168,10 @@ let carDrag = null,
   big.addEventListener('pointercancel', release);
 }
 
-// lo que se mueve en el menú: el auto que gira y el punto que da la vuelta al circuito (una vuelta en LAP_PREVIEW s)
+// what moves in the menu: the rotating car and the dot going around the track (one lap in LAP_PREVIEW s)
 const LAP_PREVIEW = 9;
 let menuTime = 0;
-let shownShape = null; // el trazado del circuito grande, para el punto que lo recorre
+let shownShape = null; // the layout of the big track, for the dot that goes around it
 function animateMenu(now) {
   const dt = Math.min(0.1, (now - (menuTime || now)) / 1000);
   menuTime = now;
@@ -187,18 +187,18 @@ function animateMenu(now) {
 }
 requestAnimationFrame(animateMenu);
 
-// ---- el circuito ----
-// el trazado de un circuito (id) en el canvas; then(forma) cuando está, con forma.length (m) si se sabe
+// ---- the track ----
+// a track's layout (id) on the canvas; then(shape) when ready, with shape.length (m) if known
 function drawTrackPreview(canvas, id, then, opts) {
   const def = TRACKS.find((t) => t.id === id);
   canvas.dataset.track = id;
   trackShape(def)
     .then((shape) => {
-      if (canvas.dataset.track !== id) return; // ya se eligió otro
+      if (canvas.dataset.track !== id) return; // another one was already chosen
       drawShape(canvas, shape.points, opts);
       then?.(shape);
     })
-    .catch((err) => console.warn('No se pudo dibujar el trazado:', err));
+    .catch((err) => console.warn('Could not draw the layout:', err));
 }
 
 function trackList() {
@@ -216,7 +216,7 @@ function renderTracks() {
     'track',
     () => {},
   );
-  // los dibujitos se hacen después de que los botones están en la página (necesitan su tamaño)
+  // the little drawings are made after the buttons are on the page (they need their size)
   for (const [i, b] of [...$('menu-tracks').children].entries()) {
     drawTrackPreview(b.querySelector('canvas'), list[i].value, null, {
       color: b.classList.contains('on') ? '#ffd400' : '#c8ced8',
@@ -245,8 +245,8 @@ function renderTracks() {
     if (shape?.length) showStats(shape.length);
   });
 }
-// qué clase de circuito es, según cuánto alerón llevan los equipos ahí (de 1 a 10): poco donde se va mucho tiempo a
-// fondo, mucho donde hay curvas lentas
+// what kind of track it is, by how much wing the teams run there (1 to 10): little where a lot of time is spent at
+// full throttle, a lot where there are slow corners
 const CIRCUIT_KINDS = [
   [2, 'muy rápido'],
   [4.5, 'rápido'],
@@ -254,7 +254,7 @@ const CIRCUIT_KINDS = [
   [Infinity, 'lento'],
 ];
 
-// cambiar de auto o de circuito con las flechas (o los botones ‹ ›)
+// switch car or track with the arrows (or the ‹ › buttons)
 export function stepChoice(step) {
   if (screen === 'car') {
     const i = TEAMS.findIndex((t) => t.id === settings.team);
@@ -271,22 +271,25 @@ for (const b of menu.querySelectorAll('[data-step]')) b.addEventListener('click'
 
 // ---- opciones ----
 const GEARBOXES = [
-  { value: 'auto', label: 'Automática' }, // Los cambios se pasan solos
-  { value: 'manual', label: 'Manual' }, // Subís con O o X y bajás con U o Z (en el joystick, RB sube y LB baja)
+  { value: 'auto', label: 'Automática' }, // Gears change by themselves
+  { value: 'manual', label: 'Manual' }, // Shift up with O or X and down with U or Z (on the gamepad, RB up and LB down)
 ];
 const TRACTIONS = [
-  { value: 'high', label: 'Alto' }, // Corta motor antes de que la cola se suelte: para manejar con teclado
-  { value: 'low', label: 'Bajo' }, // Deja usar casi todo el agarre de la cola: más rápido, pero hay que dosificar un poco
-  { value: 'off', label: 'Apagado' }, // Como los F1 de verdad: acelerando a fondo en una curva lenta, la cola se va
+  { value: 'high', label: 'Alto' }, // Cuts power before the rear lets go: for driving with the keyboard
+  { value: 'low', label: 'Bajo' }, // Allows almost all the rear grip: faster, but needs some throttle control
+  { value: 'off', label: 'Apagado' }, // Like real F1 cars: full throttle in a slow corner, the rear steps out
 ];
 const ABS_OPTIONS = [
-  { value: true, label: 'Sí' }, // Los frenos sueltan antes de que las ruedas se bloqueen: para manejar con teclado, que frena todo o nada
-  { value: false, label: 'No' }, // Como los F1 de verdad: el pedal a fondo sólo sirve a alta velocidad; a medida que el auto frena hay que ir soltándolo o las ruedas se bloquean
+  // Sí: the brakes release before the wheels lock: for driving with the keyboard, which brakes all or nothing
+  // No: like real F1 cars: full pedal only works at high speed; as the car slows you have to ease off or the wheels
+  // lock
+  { value: true, label: 'Sí' },
+  { value: false, label: 'No' },
 ];
 const TRACTION = () => TRACTIONS.find((t) => t.value === settings.traction) || TRACTIONS[0];
 const VIEWS = [
-  { value: 'cockpit', label: 'Cabina' }, // Desde los ojos del piloto, con el volante y la trompa adelante
-  { value: 'chase', label: 'Exterior' }, // Desde atrás y arriba del auto: se ve mejor dónde está la pista
+  { value: 'cockpit', label: 'Cabina' }, // From the driver's eyes, with the steering wheel and the nose ahead
+  { value: 'chase', label: 'Exterior' }, // From behind and above the car: you see better where the track is
 ];
 const VIEW = () => VIEWS.find((v) => v.value === settings.view) || VIEWS[0];
 function renderOptions() {
@@ -326,8 +329,9 @@ function renderOptions() {
   for (const [id, key] of VOLUME_SLIDERS) $(id).value = Math.round(settings[key] * 100);
 }
 $('sound-toggle').addEventListener('click', () => app.toggleSound());
-// Puesta a punto: la tuya en este circuito o, si no la cambiaste, la recomendada (la que llevan los equipos ahí, tracks/index.js;
-// los rivales usan siempre esa). Abajo, cómo queda el auto: punta, agarre en curva rápida y balance.
+// Setup: yours on this track or, if you didn't change it, the recommended one (what the teams run there,
+// tracks/index.js; the rivals always use that one). Below, how the car ends up: top speed, fast-corner grip and
+// balance.
 const TUNE_SLIDERS = [
   ['tune-front', 'front'],
   ['tune-rear', 'rear'],
@@ -338,8 +342,9 @@ const SIGNED_TUNE = ['balance', 'brake'];
 const trackDef = () => TRACKS.find((t) => t.id === settings.track);
 const trackTune = () => trackDef()?.tune ?? DEFAULT_TUNE;
 const myTune = () => settings.tunes[settings.track] ?? trackTune();
-// según cuánto más agarra la cola que la trompa (rearMargin de car.js; parejo da 0,15): con mucho margen la trompa no
-// dobla; con poco, frenando en curva o al soltar el freno la cola se va; sin margen, se va siempre
+// by how much more grip the rear has than the front (rearMargin in car.js; neutral gives 0.15): with a lot of margin
+// the front doesn't turn; with little, braking into a corner or releasing the brake the rear steps out; with no
+// margin, it always steps out
 const BALANCE_WORDS = [
   [0, 'sobrevira'],
   [0.08, 'nervioso'],
@@ -362,14 +367,14 @@ function renderTune() {
     own = settings.tunes[settings.track];
   $('tune-title').textContent = `Puesta a punto · ${trackDef()?.name ?? ''}`;
   for (const [id, key] of TUNE_SLIDERS) {
-    const value = t[key] ?? 0; // (las puestas guardadas antes de que hubiera reparto de frenada no lo traen)
+    const value = t[key] ?? 0; // (setups saved before brake bias existed don't have it)
     $(id).value = value;
     $(id + '-v').textContent = SIGNED_TUNE.includes(key) ? signed(value) : value;
   }
-  $('tune-reset').hidden = !own; // sólo hay algo para borrar si es la tuya
+  $('tune-reset').hidden = !own; // there is only something to clear if it is yours
   const now = tuneLimits(t),
     base = tuneLimits(trackTune());
-  // al lado de cada número, cuánto cambió respecto de la recomendada
+  // next to each number, how much it changed from the recommended one
   const diff = (a, b, unit, digits) =>
     own && Math.abs(a - b) >= 10 ** -digits / 2
       ? ` <em class="${a > b ? 'up' : 'down'}">${a > b ? '+' : '−'}${Math.abs(a - b)
@@ -403,10 +408,10 @@ $('tune-reset').addEventListener('click', () => {
   renderTune();
 });
 
-// los dibujos dependen del tamaño de la ventana
+// the drawings depend on the window size
 addEventListener('resize', () => menuOpen() && renderMenu());
 
-// volúmenes: general, motores y música (de 0 a 100 en el menú)
+// volumes: master, engines and music (0 to 100 in the menu)
 const VOLUME_SLIDERS = [
   ['vol-master', 'volMaster'],
   ['vol-engines', 'volEngines'],

@@ -1,5 +1,5 @@
-// Lo que comparten los tests: el auto de verdad (cars/f1-2025.json), un circuito armado en Node como en el juego y
-// un auto puesto en la grilla para manejarlo.
+// What the tests share: the real car (cars/f1-2025.json), a track built in Node as in the game, and a car placed on
+// the grid to drive it.
 import { readFileSync } from 'node:fs';
 import { gridSlots } from '../src/race/grid.js';
 import { Car } from '../src/sim/car.js';
@@ -9,14 +9,14 @@ export const PROFILE = JSON.parse(readFileSync(new URL('../cars/f1-2025.json', i
 export const DT = 1 / 60;
 export const kmh = (v) => v * 3.6;
 
-// los circuitos tardan en armarse: uno por test, una sola vez
+// tracks take a while to build: each one only once
 const tracks = new Map();
 export function track(id = 'monza') {
   if (!tracks.has(id)) tracks.set(id, loadTrack(id));
   return tracks.get(id);
 }
 
-// Un auto en el primer lugar de la grilla (en Monza, sobre la recta principal), a speed m/s en esa marcha
+// A car in the first grid slot (at Monza, on the main straight), at speed m/s in that gear
 export function carOnGrid(t = track(), { speed = 0, gear = 1 } = {}) {
   const s = gridSlots(t, 1)[0];
   const car = new Car(s.x, s.y, s.angle, PROFILE).placeOn(t);
@@ -25,8 +25,8 @@ export function carOnGrid(t = track(), { speed = 0, gear = 1 } = {}) {
   return car;
 }
 
-// Maneja el auto con esos pedales y volante durante seconds s (o hasta que until(car, t) dé true); devuelve el
-// tiempo y los metros recorridos en línea recta desde donde arrancó
+// Drives the car with those pedals and steering for seconds s (or until until(car, t) returns true); returns the
+// time and the straight-line meters from where it started
 export function drive(car, t, input, seconds, until = () => false) {
   const x0 = car.x,
     y0 = car.y;

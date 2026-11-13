@@ -18,8 +18,8 @@
     #timing b { display: inline-block; width: 5.5em; color: #9aa4b2; font-weight: normal; }
     #speedo { bottom: 12px; right: 12px; text-align: right; display: flex; gap: 14px; align-items: center; }
     #dash { display: grid; gap: 4px; justify-items: end; }
-    /* las cuatro gomas vistas de arriba: el color es la temperatura (azul fría, verde en su punto, roja pasada), el
-       número los °C y la barrita de abajo, lo que le queda de goma */
+    /* the four tyres seen from above: the color is the temperature (blue cold, green in the window, red overheated),
+       the number the °C and the little bar below, how much rubber is left */
     #tyres { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 14px; }
     #tyres i { position: relative; width: clamp(20px, 2.6vw, 34px); height: clamp(28px, 3.6vw, 46px); border-radius: 5px; display: grid; place-items: center; font: bold clamp(9px, 1vw, 13px) system-ui, sans-serif; color: #0b0d10; text-shadow: none; overflow: hidden; }
     #tyres i u { position: absolute; left: 0; bottom: 0; height: 3px; background: #0b0d10; opacity: 0.65; }
@@ -91,7 +91,7 @@
     #menu button:disabled { opacity: 0.4; cursor: default; }
     #menu .seg { display: flex; flex-wrap: wrap; gap: 6px; }
     #menu .back { padding: 6px 12px; color: #c8ced8; white-space: nowrap; }
-    /* pantalla principal: el auto y el circuito en dos tarjetas grandes */
+    /* main screen: the car and the track on two big cards */
     #menu .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     #menu .card { display: grid; grid-template-rows: auto 1fr auto; text-align: left; padding: 12px 14px 14px; gap: 4px; background: linear-gradient(160deg, #1d2431, #12161e); border-radius: 10px; min-width: 0; }
     #menu .card:hover { border-color: #ffd400; transform: translateY(-2px); }
@@ -108,7 +108,7 @@
     #menu .tile b::after { content: ' ›'; color: #ffd400; }
     #sound-toggle { font-size: 13px !important; color: #c8ced8 !important; white-space: nowrap; }
     #sound-toggle.on { color: #ffd400 !important; }
-    /* elegir auto y circuito: una vista grande y la lista */
+    /* choosing car and track: a big view and the list */
     #menu .stage { position: relative; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; background: radial-gradient(ellipse at 50% 70%, #232c3c, #0d1017 70%); border: 1px solid #222a36; border-radius: 12px; }
     #menu .stage canvas { grid-column: 1 / -1; grid-row: 1; width: 100%; height: clamp(180px, 34vh, 300px); display: block; }
     #menu #car-big { cursor: grab; touch-action: none; }
@@ -124,7 +124,7 @@
     #menu .tracks { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
     #menu .tracks button { display: grid; gap: 4px; justify-items: center; padding: 6px 6px 8px; font-size: 13px; }
     #menu .tracks canvas { width: 100%; height: 64px; display: block; }
-    /* opciones y puesta a punto */
+    /* options and setup */
     #menu .panel-box { display: grid; gap: 18px; background: rgba(13, 16, 23, 0.6); border: 1px solid #222a36; border-radius: 12px; padding: 16px 18px; }
     #menu .row { display: flex; flex-wrap: wrap; gap: 18px 40px; }
     #menu .sound { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); align-items: center; gap: 10px 22px; }
@@ -147,9 +147,9 @@
     #menu .stats em.down { color: #ff6b5b; }
     body:has(#menu.open) #stage > :not(#view) { visibility: hidden; }
     #menu.trial .race-only { display: none; }
-    /* contrarreloj: sin tabla de posiciones ni puesto */
+    /* time trial: no standings tower and no position */
     #stage.trial #tower, #stage.trial #timing > div:first-child { display: none; }
-    /* auto visto desde arriba: carrocería, franja del color de acento y casco */
+    /* car seen from above: bodywork, accent-color stripe and helmet */
     #menu .car { position: relative; flex: none; width: 34px; height: 14px; border-radius: 7px 3px 3px 7px; background: linear-gradient(var(--c), var(--c)) center / 100% 60% no-repeat, linear-gradient(90deg, #111 0 18%, transparent 18% 72%, #111 72% 100%); }
     #menu .car::after { content: ''; position: absolute; left: 4px; right: 4px; top: 6px; height: 2px; background: var(--a); }
     #menu .car i { position: absolute; left: 14px; top: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--h); z-index: 1; }

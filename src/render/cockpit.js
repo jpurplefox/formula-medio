@@ -1,6 +1,6 @@
-// Vista desde la cabina: el auto (trompa, ruedas, halo, espejos, volante) es el mismo modelo 3D que se ve desde
-// afuera, dibujado por el renderer desde los ojos del piloto. Acá se dibuja la pantalla del volante (la marcha, la
-// velocidad y las luces de cambio) en un canvas chico que el renderer pone sobre el volante 3D (m.screen).
+// Cockpit view: the car (nose, wheels, halo, mirrors, steering wheel) is the same 3D model seen from outside,
+// drawn by the renderer from the driver's eyes. Here we draw the steering wheel display (gear, speed and shift
+// lights) on a small canvas that the renderer places over the 3D steering wheel (m.screen).
 
 const W = 256,
   H = 144;
@@ -13,12 +13,12 @@ export class Cockpit {
     this.ctx = this.canvas.getContext('2d');
   }
 
-  // dibuja la pantalla para este auto y la devuelve
+  // draws the display for this car and returns it
   screen(car) {
     const g = this.ctx;
     g.fillStyle = '#05070a';
     g.fillRect(0, 0, W, H);
-    // luces de cambio: verdes, rojas y azules a medida que suben las rpm
+    // shift lights: green, red and blue as the rpm rise
     const lit = Math.round(((car.rpm - 9000) / (car.profile.maxRpm * 0.97 - 9000)) * 15);
     for (let i = 0; i < 15; i++) {
       g.fillStyle = i < lit ? (i < 5 ? '#2bd14a' : i < 10 ? '#ff2a2a' : '#3a8bff') : '#1c1f26';
@@ -26,7 +26,7 @@ export class Cockpit {
     }
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    // la marcha, grande, y la velocidad al costado
+    // the gear, large, and the speed beside it
     g.fillStyle = '#ffd400';
     g.font = 'bold 84px ui-monospace, Menlo, monospace';
     g.fillText(car.gear === 0 ? 'R' : String(car.gear), 82, 86);

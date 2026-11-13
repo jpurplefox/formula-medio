@@ -1,25 +1,25 @@
-// Decoración del auto, dibujada por código en un canvas: una sola imagen (atlas) con tres zonas.
-// - Costado derecho y costado izquierdo: el auto visto de costado (x a lo largo, z para arriba).
-//   Son el mismo dibujo; en uno de los dos los textos van espejados, así se leen bien de los dos lados.
-// - Arriba: el auto visto desde arriba (x a lo largo, y a lo ancho).
-// Todo se dibuja en metros, con la misma escala en las dos direcciones (LIVERY_S texeles por metro).
-// Además: el flanco de las gomas, con la franja de color del compuesto y letras que giran con la rueda,
-// la banda de rodadura, de caucho gastado, y la cara de la llanta, con sus rayos.
+// Car livery, drawn in code on a canvas: a single image (atlas) with three zones.
+// - Right side and left side: the car seen from the side (x along it, z up).
+//   They are the same drawing; on one of them the text is mirrored, so it reads correctly from both sides.
+// - Top: the car seen from above (x along it, y across it).
+// Everything is drawn in meters, with the same scale in both directions (LIVERY_S texels per meter).
+// Also: the tyre sidewall, with the compound's color band and lettering that turns with the wheel,
+// the tread, of worn rubber, and the rim face, with its spokes.
 
 import { canvasTexture } from './textures.js';
 
 const SIZE = 1024;
-export const LIVERY_S = 176; // texeles por metro
-export const HALF_L = 2.9; // el atlas cubre x de -HALF_L a HALF_L (m)
-export const HALF_W = 1.1; // la zona de arriba cubre y de -HALF_W a HALF_W (m)
-export const TALL = 1.1; // las zonas de costado cubren z de 0 a TALL (m)
-export const SIDE_R = 4; // fila donde empieza el costado derecho
-export const SIDE_L = 206; // fila donde empieza el costado izquierdo
-export const TOP = 410; // fila donde empieza la zona de arriba
+export const LIVERY_S = 176; // texels per meter
+export const HALF_L = 2.9; // the atlas covers x from -HALF_L to HALF_L (m)
+export const HALF_W = 1.1; // the top zone covers y from -HALF_W to HALF_W (m)
+export const TALL = 1.1; // the side zones cover z from 0 to TALL (m)
+export const SIDE_R = 4; // row where the right side starts
+export const SIDE_L = 206; // row where the left side starts
+export const TOP = 410; // row where the top zone starts
 
 const FONT = 'ui-sans-serif, "Helvetica Neue", Arial, sans-serif';
 
-// Letras de los sponsors: cada uno con su tipografía, así no se parecen todos
+// Sponsor lettering: each one with its own typeface, so they don't all look alike
 const FONTS = {
   black: `italic 900 100px ${FONT}`,
   wide: `900 100px "Arial Black", ${FONT}`,
@@ -31,16 +31,16 @@ const FONTS = {
   impact: `100px Impact, "Haettenschweiler", "Arial Narrow", ${FONT}`,
 };
 
-// Texto en metros: centrado en (a, b) del plano de la zona, de alto h (m).
-// m = [a, b, c, d] dice hacia dónde van la derecha y la "arriba" del texto en el canvas.
-// s: el sponsor ({ t: texto, c: color, font, bg: pastilla de color detrás, line: borde de las letras, shield: en vez
-// de la pastilla, un escudo de arriba recto y abajo redondeado, con un borde de ese color y un filete verde adentro });
-// w: el ancho máximo (m): si no entra, las letras se angostan
+// Text in meters: centered at (a, b) of the zone's plane, with height h (m).
+// m = [a, b, c, d] says where the text's right and "up" point on the canvas.
+// s: the sponsor ({ t: text, c: color, font, bg: color pill behind it, line: letter outline, shield: instead
+// of the pill, a shield straight on top and rounded below, with a border of that color and a green pinstripe inside });
+// w: the maximum width (m): if it doesn't fit, the letters get narrower
 function label(g, s, X, Y, h, m, w = Infinity) {
   if (typeof s === 'string') s = { t: s };
   g.save();
-  const k = (h * LIVERY_S) / 100; // la letra se dibuja de 100 px de alto y se escala
-  const sc = g.getTransform().a; // el atlas puede dibujarse más grande (sharp en liveryTexture)
+  const k = (h * LIVERY_S) / 100; // the letter is drawn 100 px tall and scaled
+  const sc = g.getTransform().a; // the atlas may be drawn larger (sharp in liveryTexture)
   g.font = FONTS[s.font ?? 'black'];
   const tw = g.measureText(s.t).width + (s.shield ? 110 : s.bg ? 50 : 0);
   const sx = Math.min(1, (w * LIVERY_S) / (tw * k));
@@ -83,10 +83,10 @@ function label(g, s, X, Y, h, m, w = Infinity) {
   g.restore();
 }
 
-// Dónde va cada sponsor, en partes de la carrocería bastante planas, así no se cortan. De costado: [x, z, alto, ancho
-// máximo] (m): el pontón (el principal, grande, antes de que baje), la cubierta del motor, la trompa, la cabina, el
-// pontón abajo y las placas del alerón trasero. Desde arriba: [x, y, alto, ancho máximo], los textos a lo largo del
-// auto: la cubierta del motor, el flap del alerón trasero, la trompa, el alerón delantero y delante de la cabina.
+// Where each sponsor goes, on fairly flat parts of the bodywork, so they don't get cut. From the side: [x, z, height,
+// max width] (m): the sidepod (the main one, large, before it drops), the engine cover, the nose, the cockpit, the
+// lower sidepod and the rear wing endplates. From above: [x, y, height, max width], text running along the car: the
+// engine cover, the rear wing flap, the nose, the front wing and in front of the cockpit.
 export const SIDE_SLOTS = {
   pod: [-0.25, 0.4, 0.11, 0.62],
   cover: [-1.3, 0.66, 0.1, 0.62],
@@ -104,8 +104,8 @@ export const TOP_SLOTS = {
   front: [0.92, 0, 0.055, 0.3],
 };
 
-// La forma del auto de costado (x, z), para que los dibujos sigan sus líneas: lo alto de los pontones, de la
-// cubierta del motor (por el medio y por los hombros) y de la trompa
+// The car's side profile (x, z), so the drawings follow its lines: the top of the sidepods, of the engine
+// cover (in the middle and at the shoulders) and of the nose
 export const LINES = {
   pod: [
     [0.58, 0.56],
@@ -146,10 +146,10 @@ export const LINES = {
   ],
 };
 
-// Herramientas para dibujar una zona en metros: de costado (a, b) = (x, z) y desde arriba (a, b) = (x, y).
-// poly: un polígono relleno; band: lo que queda entre dos líneas que van de adelante hacia atrás (listas de [a, b]
-// que se recorren de punta a punta); along: un degradé a lo largo del auto, de a0 a a1, entre los colores dados;
-// text: un sponsor en un lugar de la lista (SIDE_SLOTS o TOP_SLOTS)
+// Tools to draw a zone in meters: from the side (a, b) = (x, z) and from above (a, b) = (x, y).
+// poly: a filled polygon; band: what lies between two lines running front to back (lists of [a, b]
+// traversed end to end); along: a gradient along the car, from a0 to a1, between the given colors;
+// text: a sponsor in a slot from the list (SIDE_SLOTS or TOP_SLOTS)
 function zone(g, X, Y, m, slots, mirror = 1) {
   const path = (pts) => {
     g.beginPath();
@@ -190,7 +190,7 @@ function zone(g, X, Y, m, slots, mirror = 1) {
       g.fillStyle = fill;
       g.fill();
     },
-    // lo mismo del otro lado (desde arriba): b → -b
+    // the same on the other side (from above): b → -b
     both(fn) {
       fn(1);
       fn(-1);
@@ -204,10 +204,10 @@ function zone(g, X, Y, m, slots, mirror = 1) {
   return z;
 }
 
-// la parte de arriba de una línea, corrida dz
+// the top part of a line, shifted by dz
 export const shift = (line, dz) => line.map(([a, b]) => [a, b + dz]);
 
-// Un costado: la pintura del equipo (design.side), el piso negro, el número sobre el pontón y los sponsors
+// One side: the team paint (design.side), the black floor, the number on the sidepod and the sponsors
 function drawSide(g, row, color, design, number, mirror) {
   const S = LIVERY_S;
   const right = mirror ? [-1, 0, 0, 1] : [1, 0, 0, 1];
@@ -222,7 +222,7 @@ function drawSide(g, row, color, design, number, mirror) {
   g.fillStyle = color;
   g.fillRect(0, row, SIZE, TALL * S);
   design.side(z);
-  // parte baja en negro, como el piso
+  // lower part in black, like the floor
   g.fillStyle = '#18181c';
   g.fillRect(0, z.Y(0.19), SIZE, 0.19 * S);
   label(
@@ -236,12 +236,12 @@ function drawSide(g, row, color, design, number, mirror) {
   for (const [slot, s] of Object.entries(design.sponsors.side)) z.text(slot, s);
 }
 
-// Visto desde arriba: la pintura del equipo (design.top), el número en la trompa (se lee mirando el auto de frente,
-// como en los de verdad) y los sponsors (se leen desde atrás, mirando hacia adelante)
+// Seen from above: the team paint (design.top), the number on the nose (it reads looking at the car head-on,
+// like the real ones) and the sponsors (they read from behind, looking forward)
 function drawTop(g, color, design, number) {
   const S = LIVERY_S;
-  const up = [0, 1, -1, 0]; // texto girado: se lee desde atrás, mirando hacia adelante
-  const down = [0, -1, 1, 0]; // y al revés: se lee desde adelante
+  const up = [0, 1, -1, 0]; // rotated text: reads from behind, looking forward
+  const down = [0, -1, 1, 0]; // and the other way: reads from the front
   const z = zone(
     g,
     (x) => (x + HALF_L) * S,
@@ -252,21 +252,21 @@ function drawTop(g, color, design, number) {
   g.fillStyle = color;
   g.fillRect(0, TOP, SIZE, 2 * HALF_W * S);
   design.top(z);
-  // número en la trompa, sobre un círculo
+  // number on the nose, on a circle
   g.fillStyle = design.numberDisc ?? '#f4f4f4';
   g.beginPath();
   g.arc(z.X(1.75), z.Y(0), 0.12 * S, 0, Math.PI * 2);
   g.fill();
   label(g, { t: number, c: '#111111' }, z.X(1.75), z.Y(0), 0.13, down);
   for (const [slot, s] of Object.entries(design.sponsors.top)) {
-    // los del alerón delantero van de a dos, uno de cada lado
+    // the front wing ones go in pairs, one on each side
     if (slot === 'wing') z.both((k) => z.text(slot, s, k * TOP_SLOTS[slot][1]));
     else z.text(slot, s);
   }
 }
 
-// La decoración de siempre, para lo que no es de un equipo (el fantasma de la contrarreloj): franja del color de
-// detalle de la trompa a la cola y un par de sponsors
+// The default livery, for whatever is not a team car (the time trial ghost): a band in the detail color from the
+// nose to the tail and a couple of sponsors
 export const plainDesign = (color, accent) => ({
   side(z) {
     z.band(
@@ -297,11 +297,11 @@ export const plainDesign = (color, accent) => ({
   },
 });
 
-// Atlas de la decoración de un auto
-// color: carrocería (lo que mira hacia adelante o atrás queda de este color); design: la pintura y los sponsors del
-// equipo (teamliveries.js); sharp: el atlas en sharp veces más resolución (para el auto propio, que desde la cabina
-// se ve de muy cerca); las coordenadas de textura se multiplican igual. Lleva también el dibujo (art), para las
-// vistas del auto en el menú
+// Livery atlas for a car
+// color: bodywork (whatever faces forward or backward keeps this color); design: the team's paint and sponsors
+// (teamliveries.js); sharp: the atlas at sharp times the resolution (for the player's own car, which is seen very
+// close up from the cockpit); texture coordinates are multiplied the same way. It also carries the drawing (art), for
+// the car views in the menu
 export function liveryTexture(color, design, number, sharp = 1) {
   const c = document.createElement('canvas');
   c.width = c.height = SIZE * sharp;
@@ -316,12 +316,12 @@ export function liveryTexture(color, design, number, sharp = 1) {
 }
 
 export const SIDEWALL_SIZE = 256;
-export const SIDEWALL_S = 128 / 0.37; // texeles por metro: la rueda (radio 0,36 m) ocupa casi todo el cuadrado
+export const SIDEWALL_S = 128 / 0.37; // texels per meter: the wheel (radius 0.36 m) fills almost the whole square
 export const TREAD_SIZE = 256;
 export const RIM_SIZE = 256;
-export const RIM_S = 128 / 0.235; // texeles por metro: la cara de la llanta (radio 0,229 m) ocupa casi todo el cuadrado
+export const RIM_S = 128 / 0.235; // texels per meter: the rim face (radius 0.229 m) fills almost the whole square
 
-// Flanco de la goma: caucho oscuro, franja del compuesto y letras alrededor
+// Tyre sidewall: dark rubber, compound band and lettering around it
 export function sidewallTexture(compound = '#e0262b') {
   const c = document.createElement('canvas');
   c.width = c.height = SIDEWALL_SIZE;
@@ -335,12 +335,12 @@ export function sidewallTexture(compound = '#e0262b') {
   g.beginPath();
   g.arc(m, m, 0.245 * S, 0, Math.PI * 2);
   g.stroke();
-  // letras siguiendo el círculo, de los dos lados
+  // lettering following the circle, on both sides
   g.fillStyle = '#d8d8dc';
   g.font = `bold ${Math.round(0.045 * S)}px ${FONT}`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  const word = 'FIRELLO'; // el proveedor de neumáticos
+  const word = 'FIRELLO'; // the tyre supplier
   for (const base of [-Math.PI / 2, Math.PI / 2]) {
     for (let i = 0; i < word.length; i++) {
       const a = base + (i - (word.length - 1) / 2) * 0.17;
@@ -354,9 +354,9 @@ export function sidewallTexture(compound = '#e0262b') {
   return canvasTexture(c);
 }
 
-// Banda de rodadura: x alrededor de la rueda (se repite, así que todo lo que se dibuja se repite del otro lado),
-// y a lo ancho, de un flanco al otro pasando por los hombros. Caucho con grano fino, la zona que pisa un poco más
-// clara y opaca, hombros más oscuros y marcas de goma arrastrada a lo largo de la vuelta, que dejan ver que gira.
+// Tread: x around the wheel (it tiles, so everything drawn wraps to the other side),
+// y across, from one sidewall to the other through the shoulders. Rubber with fine grain, the contact patch a bit
+// lighter and duller, darker shoulders and dragged rubber marks along the lap, which show it is turning.
 export function treadTexture() {
   const N = TREAD_SIZE;
   const c = document.createElement('canvas');
@@ -364,7 +364,7 @@ export function treadTexture() {
   const g = c.getContext('2d');
   let seed = 7;
   const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  // a lo ancho: hombros oscuros, banda más clara
+  // across: dark shoulders, lighter band
   const across = g.createLinearGradient(0, 0, 0, N);
   across.addColorStop(0, '#202024');
   across.addColorStop(0.2, '#2b2b30');
@@ -374,7 +374,7 @@ export function treadTexture() {
   across.addColorStop(1, '#202024');
   g.fillStyle = across;
   g.fillRect(0, 0, N, N);
-  // marcas de goma a lo largo de la vuelta, más que nada sobre la zona que pisa
+  // rubber marks along the lap, mostly over the contact patch
   for (let i = 0; i < 90; i++) {
     const x = rand() * N,
       y = N * (0.22 + rand() * 0.56),
@@ -383,7 +383,7 @@ export function treadTexture() {
     g.fillStyle = rand() < 0.6 ? `rgba(70,70,76,${0.25 + rand() * 0.3})` : `rgba(14,14,16,${0.3 + rand() * 0.3})`;
     for (const dx of [0, -N]) g.fillRect(x + dx, y, len, h);
   }
-  // grano fino
+  // fine grain
   const img = g.getImageData(0, 0, N, N),
     d = img.data;
   for (let i = 0; i < d.length; i += 4) {
@@ -396,8 +396,8 @@ export function treadTexture() {
   return canvasTexture(c);
 }
 
-// Cara de la llanta, vista de costado y centrada: el borde del aro, diez rayos de metal en pares que salen del cubo
-// y, entre los rayos, el hueco oscuro con el disco de freno ranurado detrás.
+// Rim face, seen from the side and centered: the rim edge, ten metal spokes in pairs coming out of the hub
+// and, between the spokes, the dark gap with the slotted brake disc behind.
 export function rimTexture() {
   const N = RIM_SIZE,
     m = N / 2,
@@ -411,10 +411,10 @@ export function rimTexture() {
     g.fillStyle = fill;
     g.fill();
   };
-  // fondo: el hueco entre los rayos
+  // background: the gap between the spokes
   g.fillStyle = '#0d0d0f';
   g.fillRect(0, 0, N, N);
-  // disco de freno, con ranuras curvas
+  // brake disc, with curved slots
   disc(0.17, '#2c2c30');
   disc(0.09, '#0d0d0f');
   g.strokeStyle = '#19191c';
@@ -425,7 +425,7 @@ export function rimTexture() {
     g.arc(m + Math.cos(a) * 0.13 * S, m + Math.sin(a) * 0.13 * S, 0.035 * S, a + 0.6, a + 2.2);
     g.stroke();
   }
-  // rayos: de a pares, más anchos en el cubo y finos hacia el aro, con un filo claro de un lado
+  // spokes: in pairs, wider at the hub and thin toward the rim, with a light edge on one side
   const spoke = (a, w0, w1, fill) => {
     const p = (r, w) => [m + (Math.cos(a) * r - Math.sin(a) * w) * S, m + (Math.sin(a) * r + Math.cos(a) * w) * S];
     g.beginPath();
@@ -444,7 +444,7 @@ export function rimTexture() {
       spoke(a + 0.025, 0.014, 0.007, '#8d929c');
     }
   }
-  // aro (el borde interior de la llanta) y cubo
+  // rim (the inner edge of the wheel) and hub
   g.strokeStyle = '#6f747d';
   g.lineWidth = 0.02 * S;
   g.beginPath();

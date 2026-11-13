@@ -1,9 +1,9 @@
-// El teclado: qué teclas están apretadas y lo que piden para manejar. Cada tecla se reconoce por su posición (e.code,
-// como en un teclado QWERTY) y también por la letra que escribe (e.key), así funciona igual con distribuciones o
-// teclados no convencionales.
+// The keyboard: which keys are pressed and what they ask for to drive. Each key is recognized by its position
+// (e.code, as on a QWERTY keyboard) and also by the letter it types (e.key), so it works the same with other layouts
+// or unusual keyboards.
 import { keyboardBrake, keyboardSteer } from '../sim/car.js';
 
-// los nombres de una tecla: su posición y, si escribe una letra, Key + la letra
+// the names of a key: its position and, if it types a letter, Key + the letter
 export function keyNames(e) {
   const names = [e.code];
   if (e.key.length === 1 && /[a-z]/i.test(e.key)) names.push('Key' + e.key.toUpperCase());
@@ -12,11 +12,11 @@ export function keyNames(e) {
 
 export class Keyboard {
   keys = new Set();
-  held = new Map(); // e.code → nombres que agregó, para sacarlos al soltar
-  steer = 0; // el volante, que va subiendo de a poco (keyboardSteer en car.js)
-  brake = 0; // el freno, que se afloja un poco al doblar (keyboardBrake en car.js)
+  held = new Map(); // e.code → names it added, to remove them on release
+  steer = 0; // the steering, which ramps up gradually (keyboardSteer in car.js)
+  brake = 0; // the brake, which eases off a bit while turning (keyboardBrake in car.js)
 
-  // onDown(e, names): cada tecla apretada (también las que se repiten por tenerla apretada: e.repeat)
+  // onDown(e, names): every key pressed (including repeats from holding it down: e.repeat)
   constructor(target, onDown) {
     target.addEventListener('keydown', (e) => {
       const names = keyNames(e);
@@ -38,7 +38,7 @@ export class Keyboard {
     return names.some((n) => this.keys.has(n));
   }
 
-  // Lo que piden las flechas, WASD o IJKL a speed m/s: { throttle, brake, steer }
+  // What the arrows, WASD or IJKL ask for at speed m/s: { throttle, brake, steer }
   read(dt, speed) {
     const left = this.has('ArrowLeft', 'KeyA', 'KeyJ'),
       right = this.has('ArrowRight', 'KeyD', 'KeyL');

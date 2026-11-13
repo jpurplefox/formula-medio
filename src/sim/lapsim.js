@@ -1,18 +1,18 @@
-// Simulador de vuelta: la velocidad más alta a la que el auto puede ir en cada punto de una trazada fija, con sus
-// límites (dynamics.js). En cada curva, lo que aguanta el agarre lateral; hacia atrás, hay que llegar frenando; hacia
-// adelante, sólo se acelera lo que da el motor. Frenando o acelerando en curva, las gomas reparten su agarre entre
-// las dos cosas (círculo de fricción).
+// Lap simulator: the highest speed the car can reach at each point of a fixed racing line, with its limits
+// (dynamics.js). In each corner, what the lateral grip can take; going backward, the car has to arrive braking; going
+// forward, it only accelerates as much as the engine allows. Braking or accelerating in a corner, the tyres split
+// their grip between the two (friction circle).
 
-const STEP = 2; // m entre puntos de la trazada
-const SMOOTH = 12; // m: la curvatura sale del giro en ±SMOOTH
+const STEP = 2; // m between racing line points
+const SMOOTH = 12; // m: the curvature comes from the heading change over ±SMOOTH
 
-// Una trazada cerrada a partir de puntos [x, y, fracción de vuelta] (en m): un punto cada STEP metros, con su
-// curvatura (1/m, con signo) y su fracción de vuelta
+// A closed racing line from points [x, y, lap fraction] (in m): one point every STEP meters, with its curvature
+// (1/m, signed) and its lap fraction
 export function pathFromPoints(points) {
   const xs = [],
     ys = [],
     fs = [];
-  let next = 0; // dónde va el próximo punto, desde el principio del tramo
+  let next = 0; // where the next point goes, from the start of the segment
   for (let i = 0; i < points.length; i++) {
     const [ax, ay, af] = points[i],
       [bx, by, bf] = points[(i + 1) % points.length];
@@ -21,7 +21,7 @@ export function pathFromPoints(points) {
       const t = next / d;
       xs.push(ax + (bx - ax) * t);
       ys.push(ay + (by - ay) * t);
-      fs.push(bf < af ? af : af + (bf - af) * t); // al cerrar la vuelta la fracción vuelve a cero
+      fs.push(bf < af ? af : af + (bf - af) * t); // when the lap closes the fraction goes back to zero
     }
     next -= d;
   }
@@ -38,8 +38,8 @@ export function pathFromPoints(points) {
   return { n, ds: STEP, k, f: Float64Array.from(fs) };
 }
 
-// Lo más rápido que se puede tomar una curva de curvatura c (1/m): v²·c = agarre lateral (que crece con v);
-// gripUse: qué parte del agarre se usa
+// The fastest a corner of curvature c (1/m) can be taken: v²·c = lateral grip (which grows with v);
+// gripUse: what fraction of the grip is used
 export function cornerSpeed(lim, c, gripUse = 1) {
   c = Math.abs(c) / gripUse;
   if (c * lim.topSpeed ** 2 <= lim.lateral(lim.topSpeed)) return lim.topSpeed;
@@ -53,8 +53,8 @@ export function cornerSpeed(lim, c, gripUse = 1) {
   return lo;
 }
 
-// Los límites del auto en una tabla por velocidad (cada TABLE_STEP m/s, interpolando): calcularlos cuesta (traslado
-// de peso, que se resuelve en varias vueltas) y el simulador los pide miles de veces por vuelta
+// The car's limits in a table by speed (every TABLE_STEP m/s, interpolating): computing them is costly (weight
+// transfer, solved in several iterations) and the simulator asks for them thousands of times per lap
 const TABLE_STEP = 1;
 function tabulate(lim) {
   const n = Math.ceil(lim.topSpeed / TABLE_STEP) + 2;
@@ -76,13 +76,13 @@ function tabulate(lim) {
   };
 }
 
-// Velocidad en cada punto (m/s) y tiempo de vuelta (s)
+// Speed at each point (m/s) and lap time (s)
 export function lapSim(path, limits) {
   const lim = tabulate(limits);
   const { n, ds, k } = path,
     wrap = (i) => (i + n) % n;
   const v = Float64Array.from(k, (c) => cornerSpeed(lim, c));
-  // parte del agarre que queda para frenar o acelerar después de doblar
+  // fraction of the grip left for braking or accelerating after turning
   const left = (s, c) => Math.sqrt(Math.max(0, 1 - ((s * s * c) / lim.lateral(s)) ** 2));
   for (let pass = 0; pass < 2; pass++) {
     for (let j = 2 * n - 1; j >= 0; j--) {

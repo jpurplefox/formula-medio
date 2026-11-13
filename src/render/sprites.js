@@ -1,4 +1,4 @@
-// Texturas de sprites dibujadas por código (sin assets externos).
+// Sprite textures drawn in code (no external assets).
 
 function makeTexture(w, h, draw) {
   const canvas = document.createElement('canvas');
@@ -29,7 +29,7 @@ export function treeTexture() {
   });
 }
 
-// Cartel de distancia a la curva: tablero blanco con borde rojo y el número, sobre dos patas
+// Corner distance board: white board with a red border and the number, on two legs
 export function boardTexture(meters) {
   return makeTexture(48, 40, (g, w) => {
     g.fillStyle = '#3a3a3a';

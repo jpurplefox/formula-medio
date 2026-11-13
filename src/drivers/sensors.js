@@ -1,43 +1,45 @@
-// Lo que "ve" la IA entrenada (rl/): un vector de números, siempre del mismo largo y en el mismo orden.
-// Se usa igual para entrenar (en Node) y para manejar en el juego.
+// What the trained AI (rl/) "sees": a vector of numbers, always the same length and in the same order.
+// It is used the same way for training (in Node) and for driving in the game.
 //
-//   auto        velocidad, deslizamiento, giro, volante, pedales, marcha, rpm, agarre de cada eje, rebufo
-//   su auto     cómo es respecto del auto medido (motor, punta, agarre, frenos, desgaste) y cómo están las gomas
-//   posición    de qué lado de la pista va, hacia dónde apunta respecto de la pista, si pisa pasto o piano
-//   pista       cuánto dobla la pista más adelante (a 20, 40… 450 m): lo que un piloto sabe de memoria. El primer punto,
-//               respecto del auto; cada uno de los demás, respecto del anterior (cuánto dobla ese tramo)
-//   rayos       distancia hasta el borde de la pista en 19 direcciones, de -90° a +90° (más juntos al frente)
-//   rivales     los 6 más cercanos (hasta 120 m): posición y velocidad relativas y hacia dónde apuntan.
-//               Los lugares sin rival quedan en cero (en la primera etapa, solo en pista, siempre)
-//   ruedas      el agarre de cada rueda según lo que pisa (1 en el asfalto, menos en el pasto), así sabe de qué
-//               lado se fue. Va al final: las redes de antes, que no lo tienen, leen sólo lo de adelante
-//   límites     lo que la puesta a punto y el aire del circuito le cambian al auto (dynamics.js): agarre en curva
-//               lenta y rápida, balance entre ejes en cada una (subvirante o sobrevirante) y velocidad punta,
-//               respecto del auto con los alerones al medio a nivel del mar. También al final, por lo mismo
-//   daños       cuánto tiene roto de cada pieza (damage.js: alerones, pontones, suspensiones, gomas) y el nivel de
-//               daños de la carrera (0 no, 0,5 reducidos, 1 reales). Al final, por lo mismo
-//   más rivales el 7.º y el 8.º más cercanos, con los mismos valores que los 6 primeros: en una grilla de 22, en la
-//               largada suele haber más de 6 a menos de 120 m. Al final, por lo mismo
-//   cómo van los rivales  de los mismos 8 y en el mismo orden: acelerador, freno y volante que están usando (sin
-//               memoria, que el de adelante frena se notaba recién cuando ya se le acercaba), cuánto más motor y
-//               agarre tiene su auto que el propio, cuánto tiene roto (la pieza más rota) y de qué lado de la pista
-//               va. Al final, por lo mismo
-//   semáforo    en la grilla: cuántas luces rojas hay prendidas, cuánto hace que se prendió la última y si ya se
-//               apagaron (src/sim/lights.js), para llevar el motor a las vueltas de largar. En carrera, apagadas. Al
-//               final, por lo mismo
-//   gomas y peso la temperatura y el desgaste de cada goma (DI, DD, TI, TD), la nafta que lleva encima y el reparto
-//               de frenos de la puesta a punto: el agarre de las gomas frías, pasadas o gastadas se nota en el de cada
-//               eje recién cuando ya se perdió; con esto lo ve venir. Al final, por lo mismo
-//   riesgo      de los mismos 8 y en el mismo orden: si está en la zona de al lado (la misma que castiga el
-//               entrenamiento, rl/herd.js) y si en los próximos RISK_HORIZON s, siguiendo cada uno con la misma
-//               velocidad y el mismo giro, chocan: 1 - t / RISK_HORIZON (1 ya se tocan, 0 no chocan), en el
-//               primero si el que pega es el propio auto (lo alcanza o se le tira encima) y en el segundo si es el
-//               otro. Al final, por lo mismo
-//   pista lejos los tramos que siguen hasta 1 km, cada uno más largo que el anterior, igual que los de más cerca:
-//               cuánto dobla cada tramo. Al final, por lo mismo
+//   car         speed, slip, yaw rate, steering, pedals, gear, rpm, grip of each axle, slipstream
+//   its car     how it compares with the reference car (engine, top speed, grip, brakes, wear) and how the tyres are
+//   position    which side of the track it is on, where it points relative to the track, whether it is on grass or
+//               kerb
+//   track       how much the track turns further ahead (at 20, 40… 450 m): what a driver knows by heart. The first
+//               point, relative to the car; each of the others, relative to the previous one (how much that segment
+//               turns)
+//   rays        distance to the track edge in 19 directions, from -90° to +90° (closer together at the front)
+//   rivals      the 6 nearest (up to 120 m): relative position and velocity and where they point.
+//               Slots without a rival stay at zero (in the first stage, alone on track, always)
+//   wheels      the grip of each wheel depending on what it is on (1 on asphalt, less on grass), so it knows which
+//               side it went off. It goes at the end: older networks, which don't have it, read only the leading part
+//   limits      what the setup and the track's air change in the car (dynamics.js): grip in slow and fast corners,
+//               balance between axles in each (understeer or oversteer) and top speed, relative to the car with the
+//               wings in the middle at sea level. Also at the end, for the same reason
+//   damage      how broken each part is (damage.js: wings, sidepods, suspensions, tyres) and the race's damage level
+//               (0 off, 0.5 reduced, 1 real). At the end, for the same reason
+//   more rivals the 7th and 8th nearest, with the same values as the first 6: on a grid of 22, at the start there
+//               are often more than 6 within 120 m. At the end, for the same reason
+//   rival inputs  for the same 8 and in the same order: throttle, brake and steering they are using (without
+//               memory, the car ahead braking was only noticed once it was already getting closer), how much more
+//               engine and grip their car has than its own, how broken it is (the most broken part) and which side
+//               of the track it is on. At the end, for the same reason
+//   start lights on the grid: how many red lights are on, how long since the last one came on and whether they
+//               already went out (src/sim/lights.js), to bring the engine to the launch revs. In the race, out. At
+//               the end, for the same reason
+//   tyres and weight  the temperature and wear of each tyre (FL, FR, RL, RR), the fuel on board and the setup's
+//               brake bias: the grip of cold, overheated or worn tyres shows in each axle's grip only once it is
+//               already lost; with this it sees it coming. At the end, for the same reason
+//   risk        for the same 8 and in the same order: whether it is in the zone alongside (the same one training
+//               penalizes, rl/herd.js) and whether in the next RISK_HORIZON s, each keeping the same speed and yaw
+//               rate, they collide: 1 - t / RISK_HORIZON (1 already touching, 0 no collision), in the first value if
+//               the one hitting is its own car (catches it or moves into it) and in the second if it is the other.
+//               At the end, for the same reason
+//   far track   the following segments up to 1 km, each longer than the previous, just like the nearer ones: how
+//               much each segment turns. At the end, for the same reason
 //
-// Todo va más o menos entre -1 y 1. Las distancias de la pista se miden en metros, así sirve en cualquier
-// circuito sin importar el tamaño de sus celdas.
+// Everything is roughly between -1 and 1. Track distances are measured in meters, so it works on any track
+// regardless of its cell size.
 
 import { SETUP_KEYS, TEMP_HIGH, TEMP_LOW } from '../sim/car.js';
 import { BRAKE_TUNE_MAX, carLimits, DEFAULT_TUNE, SEA_AIR } from '../sim/dynamics.js';
@@ -52,59 +54,59 @@ const RAY_ANGLES = [-90, -60, -40, -28, -18, -11, -6, -3, -1, 0, 1, 3, 6, 11, 18
 export const LOOK_AHEAD = [20, 40, 70, 100, 140, 180, 230, 290, 360, 450]; // m
 const OPPONENTS = 6;
 const CAR_VALUES = 12;
-export const SETUP_VALUES = SETUP_KEYS.length + 1; // la variación del auto y el desgaste de las gomas
-export const SETUP_START = CAR_VALUES; // dónde empiezan (las redes viejas no los tienen)
-// lo que se toma como ±1. Era 0,05 en motor, punta, agarre y frenos; con autos más distintos (hasta -15 % y +20 %,
-// para poder subir la dificultad dándoles más agarre) pasó a 0,2 y los pesos de las redes ya entrenadas se
-// reescalaron igual (rl/rescale_setup.py), así manejan exactamente como antes
+export const SETUP_VALUES = SETUP_KEYS.length + 1; // the car variation and the tyre wear
+export const SETUP_START = CAR_VALUES; // where they start (old networks don't have them)
+// what is taken as ±1. It was 0.05 for engine, top speed, grip and brakes; with more varied cars (down to -15 % and
+// up to +20 %, to be able to raise the difficulty by giving them more grip) it became 0.2 and the weights of the
+// already trained networks were rescaled the same way (rl/rescale_setup.py), so they drive exactly as before
 export const SETUP_SPREAD = { power: 0.2, topSpeed: 0.2, grip: 0.2, brakes: 0.2, wear: 0.3 };
 const POSITION_VALUES = 5;
 const OPPONENT_VALUES = 7;
 export const WHEEL_VALUES = 4;
 export const LIMIT_VALUES = 5;
 export const DAMAGE_VALUES = 15;
-const MORE_OPPONENTS = 2; // el 7.º y el 8.º, al final
-const RIVAL_VALUES = 7; // acelerador, freno, volante, motor, agarre, daño y lado de la pista de cada rival
+const MORE_OPPONENTS = 2; // the 7th and 8th, at the end
+const RIVAL_VALUES = 7; // throttle, brake, steering, engine, grip, damage and track side of each rival
 const ALL_OPPONENTS = OPPONENTS + MORE_OPPONENTS;
 export const OPPONENT_INPUT_SIZE = MORE_OPPONENTS * OPPONENT_VALUES + ALL_OPPONENTS * RIVAL_VALUES;
-const AHEAD_START = CAR_VALUES + SETUP_VALUES + POSITION_VALUES; // dónde empiezan los puntos de LOOK_AHEAD
+const AHEAD_START = CAR_VALUES + SETUP_VALUES + POSITION_VALUES; // where the LOOK_AHEAD points start
 export const OPPONENT_START = CAR_VALUES + SETUP_VALUES + POSITION_VALUES + LOOK_AHEAD.length + RAY_ANGLES.length;
-export const OPPONENT_SIZE = OPPONENTS * OPPONENT_VALUES; // dónde empiezan los rivales y cuántos valores son
+export const OPPONENT_SIZE = OPPONENTS * OPPONENT_VALUES; // where the rivals start and how many values they are
 export const OPPONENT_INPUT_START = OPPONENT_START + OPPONENT_SIZE + WHEEL_VALUES + LIMIT_VALUES + DAMAGE_VALUES;
 export const START_VALUES = 3;
-// salidas de la red: volante, pedal y, sólo con el semáforo en rojo, cuánto sube y cuánto baja las rpm (las redes de
-// antes del semáforo tienen las dos primeras)
+// network outputs: steering, pedal and, only with the start lights on red, how much it raises and lowers the rpm
+// (networks from before the start lights have the first two)
 export const ACTIONS = 4;
 export const START_INPUT_START = OPPONENT_INPUT_START + OPPONENT_INPUT_SIZE;
-export const TYRE_VALUES = 10; // temperatura y desgaste de cada goma, nafta y reparto de frenos
+export const TYRE_VALUES = 10; // temperature and wear of each tyre, fuel and brake bias
 const TYRE_INPUT_START = START_INPUT_START + START_VALUES;
-const RISK_VALUES = 3; // por rival: zona de al lado, choque que pega el propio auto, choque que pega el otro
+const RISK_VALUES = 3; // per rival: zone alongside, collision where its own car hits, collision where the other hits
 const RISK_INPUT_START = TYRE_INPUT_START + TYRE_VALUES;
 export const RISK_INPUT_SIZE = ALL_OPPONENTS * RISK_VALUES;
-export const FAR_AHEAD = [560, 690, 840, 1010]; // m: tramos de 110, 130, 150 y 170 m, siguiendo a los de LOOK_AHEAD
+export const FAR_AHEAD = [560, 690, 840, 1010]; // m: segments of 110, 130, 150 and 170 m, following those of LOOK_AHEAD
 const FAR_INPUT_START = RISK_INPUT_START + RISK_INPUT_SIZE;
 export const OBS_SIZE = FAR_INPUT_START + FAR_AHEAD.length;
 const RISK_HORIZON = 5; // s
-const RISK_STEP = 0.1; // s entre cada punto de la predicción
+const RISK_STEP = 0.1; // s between prediction points
 const RISK_POINTS = Math.round(RISK_HORIZON / RISK_STEP);
-// la zona de al lado: el otro auto encimado a lo largo (centros a menos de un largo) y a menos de ZONE_MARGIN m de
-// costado entre carrocerías, en el marco del auto
+// the zone alongside: the other car overlapping lengthwise (centers less than a car length apart) and less than
+// ZONE_MARGIN m sideways between bodies, in the car's frame
 const ZONE_MARGIN = 0.5;
 export const inZone = (ahead, side) => Math.abs(ahead) < 2 * HALF_L && Math.abs(side) < 2 * HALF_W + ZONE_MARGIN;
 const TEMP_MID = (TEMP_LOW + TEMP_HIGH) / 2,
-  TEMP_SCALE = 20; // °C: el medio de la ventana es 0, ±20 °C es ±1
+  TEMP_SCALE = 20; // °C: the middle of the window is 0, ±20 °C is ±1
 const FUEL_SCALE = 50; // kg
 const DAMAGE_LEVEL = { off: 0, reduced: 0.5, real: 1 };
 const SLOW = 25,
-  FAST = 70; // m/s: una curva lenta (90 km/h) y una rápida (250 km/h)
+  FAST = 70; // m/s: a slow corner (90 km/h) and a fast one (250 km/h)
 
 const RAY_MAX = 200; // m
 const OPPONENT_RANGE = 120; // m
-const TOP = 90; // m/s, para normalizar velocidades
+const TOP = 90; // m/s, to normalize speeds
 
 const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
-// Rumbo de la línea central en cada metro de la vuelta (se calcula una vez por circuito)
+// Heading of the centerline at each meter of the lap (computed once per track)
 const headings = new WeakMap();
 function centerHeading(track) {
   if (headings.has(track)) return headings.get(track);
@@ -122,15 +124,15 @@ function centerHeading(track) {
   return out;
 }
 
-// Rumbo de la pista en la posición u de la vuelta (en celdas, como track.station)
+// Heading of the track at position u of the lap (in cells, like track.station)
 export function trackHeading(track, u) {
   const h = centerHeading(track);
   const L = h.length - 1;
   return h[Math.floor(((u % L) + L) % L)];
 }
 
-// Distancia (m) desde (x, y) hasta el borde de la pista en la dirección a, avanzando de a saltos
-// tan largos como la distancia al borde (el campo sdf la da en cada celda)
+// Distance (m) from (x, y) to the track edge in direction a, advancing in jumps
+// as long as the distance to the edge (the sdf field gives it at each cell)
 function ray(track, x, y, a) {
   const { sdf, W, meters } = track;
   const dx = Math.cos(a),
@@ -145,15 +147,15 @@ function ray(track, x, y, a) {
   return Math.min(t, max) * meters;
 }
 
-// velocidad del auto en el mundo (m/s), con el deslizamiento de costado
+// the car's velocity in the world (m/s), including sideways slip
 function velocity(car) {
   const ca = Math.cos(car.angle),
     sa = Math.sin(car.angle);
   return [ca * car.speed - sa * car.slip, sa * car.speed + ca * car.slip];
 }
 
-// car: el auto (Car de car.js); u: su posición en la vuelta (track.station, celdas);
-// others: los demás autos (Car) en el mismo circuito
+// car: the car (Car from car.js); u: its position in the lap (track.station, cells);
+// others: the other cars (Car) on the same track
 export function observe(track, car, u, others = [], out = new Float32Array(OBS_SIZE)) {
   const { meters, W } = track;
   let i = 0;
@@ -161,7 +163,7 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
     out[i++] = Number.isFinite(v) ? Math.max(-3, Math.min(3, v)) : 0;
   };
 
-  // auto
+  // car
   put(car.speed / TOP);
   put(car.slip / 10);
   put(car.omega / 2);
@@ -169,28 +171,29 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
   put(car.throttle);
   put(car.brake);
   put(car.gear / 8);
-  // con el semáforo en rojo no ve las rpm: no las necesita (sus salidas de rpm las fijan) y el crítico, que en carrera
-  // aprendió que más rpm es más velocidad, premiaba subirlas hasta el corte aunque así larga peor (v18)
+  // with the start lights on red it doesn't see the rpm: it doesn't need them (its rpm outputs set them) and the
+  // critic, which learned in the race that more rpm means more speed, rewarded raising them to the rev limiter even
+  // though that makes a worse start (v18)
   put(car.lights && !car.lights.out ? 0 : car.rpm / 12000);
   put(car.grip?.[0] ?? 1);
   put(car.grip?.[1] ?? 1);
   put(car.aLon / 40);
   put(car.draft);
 
-  // su auto
+  // its car
   for (const k of SETUP_KEYS) put(((car.setup?.[k] ?? 1) - 1) / SETUP_SPREAD[k]);
   put(car.wear ?? 0);
 
-  // posición en la pista
+  // position on the track
   const lat = sampleField(track.lat, W, car.x, car.y);
   const rel = wrapAngle(car.angle - trackHeading(track, u));
   put(lat / halfWidthAt(track, u));
   put(Math.sin(rel));
   put(Math.cos(rel));
-  put(car.grass ?? (car.onGrass ? 1 : 0)); // fracción de las ruedas en el pasto
+  put(car.grass ?? (car.onGrass ? 1 : 0)); // fraction of the wheels on the grass
   put(car.onKerb ? 1 : 0);
 
-  // la pista más adelante: cuánto dobla cada tramo (el primero, respecto del auto)
+  // the track further ahead: how much each segment turns (the first, relative to the car)
   let heading = car.angle;
   for (const d of LOOK_AHEAD) {
     const h = trackHeading(track, u + d / meters);
@@ -198,10 +201,10 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
     heading = h;
   }
 
-  // rayos hasta el borde
+  // rays to the edge
   for (const a of RAY_ANGLES) put(ray(track, car.x, car.y, car.angle + a) / RAY_MAX);
 
-  // rivales más cercanos, en el marco del auto (x adelante, y a la derecha)
+  // nearest rivals, in the car's frame (x forward, y to the right)
   const ca = Math.cos(car.angle),
     sa = Math.sin(car.angle);
   const [vx, vy] = velocity(car);
@@ -234,21 +237,21 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
   };
   for (let k = 0; k < OPPONENTS; k++) rival(near[k]);
 
-  // agarre de cada rueda: delantera izquierda, derecha, trasera izquierda, derecha
+  // grip of each wheel: front left, right, rear left, right
   for (const g of car.wheelGrip ?? [1, 1, 1, 1]) put(g);
 
-  // límites del auto con su puesta a punto y el aire
+  // the car's limits with its setup and the air
   for (const x of limitValues(car)) put(x);
 
-  // daños: alerón delantero, trasero y pontones (izquierda, derecha), suspensiones y gomas (DI, DD, TI, TD) y nivel
+  // damage: front wing, rear wing and sidepods (left, right), suspensions and tyres (FL, FR, RL, RR) and level
   const d = car.damage ?? NO_DAMAGE;
   for (const part of [d.frontWing, d.rearWing, d.sidepod, d.suspension, d.tyre]) for (const x of part) put(x);
   put(DAMAGE_LEVEL[car.damageLevel] ?? 0);
 
-  // el 7.º y el 8.º rival
+  // the 7th and 8th rival
   for (let k = OPPONENTS; k < ALL_OPPONENTS; k++) rival(near[k]);
 
-  // cómo van los 8: pedales, volante, su auto respecto del propio, lo roto y de qué lado de la pista
+  // how the 8 are driving: pedals, steering, their car relative to its own, damage and which side of the track
   const half = halfWidthAt(track, u);
   for (let k = 0; k < ALL_OPPONENTS; k++) {
     const o = near[k]?.[1];
@@ -266,19 +269,19 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
     put(sampleField(track.lat, W, o.x, o.y) / half);
   }
 
-  // semáforo: luces prendidas, segundos desde la última y si ya se largó
+  // start lights: lights on, seconds since the last one and whether the start already happened
   const lights = car.lights ?? LIGHTS_OUT;
   put(lights.lit / 5);
   put(lights.since / 3);
   put(lights.out ? 1 : 0);
 
-  // gomas y peso: temperatura y desgaste de cada goma, nafta y reparto de frenos (+: más adelante)
+  // tyres and weight: temperature and wear of each tyre, fuel and brake bias (+: more to the front)
   for (const t of car.tyreTemp ?? [TEMP_MID, TEMP_MID, TEMP_MID, TEMP_MID]) put((t - TEMP_MID) / TEMP_SCALE);
   for (const w of car.tyreWear ?? [0, 0, 0, 0]) put(w);
   put((car.fuel ?? 0) / FUEL_SCALE);
   put((car.tune?.brake ?? 0) / BRAKE_TUNE_MAX);
 
-  // riesgo con cada uno de los 8: zona de al lado y choque en los próximos segundos (quién pega)
+  // risk with each of the 8: zone alongside and collision in the next seconds (who hits)
   const mine = predict(car, meters, ownPath);
   for (let k = 0; k < ALL_OPPONENTS; k++) {
     const n = near[k];
@@ -293,7 +296,7 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
     put(hit && !striker ? hit : 0);
   }
 
-  // la pista lejos: cuánto dobla cada tramo, siguiendo desde el último punto de cerca
+  // the far track: how much each segment turns, continuing from the last near point
   for (const d of FAR_AHEAD) {
     const h = trackHeading(track, u + d / meters);
     put(wrapAngle(h - heading) / Math.PI);
@@ -302,8 +305,8 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
   return out;
 }
 
-// Dónde va a estar un auto en los próximos RISK_HORIZON s si sigue con la misma velocidad (de frente y de costado,
-// en su marco) y el mismo giro: cada RISK_STEP s, x, y (m), rumbo y velocidad en el mundo (m/s), desde ahora (t = 0)
+// Where a car will be in the next RISK_HORIZON s if it keeps the same velocity (forward and sideways, in its frame)
+// and the same yaw rate: every RISK_STEP s, x, y (m), heading and world velocity (m/s), from now (t = 0)
 const ownPath = new Float64Array((RISK_POINTS + 1) * 5),
   otherPath = new Float64Array((RISK_POINTS + 1) * 5);
 function predict(car, meters, out) {
@@ -320,7 +323,7 @@ function predict(car, meters, out) {
     out[i + 2] = a;
     out[i + 3] = c * speed - s * slip;
     out[i + 4] = s * speed + c * slip;
-    // con el rumbo del medio del intervalo, así en las curvas no se acumula error
+    // with the heading at the middle of the interval, so error doesn't accumulate in corners
     const am = a + (omega * RISK_STEP) / 2,
       cm = Math.cos(am),
       sm = Math.sin(am);
@@ -331,7 +334,7 @@ function predict(car, meters, out) {
   return out;
 }
 
-// Si dos autos (rectángulos de 2·HALF_L × 2·HALF_W) con centro y rumbo se superponen (ejes separadores)
+// Whether two cars (rectangles of 2·HALF_L × 2·HALF_W) with center and heading overlap (separating axes)
 function overlap(ax, ay, aa, bx, by, ba) {
   const dx = bx - ax,
     dy = by - ay;
@@ -346,7 +349,7 @@ function overlap(ax, ay, aa, bx, by, ba) {
     [cb, sb],
     [-sb, cb],
   ]) {
-    // la mitad de cada auto proyectada sobre el eje
+    // half of each car projected onto the axis
     const ra = HALF_L * Math.abs(ca * ux + sa * uy) + HALF_W * Math.abs(-sa * ux + ca * uy);
     const rb = HALF_L * Math.abs(cb * ux + sb * uy) + HALF_W * Math.abs(-sb * ux + cb * uy);
     if (Math.abs(dx * ux + dy * uy) > ra + rb) return false;
@@ -354,8 +357,9 @@ function overlap(ax, ay, aa, bx, by, ba) {
   return true;
 }
 
-// El primer choque entre dos predicciones: [1 - t / RISK_HORIZON (0 si no chocan), si pega el primero]. Pega el que
-// más va hacia el otro en el momento del choque: el que alcanza al de adelante o el que se le tira encima de costado
+// The first collision between two predictions: [1 - t / RISK_HORIZON (0 if they don't collide), whether the first
+// one hits]. The one hitting is the one moving more toward the other at the moment of the collision: the one catching
+// the car ahead or the one moving into the other from the side
 function crash(a, b) {
   for (let k = 0; k <= RISK_POINTS; k++) {
     const i = k * 5;
@@ -363,15 +367,15 @@ function crash(a, b) {
     const dx = b[i] - a[i],
       dy = b[i + 1] - a[i + 1],
       d = Math.hypot(dx, dy) || 1;
-    const towardB = (a[i + 3] * dx + a[i + 4] * dy) / d; // cuánto va el primero hacia el otro (m/s)
+    const towardB = (a[i + 3] * dx + a[i + 4] * dy) / d; // how fast the first moves toward the other (m/s)
     const towardA = -(b[i + 3] * dx + b[i + 4] * dy) / d;
     return [1 - (k * RISK_STEP) / RISK_HORIZON, towardB >= towardA];
   }
   return [0, false];
 }
 
-// Para las redes de antes de los tramos (v21 y anteriores), que leían cada punto de LOOK_AHEAD respecto del auto: el
-// giro de cada tramo sumado hasta ese punto, como lo veían ellas (devuelve una copia)
+// For networks from before the segments (v21 and earlier), which read each LOOK_AHEAD point relative to the car: the
+// turn of each segment summed up to that point, as they saw it (returns a copy)
 export function aheadFromCar(obs, out = new Float32Array(obs.length)) {
   out.set(obs);
   let turn = 0;
@@ -382,7 +386,7 @@ export function aheadFromCar(obs, out = new Float32Array(obs.length)) {
   return out;
 }
 
-// Los límites del auto respecto del de referencia, más o menos entre -1 y 1 (se calculan una vez por límites)
+// The car's limits relative to the reference car, roughly between -1 and 1 (computed once per limits object)
 const refs = new WeakMap(),
   summaries = new WeakMap();
 function limitValues(car) {

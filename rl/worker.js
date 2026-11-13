@@ -1,22 +1,23 @@
-// Proceso de Node que simula varios entornos y habla con Python (rl/racing_env.py) por stdin/stdout.
+// Node process that simulates several environments and talks to Python (rl/racing_env.py) over stdin/stdout.
 //
-//   node rl/worker.js solo  <entornos> <circuitos separados por coma> <semilla> [config]
-//   node rl/worker.js race  <carreras> <circuitos> <semilla> [config]
-//   node rl/worker.js herd  <carreras> <circuitos> <semilla> [config]
+//   node rl/worker.js solo  <environments> <comma-separated tracks> <seed> [config]
+//   node rl/worker.js race  <races> <tracks> <seed> [config]
+//   node rl/worker.js herd  <races> <tracks> <seed> [config]
 //
-// "solo" es la fase 1 (un auto por entorno); "race" las carreras con rivales (rl/race.js: varios agentes por
-// carrera); "herd" las carreras en manada, todos los autos agentes (rl/herd.js).
-// config es un JSON con las opciones de RaceEnv o RaceSim (spread, agents, opponents, mix, raceSpread).
-// Para Python cada agente es un entorno más: en total, entornos × agentes.
+// "solo" is phase 1 (one car per environment); "race" is races with opponents (rl/race.js: several agents per
+// race); "herd" is herd races, with every car an agent (rl/herd.js).
+// config is a JSON with the options of RaceEnv or RaceSim (spread, agents, opponents, mix, raceSpread).
+// For Python each agent is one more environment: in total, environments × agents.
 //
-// Al arrancar escribe una línea JSON ({ obs_size, actions, envs }) y espera órdenes. Cada orden empieza con un byte:
-//   0 = paso: le siguen las acciones (float32, 2 por agente). Responde con un bloque binario
-//       (observaciones, recompensas, terminado, cortado; float32) y una línea JSON con lo que pasó en cada
-//       agente que terminó una vuelta o un episodio (y la última observación de ese episodio).
-//       Los que terminan arrancan otro episodio solos: la observación que se devuelve ya es la del nuevo.
-//   1 = reset: reinicia todos y responde con el bloque binario de las observaciones.
-//   2 = ajustes de las carreras: le siguen 4 bytes con el largo y un JSON, por ejemplo { contactScale, progress }
-//       (rl/race.js). No responde.
+// On startup it writes a JSON line ({ obs_size, actions, envs }) and waits for commands. Each command starts with a
+// byte:
+//   0 = step: followed by the actions (float32, 2 per agent). Replies with a binary block
+//       (observations, rewards, done, truncated; float32) and a JSON line with what happened to each
+//       agent that finished a lap or an episode (and the last observation of that episode).
+//       Agents that finish start another episode on their own: the returned observation is already the new one.
+//   1 = reset: resets all of them and replies with the binary block of observations.
+//   2 = race settings: followed by 4 bytes with the length and a JSON, for example { contactScale, progress }
+//       (rl/race.js). No reply.
 
 import { ACTIONS, OBS_SIZE } from '../src/drivers/sensors.js';
 import { RaceEnv } from './env.js';
@@ -27,7 +28,7 @@ const [mode, n, ids, seed, config = '{}'] = process.argv.slice(2);
 const trackIds = ids.split(',');
 const options = JSON.parse(config);
 
-// Etapa 1 con la misma forma que una carrera: un solo agente
+// Stage 1 with the same shape as a race: a single agent
 class Solo {
   constructor(seed) {
     this.env = new RaceEnv({ ...options, trackIds, seed });
@@ -64,7 +65,7 @@ function stepAll(actions) {
   let k = 0;
   for (const sim of sims) {
     const results = sim.step(actions.subarray(ACTIONS * k, ACTIONS * (k + sim.agents)));
-    // si la carrera terminó (se cortó por tiempo), arranca otra y esas son las observaciones nuevas
+    // if the race ended (cut off by time), another one starts and those are the new observations
     const fresh = results.some((r) => r.truncated) ? sim.reset() : null;
     results.forEach((r, j) => {
       const ended = r.done || r.truncated;
@@ -86,7 +87,7 @@ function stepAll(actions) {
   process.stdout.write(JSON.stringify(infos) + '\n');
 }
 
-// lectura de órdenes: se van juntando los bytes que llegan hasta tener una orden completa
+// reading commands: incoming bytes are accumulated until there is a complete command
 let pending = Buffer.alloc(0);
 const STEP_BYTES = 1 + N * ACTIONS * 4;
 process.stdin.on('data', (chunk) => {
@@ -109,7 +110,7 @@ process.stdin.on('data', (chunk) => {
       pending = pending.subarray(STEP_BYTES);
       stepAll(actions);
     } else {
-      throw new Error(`Orden desconocida: ${op}`);
+      throw new Error(`Unknown command: ${op}`);
     }
   }
 });

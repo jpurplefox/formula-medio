@@ -1,28 +1,29 @@
-// Trazada ideal: la línea que usa todo el ancho de la pista para abrir las curvas,
-// y la velocidad a la que se puede ir en cada punto de esa línea con los límites del auto (car.limits).
-// Todo se guarda por posición sobre la línea central (una entrada por celda), como los pianos.
+// Racing line: the line that uses the full width of the track to open up the corners,
+// and the speed the car can carry at each point of that line with its limits (car.limits).
+// Everything is stored by position along the centerline (one entry per cell), like the kerbs.
 
 import { cornerSpeed } from './lapsim.js';
 import { curvature, halfWidthAt } from './track.js';
 
-const MARGIN = 1.3; // distancia mínima de la trazada al borde de la pista (m): medio auto y un poco más
-const GRIP_USE = 0.94; // fracción del agarre lateral que usa la trazada (un poco de margen)
-const BRAKE_USE = 0.85; // fracción de la frenada máxima, para que los puntos de frenada sean alcanzables
-const BRAKE_TURNING = 0.3; // doblando al límite todavía se puede frenar esta parte (soltando el freno al entrar)
-const BEND_RADIUS = 400; // radio (m) por debajo del cual la pista está doblando
-const CORNER_RADIUS = 250; // radio mínimo (m) para que una curva se tome abriendo y cerrando (las más suaves, a fondo y sin vueltas)
-const ENTRY = 25; // cuánto antes de que empiece la curva se llega bien abierto (m)
-const EXIT = 60; // cuánto después de que termina la curva se termina de abrir (m)
-const SMOOTH = [[4, 12]]; // suavizado final: [distancia a los vecinos (celdas), pasadas]
+const MARGIN = 1.3; // minimum distance from the racing line to the track edge (m): half a car and a bit more
+const GRIP_USE = 0.94; // fraction of the lateral grip the racing line uses (a little margin)
+const BRAKE_USE = 0.85; // fraction of the maximum braking, so the braking points are reachable
+const BRAKE_TURNING = 0.3; // cornering at the limit the car can still brake this fraction (trail braking on entry)
+const BEND_RADIUS = 400; // radius (m) below which the track counts as turning
+// minimum radius (m) for a corner to be taken out-in-out (gentler ones, flat out and straight through)
+const CORNER_RADIUS = 250;
+const ENTRY = 25; // how far before the corner starts the car is fully out wide (m)
+const EXIT = 60; // how far after the corner ends the car finishes running out wide (m)
+const SMOOTH = [[4, 12]]; // final smoothing: [distance to the neighbors (cells), passes]
 
-// limits: qué fracción del agarre y de la frenada usa (por defecto, con margen, para la trazada que ves;
-// los rivales usan una más al límite)
+// limits: what fraction of the grip and braking it uses (by default, with margin, for the racing line you see;
+// the rivals use one closer to the limit)
 export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE_USE } = {}) {
   const { path, meters, halfWidths } = track;
   const { n, x, y, st } = path;
   const wrap = (b) => ((b % n) + n) % n;
 
-  // normal hacia la derecha de la marcha en cada punto (mismo signo que track.lat)
+  // normal to the right of the direction of travel at each point (same sign as track.lat)
   const nx = new Float64Array(n),
     ny = new Float64Array(n);
   for (let b = 0; b < n; b++) {
@@ -33,10 +34,10 @@ export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE
     ny[b] = dx / len;
   }
 
-  // 1) La línea, curva por curva, como la hacen los pilotos: se llega por el lado de afuera,
-  //    se toca el vértice (el punto más cerrado) del lado de adentro y se sale abriendo de nuevo hacia afuera.
-  //    Entre una curva y otra la línea cruza la pista de a poco; en las eses va de vértice a vértice.
-  // hasta dónde se puede abrir en cada punto (y en una posición cualquiera de la vuelta): la pista no es pareja
+  // 1) The line, corner by corner, the way drivers take it: arrive from the outside,
+  //    touch the apex (the tightest point) on the inside and exit running out wide again.
+  //    Between one corner and the next the line crosses the track gradually; in the esses it goes apex to apex.
+  // how far out it can go at each point (and at any position on the lap): the track width is not uniform
   const lim = Float64Array.from(halfWidths, (h) => h - MARGIN / meters);
   const limAt = (s) => halfWidthAt(track, s) - MARGIN / meters;
   const len = st[n];
@@ -44,8 +45,8 @@ export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE
   const ctrl = controlPoints(corners, len, limAt, meters);
   const off = new Float64Array(n);
   if (ctrl.length) {
-    // entre dos puntos de control, transición suave (sin quiebres, plana en cada punto de control)
-    let j = -1; // último punto de control antes de b (-1: el tramo viene del último de la vuelta)
+    // between two control points, a smooth transition (no kinks, flat at each control point)
+    let j = -1; // last control point before b (-1: the segment comes from the last one of the lap)
     for (let b = 0; b < n; b++) {
       while (j + 1 < ctrl.length && ctrl[j + 1].s <= st[b]) j++;
       const a = ctrl[j < 0 ? ctrl.length - 1 : j],
@@ -55,8 +56,8 @@ export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE
       off[b] = a.o + (c.o - a.o) * t * t * (3 - 2 * t);
     }
   }
-  // después se suaviza: cada punto se corre de costado hacia el promedio de sus vecinos, sin salirse de la pista.
-  // Eso endereza los zigzags entre curvitas seguidas sin perder el abrir-cerrar-abrir de cada curva.
+  // then it is smoothed: each point moves sideways toward the average of its neighbors, without leaving the track.
+  // That straightens the zigzags between consecutive small bends without losing the out-in-out of each corner.
   for (const [k, iters] of SMOOTH) {
     for (let it = 0; it < iters; it++) {
       for (let b = 0; b < n; b++) {
@@ -76,7 +77,7 @@ export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE
     py[b] = y[b] + ny[b] * off[b];
   }
 
-  // 2) Curvatura de la trazada (por el círculo que pasa por tres puntos) y largo de cada tramo, en metros
+  // 2) Curvature of the racing line (from the circle through three points) and length of each segment, in meters
   const K = 6;
   let curv = new Float64Array(n);
   const ds = new Float64Array(n);
@@ -101,15 +102,15 @@ export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE
   }
   curv = c2;
 
-  // 3) Velocidad: en cada punto, la máxima que aguanta el agarre (v²·curvatura = agarre, que crece con v²);
-  //    después, hacia atrás, hay que llegar frenando, y hacia adelante, sólo se puede acelerar lo que da el motor.
-  //    Se dan dos vueltas para que el final de la vuelta empalme con el principio.
+  // 3) Speed: at each point, the maximum the grip can take (v²·curvature = grip, which grows with v²);
+  //    then, going backward, the car has to arrive braking, and going forward, it can only accelerate as much as the
+  //    engine allows. Two passes are made so the end of the lap joins up with the start.
   const v = Float64Array.from(curv, (k) => cornerSpeed(limits, k, gripUse));
   for (let pass = 0; pass < 2; pass++) {
     for (let i = 2 * n - 1; i >= 0; i--) {
       const b = wrap(i),
         next = v[wrap(b + 1)];
-      // doblando, a las gomas les queda menos para frenar (círculo de fricción): hay que frenar antes de la curva
+      // while turning, the tyres have less left for braking (friction circle): braking has to start before the corner
       const turning = Math.min(1, (next * next * curv[b]) / (limits.lateral(next) * gripUse));
       const decel =
         (limits.brake(next) * Math.max(BRAKE_TURNING, Math.sqrt(1 - turning * turning)) + limits.drag(next)) * brakeUse;
@@ -122,7 +123,7 @@ export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE
     }
   }
 
-  // 4) Pasamos todo a una entrada por celda de la línea central
+  // 4) Convert everything to one entry per centerline cell
   const L = Math.ceil(st[n]) + 1;
   const offset = new Float32Array(L),
     speed = new Float32Array(L);
@@ -137,14 +138,14 @@ export function racingLine(track, limits, { gripUse = GRIP_USE, brakeUse = BRAKE
   return { offset, speed, color: new Uint32Array(L) };
 }
 
-// Tramos donde la pista dobla siempre para el mismo lado, con su vértice (el punto más cerrado).
-// sign: +1 dobla a la derecha, -1 a la izquierda. Posiciones en celdas sobre la línea central.
+// Segments where the track keeps turning the same way, with their apex (the tightest point).
+// sign: +1 turns right, -1 left. Positions in cells along the centerline.
 function findCorners(curv, st, n, wrap, meters) {
   const bend = meters / BEND_RADIUS,
     sharp = meters / CORNER_RADIUS;
   const bent = (b) => Math.abs(curv[b]) > bend;
   let start = 0;
-  while (start < n && bent(start)) start++; // arrancamos en una recta para no partir una curva
+  while (start < n && bent(start)) start++; // start on a straight so as not to split a corner
   const corners = [];
   for (let k = 0; k < n; k++) {
     const b = wrap(start + k);
@@ -167,17 +168,17 @@ function findCorners(curv, st, n, wrap, meters) {
   return corners;
 }
 
-// Puntos de control de la trazada: afuera antes de la curva, adentro en el vértice, afuera después.
-// Si la salida de una curva se pisa con la entrada de la siguiente: si doblan para el mismo lado,
-// queda un solo punto afuera en el medio; si doblan para lados contrarios (una ese), se va de vértice a vértice.
+// Control points of the racing line: outside before the corner, inside at the apex, outside after.
+// If the exit of one corner overlaps the entry of the next: if they turn the same way, a single outside point is
+// left in the middle; if they turn opposite ways (an S-bend), the line goes from apex to apex.
 function controlPoints(corners, len, limAt, meters) {
   const m = corners.length;
   if (!m) return [];
-  // posiciones "desenrolladas": siempre crecientes a lo largo de la vuelta
+  // "unwrapped" positions: always increasing along the lap
   let shift = 0;
   const cs = corners.map((c, i) => {
     if (i > 0 && c.from < corners[i - 1].from) shift = len;
-    const u = (s) => (s < c.from ? s + len : s) + shift; // apex y to pueden pasar la largada
+    const u = (s) => (s < c.from ? s + len : s) + shift; // apex and to can go past the start line
     return { sign: c.sign, entry: c.from + shift - ENTRY / meters, apex: u(c.apex), exit: u(c.to) + EXIT / meters };
   });
   const pts = [];
@@ -185,16 +186,16 @@ function controlPoints(corners, len, limAt, meters) {
     const c = cs[i];
     const next = i + 1 < m ? cs[i + 1] : { ...cs[0], entry: cs[0].entry + len, apex: cs[0].apex + len };
     const prev = i > 0 ? cs[i - 1] : { ...cs[m - 1], apex: cs[m - 1].apex - len, exit: cs[m - 1].exit - len };
-    // entrada: sólo si no se pisa con la salida de la anterior (de eso se ocupa la anterior)
+    // entry: only if it doesn't overlap the exit of the previous one (the previous one handles that)
     if (c.entry > prev.exit && c.entry > prev.apex) pts.push({ s: c.entry, o: -c.sign * limAt(c.entry) });
     pts.push({ s: c.apex, o: c.sign * limAt(c.apex) });
     if (c.exit < next.entry) pts.push({ s: c.exit, o: -c.sign * limAt(c.exit) });
     else if (c.sign === next.sign) {
-      // misma mano: un punto afuera entre las dos, sin pasar ninguno de los vértices
+      // same direction: one outside point between the two, without passing either apex
       const mid = Math.min(Math.max((c.exit + next.entry) / 2, c.apex + 1), next.apex - 1);
       if (mid > c.apex) pts.push({ s: mid, o: -c.sign * limAt(mid) });
     }
   }
-  // a posiciones dentro de la vuelta, ordenadas
+  // back to positions within the lap, sorted
   return pts.map((p) => ({ s: ((p.s % len) + len) % len, o: p.o })).sort((a, b) => a.s - b.s);
 }

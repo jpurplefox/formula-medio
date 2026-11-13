@@ -1,7 +1,7 @@
-// La decoración de cada equipo, inspirada en la del auto de verdad: los colores y cómo se reparten (side: de
-// costado, top: desde arriba, en metros del auto; ver zone() en livery.js) y los sponsors (inventados) de cada
-// lugar (SIDE_SLOTS y TOP_SLOTS). Cada sponsor: { t: texto, c: color, font, bg: pastilla detrás, line: borde,
-// shield: escudo en vez de pastilla, size: más grande o más chico que lo normal en ese lugar }.
+// Each team's livery, inspired by the real car: the colors and how they are laid out (side: from the
+// side, top: from above, in car meters; see zone() in livery.js) and the (made-up) sponsors for each
+// slot (SIDE_SLOTS and TOP_SLOTS). Each sponsor: { t: text, c: color, font, bg: pill behind it, line: border,
+// shield: shield instead of a pill, size: larger or smaller than normal for that slot }.
 
 import { LINES, shift } from './livery.js';
 
@@ -9,13 +9,13 @@ const FLOOR = [
   [3, 0.19],
   [-3, 0.19],
 ];
-// una línea de adelante hacia atrás por los puntos dados, estirada hasta las puntas del atlas
+// a line from front to back through the given points, stretched to the ends of the atlas
 const line = (pts) => [[3, pts[0][1]], ...pts, [-3, pts[pts.length - 1][1]]];
-const ALL = [-3, 0, 3, 1.2]; // todo el costado
-const TOP_ALL = [-3, -1.1, 3, 1.1]; // todo lo de arriba
+const ALL = [-3, 0, 3, 1.2]; // the whole side
+const TOP_ALL = [-3, -1.1, 3, 1.1]; // everything on top
 
 export const DESIGNS = {
-  // rojo, con una franja blanca que sube del pontón a la cubierta, negro abajo y en la cola, escudo amarillo
+  // red, with a white band rising from the sidepod to the engine cover, black below and at the tail, yellow shield
   hierrari: {
     side(z) {
       z.band(
@@ -100,7 +100,7 @@ export const DESIGNS = {
     },
   },
 
-  // plateado adelante que se oscurece hasta el negro atrás, con filetes verde agua
+  // silver at the front darkening to black at the back, with teal pinstripes
   merchoedes: {
     side(z) {
       z.rect(...ALL, z.along(0.7, -0.8, ['#c3c8cd', '#5d6268', '#111214']));
@@ -130,7 +130,7 @@ export const DESIGNS = {
     },
   },
 
-  // azul noche mate, rojo abajo, la punta de la trompa amarilla y el toro rojo con el sol amarillo en la cubierta
+  // matte midnight blue, red below, yellow nose tip and the red bull with the yellow sun on the engine cover
   redtoro: {
     side(z) {
       z.band(
@@ -146,7 +146,7 @@ export const DESIGNS = {
       z.rect(2.55, 0, 3, 1.2, '#ffc906');
       z.circle(-1.25, 0.66, 0.11, '#ffc906');
       for (const d of [-1, 1]) {
-        const x = -1.25 + d * 0.12; // un toro a cada lado del sol, de frente uno al otro
+        const x = -1.25 + d * 0.12; // one bull on each side of the sun, facing each other
         z.poly(
           [
             [x, 0.6],
@@ -192,7 +192,7 @@ export const DESIGNS = {
     },
   },
 
-  // naranja papaya arriba y gris antracita abajo y en la cola, separados por un filete azul
+  // papaya orange on top and anthracite grey below and at the tail, separated by a blue pinstripe
   mclarron: {
     side(z) {
       const cut = line([
@@ -243,7 +243,7 @@ export const DESIGNS = {
     },
   },
 
-  // verde inglés que se oscurece hacia atrás, filetes lima y negro abajo
+  // British racing green darkening toward the back, lime pinstripes and black below
   austin: {
     side(z) {
       z.rect(...ALL, z.along(0.5, -2.3, ['#00594f', '#003b34']));
@@ -282,7 +282,7 @@ export const DESIGNS = {
     },
   },
 
-  // azul adelante y rosa atrás, separados por un tajo negro en diagonal
+  // blue at the front and pink at the back, separated by a black diagonal slash
   allpain: {
     side(z) {
       z.poly(
@@ -354,7 +354,7 @@ export const DESIGNS = {
     },
   },
 
-  // azul marino arriba, celeste eléctrico abajo y dos rayas blancas en diagonal
+  // navy blue on top, electric light blue below and two white diagonal stripes
   willyams: {
     side(z) {
       z.band(
@@ -423,7 +423,7 @@ export const DESIGNS = {
     },
   },
 
-  // titanio arriba, negro abajo, y rojo lava sobre la cubierta y la toma de aire
+  // titanium on top, black below, and lava red over the engine cover and the airbox
   audios: {
     side(z) {
       const cut = line([
@@ -472,7 +472,7 @@ export const DESIGNS = {
     },
   },
 
-  // blanco adelante y negro atrás, cortados en diagonal por una franja roja
+  // white at the front and black at the back, cut diagonally by a red band
   haash: {
     side(z) {
       z.poly(
@@ -534,7 +534,7 @@ export const DESIGNS = {
     },
   },
 
-  // blanco adelante y azul atrás, con rayas que se van apretando hacia el azul y un filete rojo
+  // white at the front and blue at the back, with stripes that get tighter toward the blue and a red pinstripe
   alfatorito: {
     side(z) {
       const bar = (x, w) =>
@@ -598,7 +598,7 @@ export const DESIGNS = {
     },
   },
 
-  // negro arriba y blanco abajo, con un filete dorado entre los dos y astillas doradas en la cubierta
+  // black on top and white below, with a gold pinstripe between them and gold slivers on the engine cover
   cadillaque: {
     side(z) {
       const cut = line([

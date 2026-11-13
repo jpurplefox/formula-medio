@@ -1,8 +1,8 @@
-// Render "Voxel Space" (la técnica de Comanche, 1992), primo del raycaster de Wolfenstein 3D.
-// Por cada columna de pantalla se lanza un rayo sobre el mapa, de cerca hacia lejos.
-// En cada paso se lee la altura del terreno y se pinta la porción de columna que todavía
-// no estaba tapada (y-buffer). Así las lomas tapan lo que tienen detrás.
-// Orden de dibujo: cielo → terreno (con muros como escalones) → sprites y modelos 3D, de lejos a cerca.
+// "Voxel Space" rendering (the Comanche technique, 1992), a cousin of the Wolfenstein 3D raycaster.
+// For each screen column a ray is cast over the map, from near to far.
+// At each step it reads the terrain height and paints the part of the column that was not
+// covered yet (y-buffer). That way hills hide what is behind them.
+// Drawing order: sky → terrain (with walls as steps) → sprites and 3D models, from far to near.
 
 import {
   DEFAULT_KERB,
@@ -25,27 +25,27 @@ export const MAX_DIST = 140;
 export const FOG_START = 25;
 export const FOG_END = 130;
 export const Z_NEAR = 0.6;
-export const WALL_H = 0.32; // altura de los muros (en celdas)
-export const WALL_T = 0.5; // espesor de los muros (en celdas)
-export const WALL_STRIPE = 1.2; // largo de cada franja del muro (en celdas)
-export { KERB_H }; // altura del lomo del piano (en celdas; está en track.js, con el resto del piano)
-export const LINE_W = 0.22; // ancho de la línea blanca de borde (en celdas)
-export const GUIDE_W = 0.2; // medio ancho de la trazada ideal (en celdas)
-export const ROAD_TPC = 64; // texeles de asfalto por celda (la textura se repite cada 4 celdas, ~10 m)
-export const GRASS_TPC = 32; // texeles de césped por celda
-export const GRAVEL_TPC = 48; // texeles de leca por celda
-export const RUNOFF_LIGHT = 1.15; // la escapatoria asfaltada, más clara que la pista (no tiene goma)
-export const GRASS_BAND = 2.2; // ancho de cada franja del corte de césped (en celdas)
-export const MACRO_TPC = 2; // muestras de la variación grande por celda (se repite cada 32 celdas, ~80 m)
-export const PLANE_LEN = 0.7; // medio ancho del plano de la cámara a distancia 1: campo de visión de unos 70°
-const NCHK = MAX_DIST + 2; // marcas de profundidad por columna para recortar sprites
-export const NEAR_RISE = 0.2; // cuánto puede subir el terreno (o un muro) cerca de la cámara (en celdas), para saber dónde arrancar los rayos
-const MAX_STEP_GROWTH = 0.025; // a lo lejos, cuánto crece el paso máximo de los rayos por cada celda de distancia
-export const MODEL_NEAR = 0.05; // las caras de los modelos se recortan a esta distancia de la cámara (en celdas)
-export const BODY_PIVOT_Z = 0.3; // m: altura del eje sobre el que rola y cabecea la carrocería (centro de rolido)
-export const SUN = [0.45, 0.6, 0.66]; // hacia dónde está el sol (arriba a la izquierda del mapa, como el sombreado del terreno)
-export const SHADOW_SHIFT = 0.35; // cuánto se corre la sombra del auto, alejándose del sol (m)
-// contorno de la sombra del auto visto desde arriba (m): alerón delantero, cuerpo, alerón trasero
+export const WALL_H = 0.32; // wall height (in cells)
+export const WALL_T = 0.5; // wall thickness (in cells)
+export const WALL_STRIPE = 1.2; // length of each wall stripe (in cells)
+export { KERB_H }; // kerb hump height (in cells; it is in track.js, with the rest of the kerb)
+export const LINE_W = 0.22; // width of the white edge line (in cells)
+export const GUIDE_W = 0.2; // half width of the racing line (in cells)
+export const ROAD_TPC = 64; // asphalt texels per cell (the texture tiles every 4 cells, ~10 m)
+export const GRASS_TPC = 32; // grass texels per cell
+export const GRAVEL_TPC = 48; // gravel texels per cell
+export const RUNOFF_LIGHT = 1.15; // the paved runoff, lighter than the track (it has no rubber)
+export const GRASS_BAND = 2.2; // width of each mowing stripe of the grass (in cells)
+export const MACRO_TPC = 2; // samples of the large-scale variation per cell (it tiles every 32 cells, ~80 m)
+export const PLANE_LEN = 0.7; // half width of the camera plane at distance 1: field of view of about 70°
+const NCHK = MAX_DIST + 2; // depth marks per column for clipping sprites
+export const NEAR_RISE = 0.2; // how far terrain (or a wall) can rise near the camera (cells), to know where rays start
+const MAX_STEP_GROWTH = 0.025; // in the distance, how much the maximum ray step grows per cell of distance
+export const MODEL_NEAR = 0.05; // model faces are clipped at this distance from the camera (in cells)
+export const BODY_PIVOT_Z = 0.3; // m: height of the axis the bodywork rolls and pitches on (roll center)
+export const SUN = [0.45, 0.6, 0.66]; // where the sun is (top left of the map, like the terrain shading)
+export const SHADOW_SHIFT = 0.35; // how far the car's shadow shifts, away from the sun (m)
+// outline of the car's shadow seen from above (m): front wing, body, rear wing
 export const SHADOW = [
   [2.75, -0.95],
   [2.75, 0.95],
@@ -64,15 +64,15 @@ const FR = 196,
   FB = 230;
 const FOG = rgb(FR, FG, FB);
 const EDGE_WHITE = rgb(225, 225, 225);
-const KERB_GREEN = rgb(46, 135, 80); // franja verde abrasiva detrás del piano
+const KERB_GREEN = rgb(46, 135, 80); // abrasive green band behind the kerb
 const SAUSAGE_YELLOW = rgb(245, 196, 20);
-const DIRT = rgb(120, 96, 62); // tierra que traen las ruedas desde el pasto
+const DIRT = rgb(120, 96, 62); // dirt the wheels bring in from the grass
 const KERB_RUBBER = rgb(25, 25, 25);
-// desgaste del piano: dónde hay goma (del lado de la pista) y tierra (del lado del pasto)
-export const KERB_RUBBER_MAX = 0.45; // lo más que oscurece la goma
-export const KERB_DIRT_MAX = 0.5; // lo más que tapa la tierra
-export const WEAR_CELL = 0.4; // largo de cada mancha (celdas)
-// valor al azar (0..1) fijo para cada número entero, igual que en el shader de glrenderer.js
+// kerb wear: where there is rubber (on the track side) and dirt (on the grass side)
+export const KERB_RUBBER_MAX = 0.45; // the most the rubber darkens
+export const KERB_DIRT_MAX = 0.5; // the most the dirt covers
+export const WEAR_CELL = 0.4; // length of each mark (cells)
+// random value (0..1) fixed for each integer, the same as in the glrenderer.js shader
 export const hash = (i) => {
   const x = Math.sin(i * 12.9898) * 43758.5453;
   return x - Math.floor(x);
@@ -85,7 +85,7 @@ const LINE_BLACK = rgb(20, 20, 20);
 const LINE_WHITE = rgb(245, 245, 245);
 const WALL_TOP = rgb(150, 150, 155);
 
-// colores del piano del circuito, ya empaquetados (se calculan una vez por circuito)
+// the track's kerb colors, already packed (computed once per track)
 const kerbCache = new WeakMap();
 function kerbColors(track) {
   let c = kerbCache.get(track);
@@ -118,9 +118,9 @@ function blend(a, b, t) {
   return rgb(r | 0, g | 0, bl | 0);
 }
 
-// color de una zona del borde según la distancia s al límite de la pista
-// sb, gb, kb, lb: bordes de las franjas del costado (de afuera hacia adentro: salchicha, verde, piano, línea blanca);
-// c: sus colores, más el pasto y el asfalto
+// color of a roadside zone given the distance s to the track limit
+// sb, gb, kb, lb: edges of the roadside bands (from outside in: sausage kerb, green, kerb, white line);
+// c: their colors, plus grass and asphalt
 function zone(s, sb, gb, kb, lb, c) {
   if (s < sb) return c.grass;
   if (s < gb) return c.sausage;
@@ -137,12 +137,12 @@ function fogFactor(d) {
   return (t * t * 256) | 0;
 }
 
-// Iluminación por pendiente: las laderas que miran al "sol" se aclaran y las otras se oscurecen
+// Slope lighting: slopes facing the "sun" get lighter and the others darker
 function lightField(track) {
   const { W, H, height } = track;
   const light = new Float32Array(W * H).fill(1);
   const lx = -0.6,
-    ly = -0.8; // el sol viene de arriba a la izquierda del mapa
+    ly = -0.8; // the sun comes from the top left of the map
   for (let y = 1; y < H - 1; y++) {
     for (let x = 1; x < W - 1; x++) {
       const i = y * W + x;
@@ -155,8 +155,8 @@ function lightField(track) {
 }
 
 export class Renderer {
-  // canvas: el canvas donde se dibuja. En un worker no hay canvas: se pasa { width, height } y sólo se dibuja
-  // en memoria (cielo y terreno de un rango de columnas).
+  // canvas: the canvas to draw on. In a worker there is no canvas: { width, height } is passed and it only draws
+  // in memory (sky and terrain for a range of columns).
   constructor(canvas) {
     this.w = canvas.width;
     this.h = canvas.height;
@@ -165,17 +165,17 @@ export class Renderer {
       this.ctx = canvas.getContext('2d');
       this.image = this.ctx.createImageData(this.w, this.h);
       this.buf = new Uint32Array(this.image.data.buffer);
-      // buffers de los modelos 3D: color y 1/profundidad (z-buffer) de lo que se va dibujando de cada modelo
+      // 3D model buffers: color and 1/depth (z-buffer) of what is drawn of each model
       this.mcol = new Uint32Array(this.w * this.h);
       this.miz = new Float32Array(this.w * this.h);
-      // el cielo y el terreno se reparten entre varios workers (uno por núcleo), si el navegador los tiene
+      // the sky and terrain are split among several workers (one per core), if the browser has them
       this.pool = TerrainPool.create(this.w, this.h);
     } else {
       this.buf = new Uint32Array(this.w * this.h);
     }
     this.setZoom(1);
 
-    // por columna: hasta qué fila llegaba el terreno dibujado a cada profundidad entera
+    // per column: down to which row the drawn terrain reached at each integer depth
     this.clip = new Int16Array(this.w * NCHK);
 
     this.asphalt = asphaltTexture();
@@ -190,22 +190,22 @@ export class Renderer {
       this.mountains[i] = 0.5 + 0.25 * Math.sin(a * 3 + 1) + 0.15 * Math.sin(a * 7 + 2) + 0.1 * Math.sin(a * 17);
     }
     this.lightFor = new WeakMap();
-    this.guide = null; // trazada ideal ({ offset, color } por celda de la línea central), o null
-    this.rubber = null; // la goma sobre el asfalto (RubberMap de rubber.js, o lo que se le copió a un worker)
+    this.guide = null; // racing line ({ offset, color } per centerline cell), or null
+    this.rubber = null; // the rubber on the asphalt (RubberMap from rubber.js, or what was copied to a worker)
   }
 
-  // models: autos 3D, cada uno { model, x, y, z, angle, pitch, roll, dive, steer, spin, head, alpha, shadow, hide, meters }
-  // (pitch: la pendiente, inclina todo el auto; roll y dive: rolido y cabeceo de la carrocería sobre la suspensión)
-  // (steer: ángulo de las ruedas delanteras; head: hacia dónde gira la cabeza el piloto, en rad, + a la derecha;
-  // wear y shine: desgaste y brillo de las gomas, 0..1, sólo con WebGL)
-  // (hide: la etiqueta de las piezas que no se dibujan, por ejemplo el casco visto desde adentro)
-  // zoom: 1 = campo de visión normal; 2 = la mitad de ancho (todo se ve el doble de grande), como un teleobjetivo
+  // models: 3D cars, each { model, x, y, z, angle, pitch, roll, dive, steer, spin, head, alpha, shadow, hide, meters }
+  // (pitch: the slope, tilts the whole car; roll and dive: roll and pitch of the bodywork on the suspension)
+  // (steer: front wheel angle; head: where the driver turns his head, in rad, + to the right;
+  // wear and shine: tyre wear and shine, 0..1, only with WebGL)
+  // (hide: the tag of the pieces that are not drawn, for example the helmet seen from inside)
+  // zoom: 1 = normal field of view; 2 = half the width (everything looks twice as large), like a telephoto lens
   setZoom(zoom) {
     this.planeLen = PLANE_LEN / zoom;
-    this.P = this.w / 2 / this.planeLen; // píxeles por unidad a distancia 1
+    this.P = this.w / 2 / this.planeLen; // pixels per unit at distance 1
   }
 
-  // Devuelve una promesa: el cielo y el terreno pueden estar dibujándose en los workers.
+  // Returns a promise: the sky and terrain may be drawing in the workers.
   // cam: { x, y, z, ground, angle, pitch, zoom? }
   async render(track, cam, sprites, models = []) {
     this.setZoom(cam.zoom || 1);
@@ -223,7 +223,7 @@ export class Renderer {
     this.ctx.putImageData(this.image, 0, 0);
   }
 
-  // cielo y terreno de las columnas x0..x1 (en un worker, sólo su parte de la pantalla)
+  // sky and terrain for columns x0..x1 (in a worker, only its part of the screen)
   drawColumns(track, cam, horizon, x0, x1) {
     const dirX = Math.cos(cam.angle),
       dirY = Math.sin(cam.angle);
@@ -252,7 +252,7 @@ export class Renderer {
         const dy = horizon - y;
         buf[y * w + x] = dy < mh ? mix(mtn, ((1 - dy / mh) * 200) | 0) : skyRow[y];
       }
-      // lo que quede debajo del horizonte sin terreno es niebla lejana
+      // whatever is left below the horizon without terrain is distant fog
       for (let y = hy; y < h; y++) buf[y * w + x] = FOG;
     }
   }
@@ -262,16 +262,16 @@ export class Renderer {
     const { W, H, height, sdf, lat, kerbLeft, kerbRight, sausageLeft, sausageRight } = track;
     const style = track.kerbStyle ?? KERB_STYLE,
       reach = edgeReach(style);
-    const near = Math.max(reach + 1, track.runoff + 0.5); // hasta dónde hace falta saber dónde estamos
-    // el muro es la franja continua que empieza a `runoff` celdas del borde de la pista
+    const near = Math.max(reach + 1, track.runoff + 0.5); // how far we need to know where we are
+    // the wall is the continuous band that starts `runoff` cells from the track edge
     const wallIn = -track.runoff,
       wallOut = wallIn - WALL_T;
     const light = this.lightFor.get(track);
     const camZ = cam.z;
     const invCP = 1 / (Math.max(0.3, cam.z - cam.ground) * P);
     const pl = this.planeLen;
-    // lo que está más cerca que esto queda debajo del borde de la pantalla (aunque el piso suba un poco o haya un muro):
-    // los rayos arrancan ahí
+    // whatever is closer than this is below the bottom edge of the screen (even if the ground rises a bit or there is a
+    // wall): the rays start there
     const zStart = Math.max(Z_NEAR, ((camZ - cam.ground - NEAR_RISE) * P) / (h - horizon));
     const lazyStation = this.guide || this.rubber;
 
@@ -286,12 +286,12 @@ export class Renderer {
       let prevS = NaN,
         prevZ = 0,
         prevG = 0;
-      let wallDone = false; // el muro actual ya se dibujó entero al entrar
+      let wallDone = false; // the current wall was fully drawn on entering
 
       for (let z = zStart; z < MAX_DIST && ybuf > 0;) {
         while (chk <= z && chk < NCHK) clip[base + chk++] = ybuf;
 
-        // paso adaptativo: fino cerca (≈1 píxel de pantalla), más largo lejos
+        // adaptive step: fine up close (≈1 screen pixel), longer far away
         let step = z * z * invCP;
         if (step < 0.01) step = 0.01;
         const maxStep = 0.15 + z * MAX_STEP_GROWTH;
@@ -332,9 +332,9 @@ export class Renderer {
             d = u * v;
           ground = height[j] * a + height[j + 1] * b + height[j + W] * c + height[j + W + 1] * d;
           s = sdf[j] * a + sdf[j + 1] * b + sdf[j + W] * c + sdf[j + W + 1] * d;
-          // cerca del borde y en la escapatoria: dónde estamos sobre la línea central y de qué lado, para saber si
-          // hay piano (y verde y salchicha) y qué hay afuera (en el resto de la pista, para la trazada y la goma, se
-          // calcula recién si la muestra se pinta)
+          // near the edge and in the runoff: where we are on the centerline and on which side, to know if
+          // there is a kerb (and green and sausage kerb) and what is outside (on the rest of the track, for the racing
+          // line and the rubber, it is computed only if the sample gets painted)
           if (s > -near && s < 1) {
             st = stationAt(track, fx, fy);
             side = lat[j] * a + lat[j + 1] * b + lat[j + W] * c + lat[j + W + 1] * d;
@@ -343,26 +343,26 @@ export class Renderer {
               if (sausageLeft) q = kerbAmount(side > 0 ? sausageRight : sausageLeft, st);
             }
           }
-          // el piano es un lomo por fuera del borde (con serrucho, ver kerbLift); detrás, el verde (plano) y, en
-          // algunas curvas, la salchicha: otro lomo, más alto y angosto
+          // the kerb is a hump outside the edge (with a sawtooth, see kerbLift); behind it, the green (flat) and, in
+          // some corners, the sausage kerb: another hump, taller and narrower
           if (k > 0 && s < 0) {
             const kb = -style.width * k,
               gb = kb - style.green * k,
               sb = gb - SAUSAGE_W * q;
             if (s > kb) {
               ground += kerbLift(s, kb, k, st);
-              kerbShade = 1 - 0.22 * Math.cos((Math.PI * (s - kb)) / -kb); // la cara que mira a la pista, más iluminada
+              kerbShade = 1 - 0.22 * Math.cos((Math.PI * (s - kb)) / -kb); // track-facing side, brighter
             } else if (q > 0.02 && s < gb && s > sb) {
               const t = (s - sb) / (gb - sb);
               ground += SAUSAGE_H * q * Math.sin(Math.PI * t);
               kerbShade = 1 - 0.3 * Math.cos(Math.PI * t);
             }
           }
-          // muro: estamos dentro de la franja, o el paso la cruzó entera (pasa a lo lejos, con pasos largos)
+          // wall: we are inside the band, or the step crossed it entirely (far away, with long steps)
           isWall = (s < wallIn && s > wallOut) || (prevS > wallIn && s <= wallOut);
         }
 
-        // la cara del muro va donde el rayo cruza exactamente el borde de la franja, no en la muestra
+        // the wall face goes where the ray exactly crosses the edge of the band, not at the sample
         const entering = isWall && !wasWall && prevS > wallIn;
         let zf = z;
         let top = isWall ? ground + WALL_H : ground;
@@ -377,12 +377,12 @@ export class Renderer {
 
         if (!isWall) wallDone = false;
         if (isWall && wallDone) {
-          // el muro ya se dibujó entero (cara y tapa) al entrar: estas muestras no agregan nada
+          // the wall was fully drawn (face and top) on entering: these samples add nothing
         } else if (sy < ybuf) {
           const f = fogFactor(z);
           if (entering) {
-            // cara frontal del guardrail, con su textura: a lo largo, según la posición sobre la línea central;
-            // a lo alto, desde el borde de arriba de la cara hasta el piso
+            // front face of the barrier, with its texture: along, by position on the centerline;
+            // vertically, from the top edge of the face down to the ground
             const a = Math.max(0, stationAt(track, cam.x + rdx * zf, cam.y + rdy * zf));
             const wt = this.wall.size;
             const faceH = (WALL_H * P) / zf;
@@ -392,7 +392,7 @@ export class Renderer {
               const v = Math.min(wt - 1, ((y - syf) / faceH) * wt);
               buf[y * w + x] = mix(sample(this.wall, u, v, fp), f);
             }
-            // tapa: desde la cara hasta donde el rayo sale de la franja (según cuánto cambia s por paso)
+            // top: from the face to where the ray leaves the band (by how much s changes per step)
             const dsdz = (s - prevS) / (z - prevZ);
             const zx = zf + Math.min(3, dsdz < -1e-4 ? WALL_T / -dsdz : WALL_T);
             let syx = Math.ceil(horizon + ((camZ - top) * P) / zx);
@@ -404,7 +404,7 @@ export class Renderer {
           } else {
             let c;
             if (isWall) {
-              // la cámara arrancó dentro del muro: lo pintamos muestra a muestra
+              // the camera started inside the wall: we paint it sample by sample
               c = WALL_TOP;
             } else {
               const fw = Math.max(0.03, (z * pl) / w, step * 0.5);
@@ -436,23 +436,23 @@ export class Renderer {
     }
   }
 
-  // El "shader" del piso: dado un punto del mundo, devuelve su color ya iluminado.
-  // s = distancia con signo al borde (positiva = sobre la pista), k = cuánto piano hay acá (0..1),
-  // st = posición sobre la línea central (para las franjas del piano), side = distancia de costado a la línea central,
-  // lit = luz del terreno en este punto (pendiente y lomo del piano).
-  // De afuera hacia adentro: pasto, leca o asfalto de escapatoria | piano (sólo en curvas, por fuera del límite) | línea blanca | asfalto.
-  // Es lo que más se ejecuta del render: sólo calcula el pasto o el asfalto si van a hacer falta, y cada color
-  // se ilumina una sola vez.
+  // The ground "shader": given a world point, returns its color already lit.
+  // s = signed distance to the edge (positive = on the track), k = how much kerb there is here (0..1),
+  // st = position on the centerline (for the kerb stripes), side = lateral distance to the centerline,
+  // lit = terrain light at this point (slope and kerb hump).
+  // From outside in: grass, gravel or runoff asphalt | kerb (only in corners, outside the limit) | white line |
+  // asphalt. It is the most executed part of the renderer: it only computes the grass or the asphalt if they will be
+  // needed, and each color is lit only once.
   groundColor(track, fx, fy, fw, s, k, st, side, lit, q = 0) {
     const { line } = track;
     const style = track.kerbStyle ?? KERB_STYLE;
-    // variación de brillo a gran escala, igual para pasto y asfalto
+    // large-scale brightness variation, the same for grass and asphalt
     const mc = this.macro;
     const light =
       lit * mc.data[(((fy * MACRO_TPC) | 0) & (mc.size - 1)) * mc.size + (((fx * MACRO_TPC) | 0) & (mc.size - 1))];
     const isKerb = k > 0.02,
       isSausage = isKerb && q > 0.02;
-    // bordes de lo pintado (en las puntas, más angosto): piano, verde, salchicha, y la línea blanca adentro
+    // edges of the painted parts (narrower at the ends): kerb, green, sausage kerb, and the white line inside
     const kb = isKerb ? -style.width * k : 0;
     const gb = isKerb ? kb - style.green * k : 0;
     const outer = isSausage ? gb - SAUSAGE_W * q : gb,
@@ -460,14 +460,14 @@ export class Renderer {
 
     let grass = 0;
     if (s < outer + fw) {
-      // lo de afuera: pasto, leca o asfalto (más claro que el de la pista: no tiene goma), según la escapatoria
-      // de ese lado en ese tramo (RUNOFF de track.js), hasta el muro; más allá, pasto
+      // the outside: grass, gravel or asphalt (lighter than the track's: it has no rubber), depending on the runoff
+      // on that side in that segment (RUNOFF in track.js), up to the wall; beyond it, grass
       const mat = st >= 0 && s > -track.runoff ? runoffAt(side > 0 ? track.runoffRight : track.runoffLeft, st) : 0;
       if (mat === 2)
         grass = shade(sample(this.asphalt, fx * ROAD_TPC, fy * ROAD_TPC, fw * ROAD_TPC), light * RUNOFF_LIGHT);
       else if (mat === 1) grass = shade(sample(this.gravel, fx * GRAVEL_TPC, fy * GRAVEL_TPC, fw * GRAVEL_TPC), light);
       else {
-        // césped con franjas del corte, en diagonal; cerca del cambio de franja se mezclan para que no serruche
+        // grass with diagonal mowing stripes; near a stripe change they blend so it doesn't look jagged
         const ph = (fx + fy) * (0.7071 / GRASS_BAND);
         const fr = ph - Math.floor(ph);
         const e = Math.min(0.5, fw / GRASS_BAND);
@@ -480,10 +480,10 @@ export class Renderer {
     }
 
     const asphalt = sample(this.asphalt, fx * ROAD_TPC, fy * ROAD_TPC, fw * ROAD_TPC);
-    // goma: por donde pasaron las ruedas el asfalto (y el piano) está más oscuro
+    // rubber: where the wheels have passed the asphalt (and the kerb) is darker
     const dark = this.rubber && st >= 0 ? RUBBER_DARK * RubberMap.sample(this.rubber, st, side) : 0;
     let roadC = shade(asphalt, light * (1 - dark));
-    // línea de largada a cuadros
+    // checkered start line
     const ax = fx - line.x,
       ay = fy - line.y;
     const a = ax * line.dx + ay * line.dy;
@@ -493,7 +493,7 @@ export class Renderer {
         roadC = shade(((((a + 0.7) * 2) | 0) + (((l + 200) * 2) | 0)) & 1 ? LINE_WHITE : LINE_BLACK, lit);
       }
     }
-    // trazada ideal: una franja pintada sobre el asfalto, con el color que le toca en este cuadro
+    // racing line: a band painted on the asphalt, with the color it gets this frame
     const guide = this.guide;
     if (guide && s > 0 && st >= 0) {
       const u = st | 0;
@@ -507,8 +507,8 @@ export class Renderer {
       greenC = KERB_GREEN,
       sausageC = SAUSAGE_YELLOW;
     if (isKerb) {
-      // franjas perpendiculares a la pista, según la posición sobre la línea central
-      // los colores del circuito se repiten en orden; en el borde entre franjas se mezcla con la vecina
+      // stripes perpendicular to the track, by position on the centerline
+      // the track's colors repeat in order; at the edge between stripes it blends with the neighbor
       const cols = kerbColors(track);
       const n = cols.length,
         stripe = style.stripe;
@@ -520,7 +520,7 @@ export class Renderer {
       const ow = fr < e ? (e - fr) / (2 * e) : fr > 1 - e ? (fr - 1 + e) / (2 * e) : 0;
       const other = cols[(((fr < e ? i - 1 : i + 1) % n) + n) % n];
       kerbC = ow > 0 ? blend(cur, other, ow) : cur;
-      // desgaste: manchas de goma del lado de la pista y de tierra del lado del pasto (de lejos, el promedio)
+      // wear: rubber marks on the track side and dirt on the grass side (from afar, the average)
       const t = Math.max(0, Math.min(1, (s - kb) / -kb));
       const fade = Math.max(0, Math.min(1, 1 - fw / WEAR_CELL));
       const cell = Math.floor(st / WEAR_CELL) + (side > 0 ? 7919 : 0);
@@ -528,18 +528,18 @@ export class Renderer {
         n2 = 0.5 + (hash(cell + 101) - 0.5) * fade;
       kerbC = blend(kerbC, KERB_RUBBER, KERB_RUBBER_MAX * smooth(0.35, 1, t) * n1);
       kerbC = blend(kerbC, DIRT, KERB_DIRT_MAX * (1 - smooth(0, 0.4, t)) * n2 * n2);
-      // serrucho: la cara empinada de cada escalón queda en sombra (de lejos no se distingue)
+      // sawtooth: the steep face of each step is in shadow (from afar it can't be told apart)
       const r = st / RIDGE - Math.floor(st / RIDGE);
       const ridge = 1 + ((r < 0.8 ? 1.05 : 0.75) - 1) * Math.max(0, Math.min(1, 1 - (2 * fw) / RIDGE));
       kerbC = shade(kerbC, light * (1 - dark) * ridge);
-      // el verde: pintura sobre el asfalto (se ve el grano)
+      // the green: paint on the asphalt (the grain shows)
       greenC = shade(blend(asphalt, KERB_GREEN, 0.75), light);
-      if (isSausage) sausageC = shade(SAUSAGE_YELLOW, lit); // la salchicha, amarilla
+      if (isSausage) sausageC = shade(SAUSAGE_YELLOW, lit); // the sausage kerb, yellow
     }
     const edgeC = shade(EDGE_WHITE, lit);
     const c = { grass, sausage: sausageC, green: greenC, kerb: kerbC, edge: edgeC, road: roadC };
 
-    // antialiasing: cerca de un cambio de zona, mezclamos los dos colores
+    // antialiasing: near a zone change, we blend the two colors
     let edge = outer;
     const near = (e) => {
       if (Math.abs(s - e) < Math.abs(s - edge)) edge = e;
@@ -570,13 +570,13 @@ export class Renderer {
       if (camX < -1.5 || camX > 1.5) continue;
       visible.push({ s, depth, camX });
     }
-    // los modelos se ordenan junto con los sprites por la profundidad de su centro
+    // models are sorted together with the sprites by the depth of their center
     for (const m of models) {
       const rx = m.x - cam.x,
         ry = m.y - cam.y;
       const depth = rx * dirX + ry * dirY;
       if (depth < -3 || depth > FOG_END) continue;
-      // lejos y fuera de la pantalla: no se dibuja (cerca puede asomar aunque el centro esté afuera)
+      // far away and off screen: not drawn (up close it may show even if the center is outside)
       if (depth > 4 && Math.abs((rx * planeX + ry * planeY) / (pl2 * depth)) > 1.6) continue;
       visible.push({ s: m, depth, model: true });
     }
@@ -599,7 +599,7 @@ export class Renderer {
       const alpha = s.alpha ?? 1;
       const di = Math.min(NCHK - 1, depth | 0);
       for (let x = x0; x < x1; x++) {
-        // el terreno más cercano que el sprite lo tapa desde esta fila hacia abajo
+        // the terrain closer than the sprite hides it from this row down
         const yClip = clip[x * NCHK + di];
         const tx = Math.min(tex.w - 1, (((x - (screenX - sw / 2)) / sw) * tex.w) | 0);
         const y0 = Math.max(0, Math.ceil(top));
@@ -616,17 +616,17 @@ export class Renderer {
     }
   }
 
-  // Un modelo 3D (el auto): se ubican sus vértices en el mundo, se proyectan con la misma cámara que el terreno
-  // y se pintan sus caras con sombreado plano. Cada píxel guarda su profundidad (z-buffer) para que las piezas
-  // de adelante tapen a las de atrás, y se compara con las marcas del terreno para que las lomas y los muros lo tapen.
+  // A 3D model (the car): its vertices are placed in the world, projected with the same camera as the terrain
+  // and its faces painted with flat shading. Each pixel stores its depth (z-buffer) so the front pieces
+  // hide the back ones, and it is compared with the terrain marks so hills and walls hide it.
   drawModel(track, cam, m, dirX, dirY, horizon) {
     const { w, h, buf, P, clip, mcol, miz } = this;
-    const k = 1 / m.meters; // metros → celdas
+    const k = 1 / m.meters; // meters → cells
     const ca = Math.cos(m.angle),
       sa = Math.sin(m.angle);
     const cp = Math.cos(m.pitch || 0),
       sp = Math.sin(m.pitch || 0);
-    // ejes del auto en el mundo: adelante y arriba (con la pendiente) y derecha
+    // car axes in the world: forward and up (with the slope) and right
     const Fx = ca * cp,
       Fy = sa * cp,
       Fz = sp;
@@ -636,7 +636,7 @@ export class Renderer {
     const Ux = -ca * sp,
       Uy = -sa * sp,
       Uz = cp;
-    // la carrocería (todo menos las ruedas) rola y cabecea sobre la suspensión, alrededor de BODY_PIVOT_Z
+    // the bodywork (everything except the wheels) rolls and pitches on the suspension, around BODY_PIVOT_Z
     const cr = Math.cos(m.roll || 0),
       sr = Math.sin(m.roll || 0),
       cd = Math.cos(m.dive || 0),
@@ -647,14 +647,14 @@ export class Renderer {
         z1 = ly * sr + z * cr;
       return [lx * cd + z1 * sd, y1, z0 + z1 * cd - lx * sd];
     };
-    // a coordenadas de cámara: d = profundidad, s = a la derecha, u = arriba; ta, tb = coordenadas en la textura
+    // to camera coordinates: d = depth, s = right, u = up; ta, tb = texture coordinates
     const toCam = (X, Y, Z, ta = 0, tb = 0) => {
       const dx = X - cam.x,
         dy = Y - cam.y;
       return { d: dx * dirX + dy * dirY, s: dy * dirX - dx * dirY, u: Z - cam.z, ta, tb };
     };
-    // en pantalla, 1/d y las coordenadas de textura divididas por d varían linealmente: se interpolan así
-    // y en cada píxel se vuelve a dividir (corrección de perspectiva)
+    // on screen, 1/d and the texture coordinates divided by d vary linearly: they are interpolated like that
+    // and divided again at each pixel (perspective correction)
     const project = (p) => ({
       x: w / 2 + (p.s * P) / p.d,
       y: horizon - (p.u * P) / p.d,
@@ -663,7 +663,7 @@ export class Renderer {
       ib: p.tb / p.d,
     });
 
-    // sombra: el contorno del auto apoyado sobre el terreno, que oscurece lo que ya está dibujado
+    // shadow: the car's outline resting on the terrain, darkening what is already drawn
     if (m.shadow) {
       const ox = SHADOW_SHIFT * SUN[0] * k,
         oy = SHADOW_SHIFT * SUN[1] * k;
@@ -681,7 +681,7 @@ export class Renderer {
       }
     }
 
-    // 1) cada cara visible, recortada y proyectada, con su color ya iluminado y con niebla
+    // 1) each visible face, clipped and projected, with its color already lit and with fog
     const polys = [];
     let bx0 = w,
       by0 = h,
@@ -692,8 +692,8 @@ export class Renderer {
     const st = m.steer || 0,
       cst = Math.cos(st),
       sst = Math.sin(st);
-    // la rueda gira sobre su eje y, si es delantera, dobla con la dirección (sirve para puntos y para normales);
-    // lo montado en la mangueta (fixed) sólo dobla
+    // the wheel spins on its axis and, if it is a front one, steers (works for points and for normals);
+    // what is mounted on the upright (fixed) only steers
     const turn = (wh, lx, ly, lz, fixed) => {
       if (!fixed) {
         const ax = lx - wh.x,
@@ -702,7 +702,7 @@ export class Renderer {
         lz = wh.z - ax * ss + az * cs;
       }
       if (wh.front) {
-        // dobla sobre el eje de la mangueta, en la punta de los brazos de la suspensión
+        // steers around the upright's axis, at the tip of the suspension arms
         const py = wh.y + (wh.pivot || 0),
           bx = lx - wh.x,
           by = ly - py;
@@ -711,10 +711,10 @@ export class Renderer {
       }
       return [lx, ly, lz];
     };
-    // la cabeza gira alrededor del cuello
+    // the head turns around the neck
     const ch = Math.cos(m.head || 0),
       sh = Math.sin(m.head || 0);
-    // y se inclina con las fuerzas (headTilt: hacia el costado, como el rolido, y hacia adelante)
+    // and tilts with the forces (headTilt: sideways, like roll, and forward)
     const [hr, hp] = m.headTilt || [0, 0],
       chr = Math.cos(hr),
       shr = Math.sin(hr),
@@ -730,8 +730,8 @@ export class Renderer {
         z1 = y * shr + bz * chr;
       return [hd.x + x * chp + z1 * shp, hd.y + y1, (hd.z || 0) + z1 * chp - x * shp];
     };
-    // el volante gira alrededor de su columna (Rodrigues)
-    // (f: qué parte del giro sigue; los antebrazos lo siguen de a poco, de la muñeca al codo)
+    // the steering wheel turns around its column (Rodrigues)
+    // (f: what fraction of the turn it follows; the forearms follow it gradually, from the wrist to the elbow)
     const wt = m.wheelTurn || 0;
     const column = (co, lx, ly, lz, f = 1) => {
       const ct = Math.cos(wt * f),
@@ -749,7 +749,7 @@ export class Renderer {
         co.z + vz * ct + (ax * vy - ay * vx) * stn + az * d,
       ];
     };
-    // al cambiar, las levas y las manos se acercan al piloto sobre la columna
+    // when shifting, the paddles and hands move toward the driver along the column
     const pulled = (co, part, [x, y, z]) => {
       const off = part.pull === undefined ? 0 : (m.paddle?.[part.side] || 0) * part.pull;
       return [x + co.ax * off, y + co.ay * off, z + co.az * off];
@@ -774,7 +774,7 @@ export class Renderer {
       }
       for (const face of part.faces) {
         const idx = face.idx;
-        // normal de la cara (viene del modelo, apuntando hacia afuera) llevada al mundo, y centro de la cara
+        // face normal (comes from the model, pointing outward) taken to the world, and face center
         let [lx, ly, lz] = face.n;
         if (wh) [lx, ly, lz] = turn({ x: 0, y: 0, z: 0, front: wh.front }, lx, ly, lz, part.fixed);
         else {
@@ -803,12 +803,12 @@ export class Renderer {
         fx /= idx.length;
         fy /= idx.length;
         fz /= idx.length;
-        // si mira para el otro lado de la cámara, no se ve
+        // if it faces away from the camera, it is not visible
         if (nx * (fx - cam.x) + ny * (fy - cam.y) + nz * (fz - cam.z) >= 0) continue;
-        // en el mapa y crece hacia abajo: el sol está hacia -x, -y
+        // on the map y grows downward: the sun is toward -x, -y
         const sun = -nx * SUN[0] - ny * SUN[1] + nz * SUN[2];
         const light = 0.5 + 0.6 * Math.max(0, sun) + 0.12 * nz;
-        // la pantalla del volante, sin WebGL, queda apagada (su color)
+        // the steering wheel display, without WebGL, stays off (its color)
         const tex = face.slot === 6 ? null : face.tex;
         const uv = tex ? face.uv : null;
         const poly = clipNear(
@@ -824,14 +824,14 @@ export class Renderer {
           if (p.y > by1) by1 = p.y;
         }
         const fog = fogFactor(depth);
-        // texeles que cubre un píxel de pantalla, para elegir el mipmap
+        // texels covered by one screen pixel, to choose the mipmap
         const fp = tex ? (face.dens * depth * m.meters) / P : 0;
         polys.push({ pts, color: mix(shade(face.color, light), fog), tex, fp, light, fog });
       }
     }
     if (!polys.length) return;
 
-    // 2) se pintan en los buffers del modelo, quedándose en cada píxel con la cara más cercana
+    // 2) painted into the model buffers, keeping the nearest face at each pixel
     bx0 = Math.max(0, Math.floor(bx0));
     by0 = Math.max(0, Math.floor(by0));
     bx1 = Math.min(w - 1, Math.ceil(bx1));
@@ -842,14 +842,14 @@ export class Renderer {
       scan(pts, w, h, (x, y, iz, ia, ib) => {
         const o = y * w + x;
         if (iz <= miz[o]) return;
-        // ¿lo tapa el terreno? (una loma o un muro más cerca que este punto)
+        // is it hidden by the terrain? (a hill or a wall closer than this point)
         if (y >= clip[x * NCHK + Math.min(NCHK - 1, (1 / iz) | 0)]) return;
         miz[o] = iz;
         mcol[o] = tex ? mix(shade(sample(tex, ia / iz, ib / iz, fp), light), fog) : color;
       });
     }
 
-    // 3) se pasa a la imagen; el fantasma, semitransparente
+    // 3) copied to the image; the ghost, semi-transparent
     const alpha = m.alpha ?? 1;
     for (let y = by0; y <= by1; y++) {
       for (let o = y * w + bx0, end = y * w + bx1; o <= end; o++) {
@@ -859,7 +859,7 @@ export class Renderer {
   }
 }
 
-// Recorta un polígono (en coordenadas de cámara) para quedarse con la parte delante de la cámara
+// Clips a polygon (in camera coordinates) to keep the part in front of the camera
 function clipNear(pts) {
   const out = [];
   for (let i = 0; i < pts.length; i++) {
@@ -877,9 +877,9 @@ function clipNear(pts) {
   return out;
 }
 
-// Rellena un polígono convexo en pantalla, fila por fila, tomando los píxeles cuyo centro cae adentro.
-// Interpola 1/profundidad (iz) y las coordenadas de textura divididas por la profundidad (ia, ib), que varían
-// linealmente en la pantalla. plot(x, y, iz, ia, ib) por cada píxel.
+// Fills a convex polygon on screen, row by row, taking the pixels whose center falls inside.
+// Interpolates 1/depth (iz) and the texture coordinates divided by depth (ia, ib), which vary
+// linearly on screen. plot(x, y, iz, ia, ib) for each pixel.
 function scan(pts, w, h, plot) {
   let top = Infinity,
     bottom = -Infinity;
@@ -933,9 +933,9 @@ function scan(pts, w, h, plot) {
   }
 }
 
-// Reparte el cielo y el terreno entre varios workers (src/render/terrainworker.js): cada uno dibuja una franja de
-// columnas de la pantalla en su propio núcleo y devuelve sus píxeles y sus marcas de profundidad.
-// Si algo falla (el navegador no tiene workers de módulos, por ejemplo), se vuelve a dibujar todo acá.
+// Splits the sky and terrain among several workers (src/render/terrainworker.js): each one draws a strip of
+// screen columns on its own core and returns its pixels and depth marks.
+// If something fails (the browser has no module workers, for example), everything is drawn here again.
 class TerrainPool {
   static create(w, h) {
     if (typeof Worker === 'undefined') return null;
@@ -958,7 +958,7 @@ class TerrainPool {
       const x0 = Math.round((k * w) / n),
         x1 = Math.round(((k + 1) * w) / n);
       const worker = new Worker(new URL('./terrainworker.js', import.meta.url), { type: 'module' });
-      // buffers que van y vuelven en cada cuadro (se transfieren, no se copian)
+      // buffers that go back and forth every frame (transferred, not copied)
       const part = {
         worker,
         x0,
@@ -977,12 +977,13 @@ class TerrainPool {
     }
   }
 
-  // Dibuja cielo y terreno en r.buf y r.clip. Devuelve false si no se pudo (y hay que dibujar en el hilo principal).
+  // Draws sky and terrain into r.buf and r.clip. Returns false if it couldn't (and it must be drawn on the main
+  // thread).
   async draw(r, track, cam, horizon) {
     if (this.failed) return false;
     const offset = (r.guide && r.guide.offset) || null;
     if (track !== this.track || offset !== this.offset) {
-      // el circuito (y por dónde pasa la trazada) se manda una sola vez, copiado a cada worker
+      // the track (and where the racing line runs) is sent only once, copied to each worker
       const {
         W,
         H,
@@ -1029,7 +1030,8 @@ class TerrainPool {
       zoom: cam.zoom || 1,
       horizon,
       guideColor: r.guide ? r.guide.color.slice() : null,
-      // la goma: una copia cuando cambia (cada medio segundo), si no `true` (la misma de antes) o null (sin goma)
+      // the rubber: a copy when it changes (every half second), otherwise `true` (the same as before) or null (no
+      // rubber)
       rubber: r.rubber ? true : null,
     };
     const m = r.rubber;

@@ -1,25 +1,26 @@
-"""Arma el trazado de un circuito a partir de la telemetría de F1: línea central, largo de vuelta y alturas.
+"""Builds a track layout from F1 telemetry: centerline, lap length and heights.
 
-Usa la API abierta de OpenF1 (https://openf1.org), que tiene las posiciones X, Y, Z de los autos unas 4 veces por
-segundo. Ojo: no son posiciones de GPS. El sistema de tiempos ubica a cada auto según cuánto avanzó en la vuelta,
-sobre el dibujo oficial del circuito, así que todos pasan por la misma línea (apenas ±0,4 m entre 1.300 vueltas
-de todos los pilotos en Montreal). De ahí no salen los bordes ni el ancho, pero sí la forma del circuito, suave y
-en metros reales: mucho mejor que sacar la línea central de una imagen.
+Uses the open OpenF1 API (https://openf1.org), which has the X, Y, Z positions of the cars about 4 times per
+second. Careful: these are not GPS positions. The timing system places each car by how far it has gone around the
+lap, on the official track drawing, so every car follows the same line (just ±0.4 m across 1,300 laps by all
+drivers at Montreal). That gives neither the edges nor the width, but it does give the track's shape, smooth and in
+real meters: much better than extracting the centerline from an image.
 
-Junta todas las vueltas de todos los pilotos en las prácticas y la clasificación, sin las de entrada y salida de
-boxes (así no aparece la calle de boxes).
-  1. Una línea de referencia: una vuelta del largo típico, suavizada.
-  2. Cada posición se proyecta sobre la referencia; por tramos se toma la mediana de lo medido (así unas pocas
-     posiciones lejanas, como las de la calle de boxes, no la corren) y la referencia se corre ahí. Se repite tres veces y se sacan los tramos por donde no pasó nadie
-     (un salto en las posiciones de la vuelta de referencia).
-  3. Se suaviza y se vuelve a muestrear cada CELL metros, desde la línea de largada (donde empiezan las vueltas)
-     en el sentido de carrera.
+Collects every lap by every driver in practice and qualifying, except pit in and pit out laps (so the pit lane does
+not show up).
+  1. A reference line: a lap of typical length, smoothed.
+  2. Each position is projected onto the reference; for each segment the median of the measurements is taken (so a
+     few distant positions, such as those in the pit lane, do not shift it) and the reference is moved there. This
+     is repeated three times, and the segments nobody drove through are removed (a jump in the positions of the
+     reference lap).
+  3. It is smoothed and resampled every CELL meters, from the start line (where laps begin) in the racing
+     direction.
 
-Guarda tracks/<id>.layout.json: puntos de la línea central (m, con y hacia abajo como en una imagen), largo de
-vuelta y la altura en cada punto. Lo descargado queda en tools/.cache/ para no volver a pedirlo. Sólo usa la
-biblioteca estándar.
+Saves tracks/<id>.layout.json: centerline points (m, with y pointing down as in an image), lap length and the
+height at each point. Downloads stay in tools/.cache/ so they are not requested again. Uses only the standard
+library.
 
-Uso:
+Usage:
     python3 tools/layout.py Montreal 2025 tracks/montreal.layout.json
 """
 
@@ -38,12 +39,12 @@ from pathlib import Path
 API = "https://api.openf1.org/v1"
 CACHE = Path(__file__).parent / ".cache"
 SESSIONS = ("Practice 1", "Practice 2", "Practice 3", "Sprint Qualifying", "Qualifying")
-CELL = 2.0  # m entre puntos de la línea central (una celda del mapa)
-BIN = 4.0  # m de pista por tramo al medir los bordes
-EDGE = 0.02  # percentil de cada borde (descarta las salidas de pista y el ruido de la posición)
-MAX_SIDE = 30.0  # m: más lejos de la referencia no es esta pista (calle de boxes, otro tramo cercano)
-SMOOTH_CENTER = 40.0  # m: ventana para suavizar el corrimiento del centro y el ancho a lo largo de la pista
-SMOOTH_LINE = 12.0  # m: ventana para suavizar la línea final (saca el ruido sin redondear las curvas)
+CELL = 2.0  # m between centerline points (one map cell)
+BIN = 4.0  # m of track per segment when measuring the edges
+EDGE = 0.02  # percentile of each edge (discards track excursions and position noise)
+MAX_SIDE = 30.0  # m: farther from the reference is not this track (pit lane, another nearby section)
+SMOOTH_CENTER = 40.0  # m: window to smooth the center offset and the width along the track
+SMOOTH_LINE = 12.0  # m: window to smooth the final line (removes noise without rounding off the corners)
 
 
 def get(endpoint: str, **params: object) -> list[dict]:
@@ -57,21 +58,21 @@ def get(endpoint: str, **params: object) -> list[dict]:
                 data = json.load(r)
             break
         except urllib.error.HTTPError as e:
-            if e.code == 404:  # así contesta OpenF1 cuando no hay resultados
+            if e.code == 404:  # this is how OpenF1 answers when there are no results
                 data = []
                 break
-            # 429: pedimos demasiado rápido; esperamos cada vez más y reintentamos
+            # 429: we asked too fast; wait longer each time and retry
             if e.code != 429 or attempt == 5:
-                sys.exit(f"OpenF1 respondió {e.code}: {e.read().decode(errors='replace')[:300]}")
+                sys.exit(f"OpenF1 answered {e.code}: {e.read().decode(errors='replace')[:300]}")
             time.sleep(5 * 2**attempt)
         except (http.client.IncompleteRead, urllib.error.URLError, TimeoutError):
-            # la conexión se cortó a mitad de camino: se vuelve a pedir
+            # the connection dropped halfway: request it again
             if attempt == 5:
                 raise
             time.sleep(5)
-    time.sleep(0.4)  # respetamos el límite de pedidos de la API
+    time.sleep(0.4)  # respect the API's request limit
     if not isinstance(data, list):
-        sys.exit(f"OpenF1 respondió: {data}")
+        sys.exit(f"OpenF1 answered: {data}")
     CACHE.mkdir(exist_ok=True)
     key.write_text(json.dumps(data))
     return data
@@ -82,7 +83,7 @@ def when(s: str) -> float:
 
 
 def valid_laps(laps: list[dict]) -> list[tuple[float, float]]:
-    """Intervalos (inicio, fin) de las vueltas en pista: sin la de salida de boxes ni la que termina entrando."""
+    """(start, end) intervals of the laps on track: without the pit out lap or the one that ends in the pits."""
     laps = sorted((l for l in laps if l.get("date_start")), key=lambda l: l["lap_number"])
     out = []
     for i, lap in enumerate(laps):
@@ -90,14 +91,14 @@ def valid_laps(laps: list[dict]) -> list[tuple[float, float]]:
             continue
         nxt = laps[i + 1] if i + 1 < len(laps) else None
         if nxt is None or nxt.get("is_pit_out_lap"):
-            continue  # la última de cada tanda termina en boxes
+            continue  # the last lap of each run ends in the pits
         start = when(lap["date_start"])
         out.append((start, start + lap["lap_duration"]))
     return out
 
 
 def session_points(session_key: int) -> tuple[list[tuple[float, float, float]], list[list[tuple[float, float]]], list[tuple[float, float]]]:
-    """Posiciones (x, y, z en m) de todas las vueltas válidas, las vueltas como polilíneas y dónde empezó cada una."""
+    """Positions (x, y, z in m) of all valid laps, the laps as polylines, and where each one started."""
     points, laps_xy, starts = [], [], []
     drivers = sorted({d["driver_number"] for d in get("drivers", session_key=session_key)})
     for number in drivers:
@@ -106,17 +107,17 @@ def session_points(session_key: int) -> tuple[list[tuple[float, float, float]], 
             continue
         loc = get("location", session_key=session_key, driver_number=number)
         times = [when(p["date"]) for p in loc]
-        print(f"    auto {number:>2}: {len(intervals)} vueltas, {len(loc)} posiciones")
+        print(f"    car {number:>2}: {len(intervals)} laps, {len(loc)} positions")
         for a, b in intervals:
             i, j = bisect.bisect_left(times, a), bisect.bisect_right(times, b)
             lap = [(p["x"] / 10, p["y"] / 10, p["z"] / 10) for p in loc[i:j]]
-            # quieto en pista (bandera roja, cámara de la API trabada) no aporta: fuera los puntos repetidos
+            # standing still on track (red flag, stuck API feed) adds nothing: drop the repeated points
             lap = [p for k, p in enumerate(lap) if k == 0 or p[:2] != lap[k - 1][:2]]
             if len(lap) < 20:
                 continue
             points.extend(lap)
             laps_xy.append([(x, y) for x, y, _ in lap])
-            # la largada: interpolada entre las dos posiciones de alrededor del comienzo de la vuelta
+            # the start: interpolated between the two positions around the beginning of the lap
             if 0 < i < len(loc):
                 t0, t1 = times[i - 1], times[i]
                 f = (a - t0) / max(1e-9, t1 - t0)
@@ -142,7 +143,7 @@ def resample(xy: list[tuple[float, float]], step: float, closed: bool = True) ->
 
 
 def smooth(values: list, window: int) -> list:
-    """Promedio móvil circular (sirve para números y para puntos)."""
+    """Circular moving average (works for numbers and for points)."""
     n, half = len(values), max(1, window // 2)
     if isinstance(values[0], tuple):
         cols = [smooth([v[c] for v in values], window) for c in range(len(values[0]))]
@@ -155,7 +156,7 @@ def smooth(values: list, window: int) -> list:
 
 
 class Projector:
-    """Proyecta puntos sobre una línea cerrada: distancia desde el primer punto y corrimiento (+ a la izquierda)."""
+    """Projects points onto a closed line: distance from the first point and offset (+ to the left)."""
 
     def __init__(self, line: list[tuple[float, float]], reach: float):
         self.line, self.n = line, len(line)
@@ -198,12 +199,12 @@ def normals(line: list[tuple[float, float]]) -> list[tuple[float, float]]:
     for i in range(n):
         (ax, ay), (bx, by) = line[i - 1], line[(i + 1) % n]
         l = math.hypot(bx - ax, by - ay) or 1
-        out.append((-(by - ay) / l, (bx - ax) / l))  # hacia la izquierda del sentido de carrera
+        out.append((-(by - ay) / l, (bx - ax) / l))  # to the left of the racing direction
     return out
 
 
 def fill(arr: list) -> list:
-    """Los tramos sin datos toman el valor del siguiente que tenga."""
+    """Segments with no data take the value of the next one that has it."""
     return [v if v is not None else next(arr[(k + j) % len(arr)] for j in range(1, len(arr)) if arr[(k + j) % len(arr)] is not None)
             for k, v in enumerate(arr)]
 
@@ -213,7 +214,7 @@ def at(per_bin: list[float], s: float, total: float) -> float:
 
 
 def measure(line: list[tuple[float, float]], points: list[tuple[float, float, float]]):
-    """Por tramos de BIN metros sobre la línea: corrimiento del centro, dispersión, altura y cantidad de posiciones."""
+    """Per BIN-meter segment along the line: center offset, spread, height and number of positions."""
     proj = Projector(line, MAX_SIDE)
     total = proj.s[-1]
     nb = max(1, int(total // BIN))
@@ -232,7 +233,7 @@ def measure(line: list[tuple[float, float]], points: list[tuple[float, float, fl
         enough = len(b) >= 20
         lo.append(percentile(b, EDGE) if enough else None)
         hi.append(percentile(b, 1 - EDGE) if enough else None)
-        # el centro es la mediana: unas pocas posiciones lejanas (la calle de boxes al lado de la recta) no lo corren
+        # the center is the median: a few distant positions (the pit lane beside the straight) do not shift it
         mid.append(percentile(b, 0.5) if enough else None)
         zm.append(z[len(z) // 2] if z else None)
     lo, hi, mid, zm = fill(lo), fill(hi), fill(mid), fill(zm)
@@ -245,7 +246,7 @@ def measure(line: list[tuple[float, float]], points: list[tuple[float, float, fl
 def main(circuit: str, year: int, out: Path) -> None:
     sessions = [s for s in get("sessions", circuit_short_name=circuit, year=year) if s["session_name"] in SESSIONS]
     if not sessions:
-        sys.exit(f"No encontré prácticas ni clasificación de {year} en {circuit}")
+        sys.exit(f"Could not find {year} practice or qualifying at {circuit}")
     points, laps_xy, starts = [], [], []
     for s in sessions:
         print(f"  {s['session_name']} ({s['date_start'][:10]})")
@@ -253,9 +254,9 @@ def main(circuit: str, year: int, out: Path) -> None:
         points += p
         laps_xy += l
         starts += st
-    print(f"  {len(laps_xy)} vueltas, {len(points)} posiciones")
+    print(f"  {len(laps_xy)} laps, {len(points)} positions")
 
-    # 1) referencia: una vuelta del largo típico (una con un salto en las posiciones mediría de más)
+    # 1) reference: a lap of typical length (one with a jump in the positions would measure too long)
     def lap_len(lap):
         return sum(math.dist(lap[i], lap[i - 1]) for i in range(1, len(lap)))
     full = [l for l in laps_xy if len(l) > 150]
@@ -264,50 +265,50 @@ def main(circuit: str, year: int, out: Path) -> None:
     ref_lap = min(full, key=lambda l: abs(lap_len(l) - typical))
     line = smooth(resample(ref_lap, CELL), round(SMOOTH_LINE / CELL))
 
-    # 2) bordes por tramo y la línea al medio, tres veces (cada una parte más cerca del centro)
+    # 2) edges per segment and the line in the middle, three times (each pass starts closer to the center)
     for it in range(3):
         proj, center, width, _, count = measure(line, points)
         nrm, total = normals(line), proj.s[-1]
-        # fuera los tramos por donde no pasó nadie (un desvío que traía la referencia)
+        # drop the segments nobody drove through (a detour the reference had)
         moved = [(x + nrm[i][0] * at(center, proj.s[i], total), y + nrm[i][1] * at(center, proj.s[i], total))
                  for i, (x, y) in enumerate(line) if at(count, proj.s[i], total) >= 20]
         line = smooth(resample(moved, CELL), round(SMOOTH_LINE / CELL))
         shift = sum(abs(c) for c in center) / len(center)
-        print(f"  pasada {it + 1}: la línea se movió {shift:.2f} m en promedio · dispersión {sorted(width)[len(width) // 2]:.1f} m")
+        print(f"  pass {it + 1}: the line moved {shift:.2f} m on average · spread {sorted(width)[len(width) // 2]:.1f} m")
 
-    # 3) la línea de largada: donde empiezan las vueltas; desde ahí, en el sentido de carrera
+    # 3) the start line: where laps begin; from there, in the racing direction
     proj = Projector(line, MAX_SIDE)
     total = proj.s[-1]
     s0 = sorted(r[0] for r in (proj.project(x, y) for x, y in starts) if r)
-    # mediana circular: se centra alrededor del primero para no partir la largada en dos (cerca de s = 0)
+    # circular median: centered around the first value so the start is not split in two (near s = 0)
     a = s0[len(s0) // 2]
     s0 = sorted(((v - a + total / 2) % total) - total / 2 for v in s0)
     start = (a + s0[len(s0) // 2]) % total
     k0 = min(range(len(line)), key=lambda i: abs(((proj.s[i] - start + total / 2) % total) - total / 2))
     line = line[k0:] + line[:k0]
-    # el sentido: el de las vueltas (la referencia ya lo trae, pero se verifica con el avance de una vuelta)
+    # the direction: that of the laps (the reference already has it, but it is checked against one lap's progress)
     proj = Projector(line, MAX_SIDE)
     ss = [r[0] for r in (proj.project(x, y) for x, y in ref_lap[: len(ref_lap) // 4]) if r]
     if sum(1 for i in range(1, len(ss)) if 0 < (ss[i] - ss[i - 1]) % proj.s[-1] < proj.s[-1] / 2) < len(ss) / 2:
         line = [line[0]] + line[1:][::-1]
 
-    # 4) sobre la línea final: la altura en cada punto
+    # 4) on the final line: the height at each point
     proj, _, _, zs, _ = measure(line, points)
     total = proj.s[-1]
     heights = smooth([at(zs, proj.s[i], total) for i in range(len(line))], round(30 / CELL))
     low = min(heights)
 
-    # el mapa con y hacia abajo, como las imágenes (si no, el circuito queda espejado)
+    # the map with y pointing down, like images (otherwise the track comes out mirrored)
     x0, y1 = min(x for x, _ in line), max(y for _, y in line)
     data = {
-        "source": f"OpenF1 · prácticas y clasificación {year} en {circuit} · {len(laps_xy)} vueltas de todos los pilotos",
+        "source": f"OpenF1 · {year} practice and qualifying at {circuit} · {len(laps_xy)} laps by all drivers",
         "lapLengthMeters": round(total, 1),
         "points": [[round(x - x0, 2), round(y1 - y, 2)] for x, y in line],
         "heightsMeters": [round(h - low, 2) for h in heights],
     }
     out.write_text(json.dumps(data, ensure_ascii=False))
     print(data["source"])
-    print(f"Largo de vuelta: {total:.0f} m · desnivel: {max(heights) - low:.1f} m · {len(line)} puntos")
+    print(f"Lap length: {total:.0f} m · elevation change: {max(heights) - low:.1f} m · {len(line)} points")
 
 
 if __name__ == "__main__":

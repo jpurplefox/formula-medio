@@ -1,9 +1,10 @@
-// El joystick, con la Gamepad API y el mapeo estándar (los de Xbox y PlayStation): el gatillo derecho acelera y el
-// izquierdo frena, la palanca izquierda dobla, y los tres son progresivos. Los botones hacen lo mismo que una tecla:
-// RB/R1 sube de marcha (X), LB/L1 baja (Z), Y/△ cambia la cámara (C), X/□ la trazada (G), Back/Share reinicia (R),
-// la cruceta elige el auto en la repetición y Start es 'Start' (quien lo usa decide: abrir el menú o largar).
-const STICK_DEAD = 0.08; // zona muerta de la palanca: cerca del centro no dobla
-const STEER_CURVE = 1.5; // la palanca dobla menos al principio, para corregir fino a alta velocidad
+// The gamepad, with the Gamepad API and the standard mapping (Xbox and PlayStation ones): the right trigger
+// accelerates and the left one brakes, the left stick steers, and all three are progressive. The buttons do the same
+// as a key: RB/R1 shifts up (X), LB/L1 shifts down (Z), Y/△ changes the camera (C), X/□ the racing line (G),
+// Back/Share restarts (R), the d-pad picks the car in the replay and Start is 'Start' (the caller decides: open the
+// menu or start).
+const STICK_DEAD = 0.08; // stick dead zone: near the center it doesn't steer
+const STEER_CURVE = 1.5; // the stick steers less at first, for fine corrections at high speed
 const TRIGGER_DEAD = 0.04;
 const PAD_KEYS = {
   4: 'KeyZ',
@@ -16,24 +17,24 @@ const PAD_KEYS = {
   15: 'ArrowRight',
 };
 
-// El navegador recién muestra un joystick cuando se aprieta un botón con la página abierta. Si hay varios, usa el
-// primero con mapeo estándar. Los que no lo tienen (algunos genéricos, o según el navegador) suelen traer los
-// gatillos como ejes que en reposo valen -1: el primero frena y el segundo acelera.
+// The browser only exposes a gamepad once a button is pressed with the page open. If there are several, it uses the
+// first one with the standard mapping. Those without it (some generic ones, or depending on the browser) usually
+// report the triggers as axes that rest at -1: the first brakes and the second accelerates.
 export class Gamepad {
   throttle = 0;
   brake = 0;
   steer = 0;
   id = null;
   pressed = [];
-  rest = new Map(); // id → valores de los ejes la primera vez que se lo vio (en reposo)
+  rest = new Map(); // id → axis values the first time it was seen (at rest)
 
-  // onButton(names): un botón recién apretado, con el nombre de la tecla que hace lo mismo;
-  // onChange(id): se conectó o desconectó (id null) un joystick
+  // onButton(names): a button just pressed, with the name of the key that does the same;
+  // onChange(id): a gamepad was connected or disconnected (id null)
   constructor({ onButton, onChange }) {
     Object.assign(this, { onButton, onChange });
   }
 
-  // se llama en cada cuadro: lee los gatillos, la palanca y los botones
+  // called every frame: reads the triggers, the stick and the buttons
   poll() {
     const pads = [...(navigator.getGamepads?.() ?? [])].filter(Boolean);
     const gp = pads.find((g) => g.mapping === 'standard') ?? pads[0];
