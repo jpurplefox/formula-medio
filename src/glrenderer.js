@@ -10,10 +10,10 @@
 
 import { DEFAULT_KERB, KERB_STYLE, MAX_KERB_COLORS, RIDGE, RIDGE_DEPTH, SAUSAGE_H, SAUSAGE_W, edgeReach, kerbAmount, stationAt } from './track.js';
 import { RUBBER_DARK, WEAR_REACH } from './rubber.js';
-import { asphaltTexture, dirtTexture, grassTexture, gravelTexture, macroNoise, wallTexture } from './textures.js';
+import { asphaltTexture, cloudNoise, dirtTexture, grassTexture, gravelTexture, macroNoise, wallTexture } from './textures.js';
 import {
-  DIRT_DEEP, DIRT_TPC, GRASS_MASK_CELLS, GRASS_STRIPE, WEAR_DIRT, FOG_END, FOG_START, GRASS_BAND, GRASS_TPC, GRAVEL_TPC, RUNOFF_LIGHT, GUIDE_W, KERB_H, LINE_W, MACRO_TPC, MAX_DIST, MODEL_NEAR, NEAR_RISE, PLANE_LEN,
-  BODY_PIVOT_Z, ROAD_TPC, SHADOW, SHADOW_SHIFT, SUN, WALL_H, WALL_STRIPE, WALL_T, Z_NEAR,
+  DIRT_DEEP, DIRT_TPC, GRASS_MASK_CELLS, GRASS_STRIPE, WEAR_DIRT, FOG_MAX, GL_FOG_START, GRASS_BAND, GRASS_TPC, GRAVEL_TPC, RUNOFF_LIGHT, GUIDE_W, KERB_H, LINE_W, MACRO_TPC, GL_MAX_DIST as MAX_DIST, MODEL_NEAR, NEAR_RISE, PLANE_LEN,
+  BODY_PIVOT_Z, CLOUD_BASE, CLOUD_CHURN, CLOUD_COVER, CLOUD_FAR, CLOUD_SIGMA, CLOUD_TILE, CLOUD_TOP, CLOUD_WIND, ROAD_TPC, SHADOW, SHADOW_SHIFT, SUN, WALL_H, WALL_STRIPE, WALL_T, Z_NEAR,
   KERB_RUBBER_MAX, KERB_DIRT_MAX, WEAR_CELL,
 } from './renderer.js';
 import { sampleField } from './track.js';
@@ -49,9 +49,12 @@ vec4 project(vec3 w, out float depth) {
 }`;
 const FOG = `
 const vec3 FOG = vec3(196.0, 214.0, 230.0) / 255.0;
+// la bruma llega a FOG_MAX (no a todo) donde termina lo que se dibuja: más allá sigue un plano de pasto lejano que
+// se pierde del todo recién en el horizonte (ver el terreno), así lo lejano no parece cielo debajo del horizonte
+const float FOG_MAX = ${glsl(FOG_MAX)};
 vec3 fog(vec3 c, float d) {
-  float t = clamp((d - ${glsl(FOG_START)}) / ${glsl(FOG_END - FOG_START)}, 0.0, 1.0);
-  return mix(c, FOG, t * t);
+  float t = clamp((d - ${glsl(GL_FOG_START)}) / ${glsl(MAX_DIST - GL_FOG_START)}, 0.0, 1.0);
+  return mix(c, FOG, pow(t, 1.4) * FOG_MAX);
 }`;
 
 // ---------- cielo y terreno ----------
@@ -64,6 +67,8 @@ precision highp float;
 precision highp sampler2D;
 uniform sampler2D uField, uStation, uLine, uAsphalt, uGrass, uGravel, uWall, uMacro, uRubber;
 uniform sampler2D uDirt, uGrassMask; // tierra, y dónde hay tierra (r: 1 = césped, 0 = tierra; g: lo mismo, desenfocado; b: zonas de pasto seco)
+uniform highp sampler3D uClouds; // ruido de las nubes (cloudNoise de textures.js): r forma, g detalle
+uniform float uTime; // segundos, para que las nubes se muevan con el viento
 uniform sampler2D uWear; // pasto gastado (rubber.js): carriles desde el borde (izquierda al revés, derecha) × filas
 uniform sampler2D uSausage; // cuánta salchicha hay en cada celda (r, 0..1)
 uniform vec4 uKerbStyle; // ancho del piano, largo de cada franja, ancho del verde, línea blanca (1) o no (0)
@@ -96,7 +101,10 @@ const float WEAR_REACH = ${glsl(WEAR_REACH)}, WEAR_DIRT = ${glsl(WEAR_DIRT)}, DI
 const vec3 DRY_GRASS = vec3(140.0, 134.0, 72.0) / 255.0;
 const vec3 EDGE_WHITE = vec3(225.0) / 255.0;
 const vec3 LINE_BLACK = vec3(20.0) / 255.0, LINE_WHITE = vec3(245.0) / 255.0, WALL_TOP = vec3(150.0, 150.0, 155.0) / 255.0;
-const vec3 SKY_TOP = vec3(70.0, 130.0, 210.0) / 255.0, MOUNTAIN = vec3(110.0, 135.0, 160.0) / 255.0;
+const vec3 SKY_TOP = vec3(70.0, 130.0, 210.0) / 255.0;
+const vec3 FAR_LAND = vec3(68.0, 122.0, 58.0) / 255.0; // el pasto de lejos (el promedio de la textura, a la luz)
+const float FAR_HAZE = 1500.0; // en cuántas celdas más allá de lo que se dibuja se pierde casi todo
+const vec3 LAND_HAZE = vec3(150.0, 172.0, 178.0) / 255.0; // la tierra en el horizonte: más oscura y verdosa que el cielo
 
 vec4 field(vec2 p) { return texture(uField, p / uMap); }
 vec3 shade(vec3 c, float k) { return min(c * k, vec3(1.0)); }
@@ -113,6 +121,15 @@ float stationAt(vec2 p) {
   float lo = min(min(a, b), min(c, d)), hi = max(max(a, b), max(c, d));
   if (lo < 0.0 || hi - lo > 4.0) return texelFetch(uStation, ivec2(floor(p)), 0).r;
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+// alto del tope del muro en p (dentro de su franja): el piso del borde que da a la pista más WALL_H, igual en todo
+// el espesor. Si siguiera al piso de cada punto, en una ladera el muro se inclinaba con el terreno y se veían lomos
+// grises encima. Al borde se llega yendo hacia la pista (donde s crece) lo que falta para s = wallIn
+float wallTop(vec2 p, float s, float wallIn) {
+  float e = 0.35;
+  vec2 g = vec2(field(p + vec2(e, 0.0)).y - field(p - vec2(e, 0.0)).y, field(p + vec2(0.0, e)).y - field(p - vec2(0.0, e)).y);
+  return field(p + g / max(length(g), 1e-4) * (wallIn - s)).x + WALL_H;
 }
 
 // lo que hay al costado de la pista (como edgeAt de track.js): el piano es un lomo por fuera del borde, con
@@ -255,6 +272,135 @@ vec3 ground(vec2 p, float fw, float s, float k, float q, float st, float side, f
   return zone(s, b, grass, sausageC, greenC, kerbC, edgeC, road);
 }
 
+// ---------- nubes: raymarching por una capa de cúmulos ----------
+// Todo en celdas (como el resto): la capa va de CLOUD_BASE a CLOUD_TOP sobre el piso del mapa; el ruido se repite
+// cada CLOUD_TILE celdas; CLOUD_COVER es cuánto del cielo tapan; el viento las corre (celdas por segundo)
+const float CLOUD_BASE = ${glsl(CLOUD_BASE)}, CLOUD_TOP = ${glsl(CLOUD_TOP)}, CLOUD_TILE = ${glsl(CLOUD_TILE)};
+const float CLOUD_COVER = ${glsl(CLOUD_COVER)}, CLOUD_SIGMA = ${glsl(CLOUD_SIGMA)}, CLOUD_FAR = ${glsl(CLOUD_FAR)};
+const vec2 CLOUD_WIND = vec2(${glsl(CLOUD_WIND[0])}, ${glsl(CLOUD_WIND[1])});
+const float CLOUD_CHURN = ${glsl(CLOUD_CHURN)};
+const vec3 SUN_DIR = normalize(vec3(${glsl(-SUN[0])}, ${glsl(-SUN[1])}, ${glsl(SUN[2])})); // hacia el sol (como en los autos)
+const vec3 SUN_LIGHT = vec3(1.0, 0.97, 0.9) * 1.05, CLOUD_AMBIENT = vec3(0.7, 0.76, 0.86);
+const int CLOUD_STEPS = 72;
+
+// cuánta nube hay en q (0..1): la forma del ruido, con la base plana y el tope redondeado, recortada según
+// cuánto cielo tapan (que cambia de a zonas grandes) y con los bordes comidos por el detalle
+float cloudDensity(vec3 q, float detail) {
+  float h = (q.z - CLOUD_BASE) / (CLOUD_TOP - CLOUD_BASE);
+  if (h <= 0.0 || h >= 1.0) return 0.0;
+  vec2 w = q.xy + CLOUD_WIND * uTime;
+  // el ruido también avanza en altura con el tiempo: la forma de cada nube va cambiando mientras viaja
+  vec3 uvw = vec3(w, q.z * 1.2) / CLOUD_TILE + vec3(0.0, 0.0, uTime * CLOUD_CHURN);
+  float shape = texture(uClouds, uvw).r;
+  float cover = CLOUD_COVER * (0.55 + 0.9 * texture(uClouds, vec3(w / (CLOUD_TILE * 7.0), 0.37 + uTime * CLOUD_CHURN * 0.3)).r);
+  float profile = smoothstep(0.0, 0.08, h) * smoothstep(1.0, 0.35, h) * (1.0 - 0.25 * h);
+  float d = (shape * profile - (1.0 - cover)) / cover;
+  if (d <= 0.0) return 0.0;
+  if (detail > 0.0) d -= (1.0 - texture(uClouds, uvw * 4.0 + vec3(0.0, 0.0, uTime * CLOUD_CHURN * 3.0)).g) * 0.3 * detail * (1.0 - d);
+  return clamp(d, 0.0, 1.0);
+}
+
+// mezcla de dos Henyey-Greenstein (borde plateado mirando hacia el sol, algo hacia atrás) sobre un piso parejo:
+// 1 = como si la nube repartiera la luz igual para todos lados
+float cloudPhase(float c) {
+  float g1 = 0.65, g2 = -0.2;
+  float a = (1.0 - g1 * g1) / pow(1.0 + g1 * g1 - 2.0 * g1 * c, 1.5);
+  float b = (1.0 - g2 * g2) / pow(1.0 + g2 * g2 - 2.0 * g2 * c, 1.5);
+  return 0.55 + 0.45 * mix(b, a, 0.5);
+}
+
+// el rayo de un píxel del cielo: rd (horizontal, por unidad de d), sube rise celdas por unidad de d. Devuelve la luz
+// que suman las nubes (rgb) y cuánto del cielo de atrás se sigue viendo (a)
+vec4 clouds(vec2 rd, float rise) {
+  float d0 = max(0.0, (CLOUD_BASE - uCam.z) / rise), d1 = (CLOUD_TOP - uCam.z) / rise;
+  float far = CLOUD_FAR / length(rd);
+  if (d0 >= far) return vec4(0.0, 0.0, 0.0, 1.0);
+  d1 = min(d1, far);
+  vec3 dir = vec3(rd, rise);
+  float len = length(dir);
+  vec3 view = dir / len;
+  float phase = cloudPhase(dot(view, SUN_DIR));
+  // pasos cortos cerca (unas 12 celdas de recorrido) que se alargan con la distancia; cada píxel arranca un poco
+  // corrido (ruido de gradiente entrelazado), así no se ven escalones entre pasos
+  float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  float travel = 0.0, ds = 12.0;
+  float t = d0 + ds * jitter / len;
+  float T = 1.0;
+  vec3 col = vec3(0.0);
+  for (int i = 0; i < CLOUD_STEPS; i++) {
+    if (t > d1) break;
+    vec3 q = vec3(uCam.xy + rd * t, uCam.z + rise * t);
+    // el detalle, sólo de cerca (a lo lejos es más chico que un píxel y sólo hace ruido)
+    float den = cloudDensity(q, clamp(1.5 - t * length(rd) / 3000.0, 0.0, 1.0));
+    if (den > 0.003) {
+      // luz del sol que llega: cuánta nube hay hacia el sol (dos muestras); la que rebota adentro (lo segundo)
+      // hace que lo sombreado no quede negro
+      float l1 = cloudDensity(q + SUN_DIR * 25.0, 0.0), l2 = cloudDensity(q + SUN_DIR * 80.0, 0.0);
+      float od = CLOUD_SIGMA * (l1 * 25.0 + l2 * 55.0) * 0.6;
+      float sunT = max(exp(-od), 0.35 * exp(-od * 0.25));
+      float h = clamp((q.z - CLOUD_BASE) / (CLOUD_TOP - CLOUD_BASE), 0.0, 1.0);
+      vec3 S = SUN_LIGHT * sunT * phase + CLOUD_AMBIENT * (0.55 + 0.45 * h);
+      float Ts = exp(-den * CLOUD_SIGMA * ds);
+      col += T * S * (1.0 - Ts);
+      T *= Ts;
+      if (T < 0.02) break;
+    }
+    travel += ds;
+    ds = max(12.0, travel * 0.06);
+    t += ds / len;
+  }
+  // a lo lejos se pierden en la bruma del horizonte
+  float fade = exp(-d0 * length(rd) / (CLOUD_FAR * 0.3));
+  return vec4(col * fade, mix(1.0, T, fade));
+}
+
+// ---------- montañas del fondo ----------
+// Tres capas alrededor del horizonte, de la más lejana a la más cercana: una cordillera alta y azulada, sierras, y
+// lomas con borde de bosque. La silueta de cada una es ruido leído sobre un círculo (de uMacro), así da la vuelta
+// completa sin costura; e = tangente de cuánto sube la vista (alto en píxeles / uP).
+const vec3 MOUNT_FAR = vec3(128.0, 146.0, 176.0) / 255.0, MOUNT_MID = vec3(92.0, 116.0, 132.0) / 255.0;
+const vec3 MOUNT_NEAR = vec3(70.0, 98.0, 74.0) / 255.0;
+
+float ridgeNoise(float a, float rad, vec2 at) {
+  float v = texture(uMacro, at + vec2(cos(a), sin(a)) * rad).r;
+  return clamp((v - 0.2) / 0.6, 0.0, 1.0);
+}
+
+// alto de la capa k (tangente) en el ángulo a
+float mountainH(int k, float a) {
+  if (k == 0) {
+    float n = ridgeNoise(a, 0.55, vec2(0.21, 0.63)), r = ridgeNoise(a, 2.2, vec2(0.7, 0.1));
+    return 0.025 + 0.085 * pow(n, 1.5) + 0.018 * (1.0 - abs(2.0 * r - 1.0)) * n; // picos, más filosos en lo alto
+  }
+  if (k == 1) {
+    float n = ridgeNoise(a, 0.9, vec2(0.55, 0.37)), r = ridgeNoise(a, 3.5, vec2(0.12, 0.88));
+    return 0.012 + 0.05 * n + 0.008 * r;
+  }
+  float n = ridgeNoise(a, 1.4, vec2(0.83, 0.52)), r = ridgeNoise(a, 12.0, vec2(0.36, 0.24));
+  return 0.004 + 0.024 * n * n + 0.003 * r; // lomas, con el borde de los árboles
+}
+
+vec3 mountains(vec3 c, float a, float e) {
+  if (e > 0.15) return c;
+  float sunAz = atan(SUN_DIR.y, SUN_DIR.x);
+  for (int k = 0; k < 3; k++) {
+    float h = mountainH(k, a);
+    if (e >= h) continue;
+    // caras, quebradas y manchas de vegetación: ruido en ángulo y altura (estirado a lo alto, como las laderas),
+    // la cresta un poco más clara, y del lado del sol, un poco más de luz
+    float fk = float(k);
+    float n2 = texture(uMacro, vec2(a * (2.0 + fk * 2.0) + fk * 0.37, e * (25.0 + fk * 30.0) + fk * 0.61)).r;
+    float crest = smoothstep(0.75, 1.0, e / h);
+    float lit = (0.82 + 0.3 * n2) * (1.0 + 0.12 * crest) * (1.0 + 0.08 * cos(sunAz - a));
+    vec3 col = k == 0 ? MOUNT_FAR : k == 1 ? MOUNT_MID : MOUNT_NEAR;
+    float haze = k == 0 ? 0.3 : k == 1 ? 0.16 : 0.06;
+    float base = 1.0 - e / h; // 0 en la cresta, 1 en el horizonte
+    col = shade(col, lit * (1.05 - 0.15 * base));
+    c = mix(col, FOG, haze + (1.0 - haze) * 0.2 * base * base);
+  }
+  return c;
+}
+
 void main() {
   // píxel virtual (y desde arriba, como en el resto del juego)
   vec2 px = gl_FragCoord.xy / uScale;
@@ -266,28 +412,48 @@ void main() {
   float invCP = 1.0 / (max(0.3, uCam.z - uGround) * uP);
   float wallIn = -uRunoff, wallOut = wallIn - WALL_T;
 
-  float d = uZStart, prev = d;
+  float d = uZStart, prev = d, prevS = 0.0, lastH = uGround;
   bool hit = false;
-  for (int i = 0; i < 400; i++) {
+  bool starved = false; // se quedó sin pasos antes de llegar lejos
+  for (int i = 0; i < 700; i++) {
+    starved = i == 699;
     vec4 f = field(uCam.xy + rd * d);
-    float top = f.x + (f.y < wallIn && f.y > wallOut ? WALL_H : edgeBump(f, uCam.xy + rd * d));
+    lastH = f.x;
+    float top = f.y < wallIn && f.y > wallOut ? wallTop(uCam.xy + rd * d, f.y, wallIn) : f.x + edgeBump(f, uCam.xy + rd * d);
     if (uCam.z - drop * d <= top) { hit = true; break; }
-    // paso: unos píxeles de pantalla, y nunca más que la distancia a la franja del muro
+    // paso: unos píxeles de pantalla, y que no se saltee el muro. Afuera de la franja del muro: hasta la franja,
+    // según lo rápido que el rayo se le acerca (cuánto cambió s en el paso anterior, con margen, y nunca menos de la
+    // mitad de lo más rápido posible: s es la distancia al tramo más cercano y cambia de golpe al pasar de un tramo
+    // a otro); uno que corre paralelo al muro casi no se le acerca y puede dar pasos más largos. Encima de la
+    // franja (más alto que el muro, si no ya chocó): hasta que el rayo baje a la altura del tope, como mucho media
+    // celda (más allá puede haber otro muro). Si no, los rayos casi horizontales que cruzan muros de costado se
+    // quedaban sin pasos y se veía el cielo debajo del horizonte
     float band = f.y > wallIn ? f.y - wallIn : (f.y < wallOut ? wallOut - f.y : 0.0);
-    float step = min(clamp(d * d * invCP * 2.0, 0.015, 0.2 + 0.025 * d), max(0.03, band / rdl));
+    float rate = i == 0 ? rdl : clamp(abs(f.y - prevS) / max(d - prev, 1e-4) * 1.5, rdl * 0.5, rdl);
+    float wallStep = band > 0.0 ? band / rate : min(0.5, (uCam.z - drop * d - top) / max(drop, 1e-5) * 0.8);
+    float step = min(clamp(d * d * invCP * 2.0, 0.015, 0.2 + 0.025 * d), max(0.03, wallStep));
+    prevS = f.y;
     prev = d;
     d += step;
     if (d > MAX_DIST) break;
   }
 
   if (!hit) {
-    // cielo con montañas lejanas, o niebla debajo del horizonte
+    // cielo con nubes y montañas lejanas; debajo del horizonte, más allá de lo que se dibuja, un plano de pasto a la
+    // altura del último piso que vio el rayo, que se va perdiendo en la bruma hasta el horizonte
     vec3 c = FOG;
-    if (y < uHorizon) {
+    if (y >= uHorizon) {
+      // (o donde se quedó sin pasos: casi siempre rayos rasantes, cerca del horizonte, que ya iban lejos)
+      float far = max(starved ? d : MAX_DIST, (uCam.z - lastH) / max(drop, 1e-5));
+      vec3 land = FAR_LAND * (0.9 + 0.2 * texture(uMacro, (uCam.xy + rd * far) * MACRO_TPC / 64.0).r);
+      // hasta lo que se dibuja, la bruma de siempre; más allá, la de la tierra lejana (más oscura que el cielo)
+      c = mix(fog(land, far), LAND_HAZE, 1.0 - exp(-max(0.0, far - MAX_DIST) / FAR_HAZE));
+    } else {
       float a = uAngle + atan(cx * uPlane);
-      float mh = (0.5 + 0.25 * sin(a * 3.0 + 1.0) + 0.15 * sin(a * 7.0 + 2.0) + 0.1 * sin(a * 17.0)) * uView.y * 0.09;
       float dy = uHorizon - y, t = y / max(1.0, uHorizon);
-      c = dy < mh ? mix(MOUNTAIN, FOG, (1.0 - dy / mh) * 200.0 / 256.0) : mix(SKY_TOP, FOG, t * t);
+      c = mix(SKY_TOP, FOG, t * t);
+      vec4 cl = clouds(rd, dy / uP);
+      c = mountains(c * cl.a + cl.rgb, a, dy / uP);
     }
     outColor = vec4(c, 1.0);
     gl_FragDepth = 1.0;
@@ -298,7 +464,7 @@ void main() {
   for (int k = 0; k < 7; k++) {
     float m = (a + b) * 0.5;
     vec4 f = field(uCam.xy + rd * m);
-    float top = f.x + (f.y < wallIn && f.y > wallOut ? WALL_H : edgeBump(f, uCam.xy + rd * m));
+    float top = f.y < wallIn && f.y > wallOut ? wallTop(uCam.xy + rd * m, f.y, wallIn) : f.x + edgeBump(f, uCam.xy + rd * m);
     if (uCam.z - drop * m <= top) b = m; else a = m;
   }
   d = b;
@@ -308,7 +474,7 @@ void main() {
   bool wall = s < wallIn && s > wallOut;
   vec3 c;
   if (wall) {
-    float top = f.x + WALL_H;
+    float top = wallTop(p, s, wallIn);
     if (top - zr > 0.01) {
       // cara del guardrail, con su textura: a lo largo según la posición sobre la línea central, a lo alto desde arriba
       float st = max(0.0, stationAt(p));
@@ -628,6 +794,7 @@ export class GLRenderer {
     this.grass = repeatTex(grassTexture());
     this.gravel = repeatTex(gravelTexture());
     this.dirt = repeatTex(dirtTexture());
+    this.clouds = this.texture3D(cloudNoise());
     this.grassMask = this.texture(new Uint8Array([255, 255, 0, 255]), 1, 1); // todo césped hasta que llegue la imagen
     this.wall = repeatTex(wallTexture());
     const macro = macroNoise();
@@ -714,6 +881,19 @@ export class GLRenderer {
       gl.generateMipmap(gl.TEXTURE_2D);
       if (this.aniso) gl.texParameterf(gl.TEXTURE_2D, this.aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
     }
+    return t;
+  }
+
+  // textura 3D de dos canales (r, g) que se repite, con mipmaps (para las nubes)
+  texture3D({ size, data }) {
+    const gl = this.gl, t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_3D, t);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage3D(gl.TEXTURE_3D, 0, gl.RG8, size, size, size, 0, gl.RG, gl.UNSIGNED_BYTE, data);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    for (const w of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, w, gl.REPEAT);
+    gl.generateMipmap(gl.TEXTURE_3D);
     return t;
   }
 
@@ -969,6 +1149,10 @@ export class GLRenderer {
     this.bind(9, t.sausage, tp, 'uSausage');
     this.bind(10, this.dirt, tp, 'uDirt');
     this.bind(11, this.grassMask, tp, 'uGrassMask');
+    gl.activeTexture(gl.TEXTURE13);
+    gl.bindTexture(gl.TEXTURE_3D, this.clouds);
+    gl.uniform1i(tp.u.uClouds, 13);
+    gl.uniform1f(tp.u.uTime, this.time ?? (performance.now() / 1000) % 100000);
     const ks = track.kerbStyle ?? KERB_STYLE;
     gl.uniform4f(tp.u.uKerbStyle, ks.width, ks.stripe, ks.green, ks.line ? 1 : 0);
     gl.uniform2f(tp.u.uMap, track.W, track.H);
@@ -1057,7 +1241,7 @@ export class GLRenderer {
     const groups = new Map();
     for (const s of sprites) {
       const depth = (s.x - cam.x) * dirX + (s.y - cam.y) * dirY;
-      if (depth < 0.3 || depth > FOG_END) continue;
+      if (depth < 0.3 || depth > MAX_DIST) continue; // con la bruma al FOG_MAX, todavía se ven un poco
       if (!groups.has(s.tex)) groups.set(s.tex, []);
       const v = groups.get(s.tex);
       const hw = s.width / 2, z0 = s.z || 0, z1 = z0 + s.height;

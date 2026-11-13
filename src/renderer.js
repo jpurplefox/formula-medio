@@ -11,6 +11,9 @@ import { RUBBER_DARK, RubberMap, WEAR_REACH } from './rubber.js';
 export const MAX_DIST = 140;
 export const FOG_START = 25;
 export const FOG_END = 130;
+// con WebGL se dibuja más lejos (~640 m) y la bruma empieza más lejos y sube de a poco, sin tapar todo al final
+// (ver fog en glrenderer.js): así lo de cerca se ve nítido y lo que aparece, aparece ya perdido en la bruma
+export const GL_MAX_DIST = 320, GL_FOG_START = 50, FOG_MAX = 0.7;
 export const Z_NEAR = 0.6;
 export const WALL_H = 0.32; // altura de los muros (en celdas)
 export const WALL_T = 0.5; // espesor de los muros (en celdas)
@@ -29,6 +32,11 @@ export const WEAR_DIRT = 1.1; // cuánto pela el pasto el desgaste (rubber.js): 
 export const DIRT_DEEP = 0.25; // cuánto más oscura es la tierra en el medio de las calvas grandes
 export const GRASS_BAND = 2.2; // ancho de cada franja del corte de césped (en celdas)
 export const MACRO_TPC = 2; // muestras de la variación grande por celda (se repite cada 32 celdas, ~80 m)
+// nubes (sólo con WebGL, ver glrenderer.js), en celdas (~2 m): la capa de cúmulos, cada cuánto se repite el ruido,
+// cuánto cielo tapan (0..1), qué tan densas son, hasta dónde se ven, el viento (celdas por segundo) y cuánto cambian
+export const CLOUD_BASE = 350, CLOUD_TOP = 750, CLOUD_TILE = 1600, CLOUD_COVER = 0.36, CLOUD_SIGMA = 0.05, CLOUD_FAR = 12000;
+export const CLOUD_WIND = [14, 5]; // ~30 m/s: allá arriba sopla más, y si no, a 1 km no se nota que se muevan
+export const CLOUD_CHURN = 0.0015; // cuánto cambia la forma por segundo (fracción del ruido): crecen y se deshacen
 export const PLANE_LEN = 0.7; // medio ancho del plano de la cámara a distancia 1: campo de visión de unos 70°
 const NCHK = MAX_DIST + 2; // marcas de profundidad por columna para recortar sprites
 export const NEAR_RISE = 0.2; // cuánto puede subir el terreno (o un muro) cerca de la cámara (en celdas), para saber dónde arrancar los rayos

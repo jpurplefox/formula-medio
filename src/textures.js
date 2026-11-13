@@ -243,3 +243,65 @@ export function carbonTexture(size = 64) {
   }
   return withMips(size, data);
 }
+
+// Ruido 3D para las nubes (ver el cielo en glrenderer.js): un cubo de size³ que se repite en los tres ejes, con dos
+// canales. r: la forma, ruido suave mezclado con Worley invertido (bolitas redondas que se juntan, como cúmulos);
+// g: el detalle, Worley más fino, para comer los bordes. Devuelve los bytes intercalados (r, g) por vóxel.
+export function cloudNoise(size = 64) {
+  const n = size * size * size, out = new Uint8Array(n * 2);
+  const shape = new Float32Array(n), detail = new Float32Array(n);
+  // Worley: distancia al punto más cercano de una grilla de g³ celdas (un punto al azar por celda), repetida
+  const worley = (g, seed, into, weight) => {
+    const rand = rng(seed), pts = new Float32Array(g * g * g * 3);
+    for (let i = 0; i < pts.length; i++) pts[i] = rand();
+    const k = g / size, m = g - 1;
+    for (let z = 0; z < size; z++) {
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const fx = x * k, fy = y * k, fz = z * k;
+          const cx = Math.floor(fx), cy = Math.floor(fy), cz = Math.floor(fz);
+          let best = 9;
+          for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            const i = ((((cz + dz) & m) * g + ((cy + dy) & m)) * g + ((cx + dx) & m)) * 3;
+            const px = cx + dx + pts[i] - fx, py = cy + dy + pts[i + 1] - fy, pz = cz + dz + pts[i + 2] - fz;
+            best = Math.min(best, px * px + py * py + pz * pz);
+          }
+          into[(z * size + y) * size + x] += weight * (1 - Math.min(1, Math.sqrt(best)));
+        }
+      }
+    }
+  };
+  // ruido de valor 3D suave, repetido, con g³ celdas
+  const value = (g, seed, into, weight) => {
+    const rand = rng(seed), grid = new Float32Array(g * g * g), m = g - 1, k = g / size;
+    for (let i = 0; i < grid.length; i++) grid[i] = rand();
+    const at = (x, y, z) => grid[((z & m) * g + (y & m)) * g + (x & m)];
+    const s = (t) => t * t * (3 - 2 * t);
+    for (let z = 0; z < size; z++) {
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const fx = x * k, fy = y * k, fz = z * k, x0 = Math.floor(fx), y0 = Math.floor(fy), z0 = Math.floor(fz);
+          const u = s(fx - x0), v = s(fy - y0), w = s(fz - z0);
+          const l = (a, b, t) => a + (b - a) * t;
+          const c = l(l(l(at(x0, y0, z0), at(x0 + 1, y0, z0), u), l(at(x0, y0 + 1, z0), at(x0 + 1, y0 + 1, z0), u), v),
+            l(l(at(x0, y0, z0 + 1), at(x0 + 1, y0, z0 + 1), u), l(at(x0, y0 + 1, z0 + 1), at(x0 + 1, y0 + 1, z0 + 1), u), v), w);
+          into[(z * size + y) * size + x] += weight * c;
+        }
+      }
+    }
+  };
+  value(4, 801, shape, 0.35);
+  value(8, 802, shape, 0.15);
+  worley(4, 803, shape, 0.32);
+  worley(8, 804, shape, 0.18);
+  worley(8, 805, detail, 0.55);
+  worley(16, 806, detail, 0.3);
+  worley(32, 807, detail, 0.15);
+  // estirados a 0..255
+  for (const [ch, a] of [[0, shape], [1, detail]]) {
+    let lo = Infinity, hi = -Infinity;
+    for (const v of a) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    for (let i = 0; i < n; i++) out[i * 2 + ch] = Math.round(((a[i] - lo) / (hi - lo)) * 255);
+  }
+  return { size, data: out };
+}
