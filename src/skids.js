@@ -4,11 +4,13 @@
 // vaya como vaya el auto. No pinta en el pasto ni en la leca (ahí no queda goma). La dibuja el render con WebGL
 // (glrenderer.js): oscurece el asfalto, los pianos y las escapatorias asfaltadas.
 
+import { spinAmount } from './smoke.js';
+
 const WHEELS = [[1.65, -0.8], [1.65, 0.8], [-1.7, -0.79], [-1.7, 0.79]]; // adelante y al costado del centro (m), como WHEELS de car.js
 const HALF_W = 0.2; // medio ancho de la huella (m)
 // cuánto oscurece cada pasada de la rueda (0..1, se acumula pasada a pasada): bloqueada, fijo (arrastra todo lo que
 // avanza); patinando, según lo que desliza la goma (gira de más y va de costado) contra lo que avanza esa rueda, con
-// un mínimo (a fondo también marca algo)
+// un mínimo (a fondo también marca algo); y todo según cuánto patina (spinAmount): saliendo de una curva, poco
 const LOCK_PASS = 0.7, SPIN_PASS = 0.25, SPIN_MIN = 0.2;
 const SPIN_SLIP = 6; // m/s que patina de más una rueda que perdió tracción (SPIN_SPEED de car.js)
 const MIN_LOCK_SPEED = 3; // m/s: un bloqueo más despacio no deja marca
@@ -43,7 +45,7 @@ export class SkidMarks {
       const along = car.speed - w * r, side = (car.slip || 0) + w * f;
       let strength = 0;
       if (locked && v >= MIN_LOCK_SPEED) strength = LOCK_PASS;
-      else if (!front && spin) strength = Math.min(1, Math.max(SPIN_MIN, (SPIN_PASS * Math.hypot(side, SPIN_SLIP)) / Math.max(2, Math.hypot(along, side))));
+      else if (!front && spin) strength = Math.min(1, Math.max(SPIN_MIN, (SPIN_PASS * Math.hypot(side, SPIN_SLIP)) / Math.max(2, Math.hypot(along, side)))) * (0.2 + 0.8 * spinAmount(car));
       if (!strength || CLEAN.has(car.wheels?.[i])) {
         prev[i] = null;
         continue;

@@ -292,6 +292,7 @@ export class Car {
     this.tyreWear = [0, 0, 0, 0]; // desgaste de cada goma, 0 (nueva) a 1 (gastada)
     this.locked = [false, false]; // ruedas bloqueadas, adelante y atrás
     this.wheelspin = false; // las de atrás patinando
+    this.spinUse = 0; // y cuánto (ver update)
     this.cornering = 0; // parte del agarre de costado de la cola que se usó en el paso anterior (para el control de tracción)
     this.traction = 0; // lo más que pueden empujar las de atrás en este momento (m/s²)
     this.wheels = ['road', 'road', 'road', 'road']; // qué pisa cada rueda (ver WHEELS)
@@ -612,6 +613,7 @@ export class Car {
     if (!braking) this.absCut = false;
     this.locked = [lockF, lockR];
     this.wheelspin = spin;
+    this.spinUse = spin ? useR : 0; // cuánto le pide el motor a las de atrás contra lo que agarran (1 = justo): para el humo y las marcas
     if (this.fuel > 0) this.fuel = Math.max(0, this.fuel - this.fuelFlow * thr * dt);
     // el peso se pasa según lo que empujan o frenan las gomas, con un poco de demora
     this.aLon += (drive - braking - this.aLon) * Math.min(1, dt * TRANSFER_RATE);

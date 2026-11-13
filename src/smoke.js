@@ -3,14 +3,14 @@
 //   - bloqueo (car.locked, por eje): la goma frota a la velocidad del auto, así que el humo crece con ella, y sale
 //     con algo de esa velocidad
 //   - patinada (car.wheelspin, las de atrás): la goma gira más rápido de lo que avanza el auto, así que humea igual
-//     aunque vaya despacio (una largada), y la rueda tira el humo hacia atrás
+//     aunque vaya despacio (una largada), según cuánto patina (spinAmount), y la rueda tira el humo hacia atrás
 // Las ruedas que van por el pasto o la leca no humean. En el aire frenan rápido, suben, crecen y se desvanecen. Las dibuja el render con WebGL (glrenderer.js,
 // drawSmoke). Todo en celdas, como el resto del mundo, salvo donde dice metros.
 
 const WHEELS = [[1.65, 0.8], [-1.7, 0.79]]; // eje delantero y trasero: adelante del centro y medio ancho (m), como en carmodel.js
 const PER_M = 1.4; // bloqueo: bocanadas por metro deslizado (por rueda, a carga pareja)
 const MIN_SPEED = 4; // m/s: un bloqueo más despacio no llega a humear
-const SPIN_RATE = 10; // patinada: bocanadas por segundo (por rueda, a carga pareja)
+const SPIN_RATE = 16; // patinada: bocanadas por segundo (por rueda, a carga pareja) en la más fuerte (spinAmount 1)
 const SPIN_KICK = 4; // m/s hacia atrás con que la rueda que patina tira el humo
 const LIFE = [1.6, 2.6]; // cuánto dura cada bocanada (s)
 const SIZE = [0.8, 3.8]; // diámetro al salir y al final (m)
@@ -19,6 +19,14 @@ const RISE = 1.0; // cuánto sube (m/s)
 const WIND = [1.2, 0.5]; // hacia dónde la corre el viento (m/s, en el mapa)
 const MAX = 900; // bocanadas a la vez, como mucho
 const NO_SMOKE = new Set(['grass', 'gravel']); // ahí la goma no frota contra nada duro: no humea (car.wheels)
+
+// cuánto patina (0..1), de car.spinUse: lo que el motor le pide a las de atrás contra lo que agarran (1 = justo). Va
+// en escala logarítmica: 1.6 (se le escapó saliendo de una curva) da ~0.2, 5 (una largada) ~0.75, 8 o más (una dona) 1
+export function spinAmount(car) {
+  if (!car.wheelspin) return 0;
+  if (car.spinUse === undefined) return 0.5;
+  return Math.max(0.08, Math.min(1, Math.log2(Math.max(1, car.spinUse)) / 3));
+}
 
 export class Smoke {
   constructor() {
@@ -48,7 +56,7 @@ export class Smoke {
           const id = axle * 2 + (side > 0 ? 1 : 0); // el mismo orden que car.wheels (WHEELS de car.js)
           if (NO_SMOKE.has(car.wheels?.[id])) continue;
           const share = turn === 0 ? 1 : side === turn ? 1.5 : 0.5;
-          debts[id] += (locked ? v * PER_M * Math.min(1, (v - MIN_SPEED) / 10) : SPIN_RATE) * dt * share;
+          debts[id] += (locked ? v * PER_M * Math.min(1, (v - MIN_SPEED) / 10) : SPIN_RATE * spinAmount(car)) * dt * share;
           while (debts[id] >= 1) {
             debts[id] -= 1;
             const back = this.rand() * v * dt; // repartidas a lo largo de lo que avanzó en el cuadro
