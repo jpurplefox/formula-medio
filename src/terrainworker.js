@@ -15,6 +15,8 @@ onmessage = ({ data: m }) => {
     r = new Renderer({ width: m.w, height: m.h });
     x0 = m.x0;
     x1 = m.x1;
+  } else if (m.type === 'grassMask') {
+    r.grassMask = m.mask;
   } else if (m.type === 'track') {
     track = m.track;
     offset = m.offset;

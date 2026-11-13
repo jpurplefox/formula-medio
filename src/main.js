@@ -43,9 +43,12 @@ import { EngineAudio } from './audio.js';
 import { GAME_NET, NeuralDriver, Policy } from './policy.js';
 import { LIGHTS_OUT, lightsAt, lightsDuration, randomHold } from './lights.js';
 import { RubberMap } from './rubber.js';
+import { Smoke } from './smoke.js';
+import { SkidMarks } from './skids.js';
 import { DESIGNS } from './teamliveries.js';
 import { airDensity, carLimits, DEFAULT_TUNE, GRAVITY } from './dynamics.js';
 import { DAMAGE_LEVELS, damaged, NO_DAMAGE } from './damage.js';
+import { loadGrassMask } from './textures.js';
 import { drawCar, drawShape, trackShape } from './menuview.js';
 
 const VIEW_W = 960;
@@ -141,6 +144,10 @@ if (!renderer) {
   canvas.height = VIEW_H;
   renderer = new Renderer(canvas);
 }
+// dónde hay césped y dónde tierra (textures/grass-mask.png); mientras carga, todo césped
+loadGrassMask().then((mask) => mask && renderer.setGrassMask(mask));
+// los árboles en 3D se arman en un worker mientras está el menú (sólo con WebGL)
+renderer.treeModels?.();
 // encima, en un canvas aparte, lo que se dibuja en 2D: el volante y el semáforo
 const overlay = document.getElementById('overlay');
 overlay.width = VIEW_W;
@@ -574,6 +581,8 @@ function resetGame(track) {
   if (!guides.has(track)) guides.set(track, racingLine(track, limitsOn(carProfile, track)));
   // la goma arranca con la franja tenue de otra categoría sobre la trazada y la carrera la va marcando
   game.rubber = new RubberMap(track, guides.get(track).offset);
+  game.smoke = new Smoke(); // humo de las ruedas que se bloquean o patinan
+  game.skids = new SkidMarks(track); // y las marcas de goma que dejan (sólo se ven)
   for (const e of game.entries) e.car.rubber = game.rubber; // y agarra según cuánta haya (car.js)
   if (!aiLines.has(track))
     aiLines.set(track, racingLine(track, limitsOn(carProfile, track), { brakeUse: AI_BRAKE_USE }));
@@ -712,6 +721,17 @@ function update(dt) {
     for (const e of g.entries) if (e.driver) raceLine(g, e);
     for (const e of g.entries) e.dist += Math.abs(e.car.speed) * dt;
     g.rubber.update(dt, states);
+    g.skids.update(
+      dt,
+      g.entries.filter((e) => !e.car.gone).map((e) => e.car),
+    );
+    g.smoke.update(
+      dt,
+      g.entries
+        .filter((e) => !e.car.gone)
+        .map((e) => ({ car: e.car, z: sampleField(g.track.height, g.track.W, e.car.x, e.car.y) })),
+      g.track.meters,
+    );
     g.recorder.add(dt, g.entries);
     timePasses(g);
   }
@@ -934,6 +954,7 @@ function ghostAt(ghost, u) {
 // árboles y carteles del circuito, como sprites (tamaños en metros, pasados a celdas)
 function trackSprites(track) {
   const M = track.meters;
+  // (con WebGL los árboles van en 3D y estos sprites se saltean: tree)
   const sprites = track.trees.map((t) => ({
     x: t.x,
     y: t.y,
@@ -941,10 +962,11 @@ function trackSprites(track) {
     width: (4 * t.scale) / M,
     height: (8 * t.scale) / M,
     tex: treeTex,
+    tree: true,
   }));
   // carteles de frenada: 3,2 m de ancho por 2,7 m de alto (tablero sobre patas), grandes para leerlos a tiempo
   for (const b of track.boards)
-    sprites.push({ x: b.x, y: b.y, z: b.z, width: 3.2 / M, height: 2.7 / M, tex: boardTex.get(b.meters) });
+    sprites.push({ x: b.x, y: b.y, z: b.z, width: 3.2 / M, height: 2.7 / M, tex: boardTex.get(b.meters), board: true }); // con WebGL van en 3D
   return sprites;
 }
 
@@ -1015,6 +1037,8 @@ async function drawReplay() {
   const cam = replayCamera(r.mode, pose, track, tvCams.get(track), r.tv, r.t, renderer.w / 2 / 0.7);
   renderer.guide = null;
   renderer.rubber = g.rubber; // como quedó al terminar
+  renderer.smoke = null;
+  renderer.skids = g.skids; // las marcas quedan como terminó la carrera
   // sonido: se escucha desde la cámara; la de TV está quieta, las demás van con el auto
   const moving = cam.mode !== 'tv';
   playEngines(
@@ -1249,6 +1273,8 @@ async function draw(time) {
   if (guide) paintGuide(guide, track, car);
   renderer.guide = guide;
   renderer.rubber = g.rubber;
+  renderer.smoke = g.smoke;
+  renderer.skids = g.skids;
   // nuestro auto en 3D
   const dt = Math.min(0.1, Math.max(0, (time - lastDraw) / 1000));
   lastDraw = time;

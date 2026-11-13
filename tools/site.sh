@@ -7,7 +7,7 @@ out="${1:-site}"
 rm -rf "$out"
 mkdir -p "$out"
 # los archivos de git (no las redes que estén sin commitear en models/)
-git ls-files index.html src tracks cars models | while read -r f; do
+git ls-files index.html src tracks textures cars models | while read -r f; do
   mkdir -p "$out/$(dirname "$f")"
   cp "$f" "$out/$f"
 done

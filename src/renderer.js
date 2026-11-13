@@ -18,14 +18,27 @@ import {
   runoffAt,
   sampleField,
 } from './track.js';
-import { asphaltTexture, grassTexture, gravelTexture, macroNoise, sample, wallTexture } from './textures.js';
-import { RUBBER_DARK, RubberMap } from './rubber.js';
+import {
+  asphaltTexture,
+  dirtTexture,
+  grassTexture,
+  gravelTexture,
+  macroNoise,
+  sample,
+  wallTexture,
+} from './textures.js';
+import { RUBBER_DARK, RubberMap, WEAR_REACH } from './rubber.js';
 
 export const MAX_DIST = 140;
 export const FOG_START = 25;
 export const FOG_END = 130;
+// con WebGL se dibuja más lejos (~640 m) y la bruma empieza más lejos y sube de a poco, sin tapar todo al final
+// (ver fog en glrenderer.js): así lo de cerca se ve nítido y lo que aparece, aparece ya perdido en la bruma
+export const GL_MAX_DIST = 320,
+  GL_FOG_START = 50,
+  FOG_MAX = 0.7;
 export const Z_NEAR = 0.6;
-export const WALL_H = 0.32; // altura de los muros (en celdas)
+export const WALL_H = 0.5; // altura de los muros (en celdas): ~1 m, como las barreras de bloques de la F1 (sólo se ve: no cuenta para los choques)
 export const WALL_T = 0.5; // espesor de los muros (en celdas)
 export const WALL_STRIPE = 1.2; // largo de cada franja del muro (en celdas)
 export { KERB_H }; // altura del lomo del piano (en celdas; está en track.js, con el resto del piano)
@@ -35,8 +48,23 @@ export const ROAD_TPC = 64; // texeles de asfalto por celda (la textura se repit
 export const GRASS_TPC = 32; // texeles de césped por celda
 export const GRAVEL_TPC = 48; // texeles de leca por celda
 export const RUNOFF_LIGHT = 1.15; // la escapatoria asfaltada, más clara que la pista (no tiene goma)
+export const DIRT_TPC = 40; // texeles de tierra por celda
+export const GRASS_MASK_CELLS = 128; // la imagen de césped/tierra (textures/grass-mask.png) se repite cada 128 celdas (~250 m)
+export const GRASS_STRIPE = 0.07; // cuánto se notan las franjas del corte (antes 0.2: el pasto gastado no está tan peinado)
+export const WEAR_DIRT = 1.1; // cuánto pela el pasto el desgaste (rubber.js): con 0.5 ya aparece tierra
+export const DIRT_DEEP = 0.25; // cuánto más oscura es la tierra en el medio de las calvas grandes
 export const GRASS_BAND = 2.2; // ancho de cada franja del corte de césped (en celdas)
 export const MACRO_TPC = 2; // muestras de la variación grande por celda (se repite cada 32 celdas, ~80 m)
+// nubes (sólo con WebGL, ver glrenderer.js), en celdas (~2 m): la capa de cúmulos, cada cuánto se repite el ruido,
+// cuánto cielo tapan (0..1), qué tan densas son, hasta dónde se ven, el viento (celdas por segundo) y cuánto cambian
+export const CLOUD_BASE = 350,
+  CLOUD_TOP = 750,
+  CLOUD_TILE = 1600,
+  CLOUD_COVER = 0.36,
+  CLOUD_SIGMA = 0.05,
+  CLOUD_FAR = 12000;
+export const CLOUD_WIND = [14, 5]; // ~30 m/s: allá arriba sopla más, y si no, a 1 km no se nota que se muevan
+export const CLOUD_CHURN = 0.0015; // cuánto cambia la forma por segundo (fracción del ruido): crecen y se deshacen
 export const PLANE_LEN = 0.7; // medio ancho del plano de la cámara a distancia 1: campo de visión de unos 70°
 const NCHK = MAX_DIST + 2; // marcas de profundidad por columna para recortar sprites
 export const NEAR_RISE = 0.2; // cuánto puede subir el terreno (o un muro) cerca de la cámara (en celdas), para saber dónde arrancar los rayos
@@ -66,6 +94,7 @@ const FOG = rgb(FR, FG, FB);
 const EDGE_WHITE = rgb(225, 225, 225);
 const KERB_GREEN = rgb(46, 135, 80); // franja verde abrasiva detrás del piano
 const SAUSAGE_YELLOW = rgb(245, 196, 20);
+const DRY_GRASS = rgb(140, 134, 72); // pasto seco y aplastado, alrededor de la tierra y donde pisan los autos
 const DIRT = rgb(120, 96, 62); // tierra que traen las ruedas desde el pasto
 const KERB_RUBBER = rgb(25, 25, 25);
 // desgaste del piano: dónde hay goma (del lado de la pista) y tierra (del lado del pasto)
@@ -180,6 +209,8 @@ export class Renderer {
 
     this.asphalt = asphaltTexture();
     this.grass = grassTexture();
+    this.dirt = dirtTexture();
+    this.grassMask = null; // césped/tierra (setGrassMask); sin ella, todo césped
     this.gravel = gravelTexture();
     this.macro = macroNoise();
     this.wall = wallTexture();
@@ -203,6 +234,58 @@ export class Renderer {
   setZoom(zoom) {
     this.planeLen = PLANE_LEN / zoom;
     this.P = this.w / 2 / this.planeLen; // píxeles por unidad a distancia 1
+  }
+
+  // El césped (lo mismo que grassColor del shader de glrenderer.js): franjas del corte, suaves y que se pierden donde
+  // está gastado; pasto seco alrededor de las calvas y en zonas grandes; y la tierra de la máscara (blanco = césped),
+  // con el borde deshilachado por el grano del pasto, que crece donde pisan los autos (wear, 0..1, de rubber.js)
+  grassColor(fx, fy, fw, light, wear) {
+    const mask = this.grassMask;
+    let g = 1,
+      soft = 1,
+      dry = 0;
+    const k = mask ? mask.size / GRASS_MASK_CELLS : 1;
+    if (mask) {
+      g = maskAt(mask.data, mask.size, fx * k, fy * k);
+      soft = maskAt(mask.soft, mask.size, fx * k, fy * k);
+      dry = maskAt(mask.dry, mask.size, fx * k, fy * k);
+      g += (soft - g) * Math.min(1, (fw * k) / 4); // a lo lejos, la versión suave (no hay mipmaps): que no titile
+    }
+    const dryZone = Math.max(0, Math.min(1, (dry - 0.5) / 0.2));
+    const worn = Math.min(1, (1 - soft) * 4 + wear);
+    // franjas del corte, en diagonal; cerca del cambio de franja se mezclan para que no serruche
+    const ph = (fx + fy) * (0.7071 / GRASS_BAND);
+    const fr = ph - Math.floor(ph);
+    const e = Math.min(0.5, fw / GRASS_BAND);
+    let band = Math.floor(ph) & 1 ? 1 : 0;
+    if (fr < e) band = band + (1 - 2 * band) * ((e - fr) / (2 * e));
+    else if (fr > 1 - e) band = band + (1 - 2 * band) * ((fr - 1 + e) / (2 * e));
+    const tex = sample(this.grass, fx * GRASS_TPC, fy * GRASS_TPC, fw * GRASS_TPC);
+    let c = shade(tex, light * (1 + (band - 0.5) * GRASS_STRIPE * (1 - Math.max(worn, dryZone))));
+    const dryness = Math.min(1, worn * 0.8 + dryZone * 0.6);
+    if (dryness > 0) c = blend(c, shade(DRY_GRASS, light * (0.8 + ((tex >>> 8) & 255) / 500)), dryness * 0.6);
+    // tierra: el borde lo mueve el grano del pasto (más grueso), así queda deshilachado
+    const grain =
+      (((sample(this.grass, fx * GRASS_TPC * 0.25, fy * GRASS_TPC * 0.25, fw * GRASS_TPC * 0.25) >>> 8) & 255) / 255 -
+        0.525) *
+      4;
+    const f = (g + soft) * 0.5 - wear * WEAR_DIRT + grain * 0.5;
+    const w = Math.min(0.5, 0.06 + fw * k * 0.3);
+    let t = Math.max(0, Math.min(1, (0.5 + w - f) / (2 * w)));
+    t = t * t * (3 - 2 * t);
+    if (t <= 0) return c;
+    const deep = Math.min(1, Math.max(0, (0.45 - soft) * 2.5) + wear * 0.5);
+    return blend(
+      c,
+      shade(sample(this.dirt, fx * DIRT_TPC, fy * DIRT_TPC, fw * DIRT_TPC), light * (1 - DIRT_DEEP * deep)),
+      t,
+    );
+  }
+
+  // césped/tierra (loadGrassMask de textures.js); también a los workers, si los hay
+  setGrassMask(mask) {
+    this.grassMask = mask;
+    this.pool?.setGrassMask(mask);
   }
 
   // Devuelve una promesa: el cielo y el terreno pueden estar dibujándose en los workers.
@@ -408,7 +491,7 @@ export class Renderer {
               c = WALL_TOP;
             } else {
               const fw = Math.max(0.03, (z * pl) / w, step * 0.5);
-              if (st < 0 && s >= 1 && lazyStation) {
+              if (st < 0 && (s >= 1 || (this.rubber && s > -WEAR_REACH)) && lazyStation) {
                 const gx = fx - 0.5,
                   gy = fy - 0.5;
                 const x0 = gx | 0,
@@ -467,14 +550,13 @@ export class Renderer {
         grass = shade(sample(this.asphalt, fx * ROAD_TPC, fy * ROAD_TPC, fw * ROAD_TPC), light * RUNOFF_LIGHT);
       else if (mat === 1) grass = shade(sample(this.gravel, fx * GRAVEL_TPC, fy * GRAVEL_TPC, fw * GRAVEL_TPC), light);
       else {
-        // césped con franjas del corte, en diagonal; cerca del cambio de franja se mezclan para que no serruche
-        const ph = (fx + fy) * (0.7071 / GRASS_BAND);
-        const fr = ph - Math.floor(ph);
-        const e = Math.min(0.5, fw / GRASS_BAND);
-        let band = Math.floor(ph) & 1 ? 1 : 0;
-        if (fr < e) band = band + (1 - 2 * band) * ((e - fr) / (2 * e));
-        else if (fr > 1 - e) band = band + (1 - 2 * band) * ((fr - 1 + e) / (2 * e));
-        grass = shade(sample(this.grass, fx * GRASS_TPC, fy * GRASS_TPC, fw * GRASS_TPC), light * (0.9 + band * 0.2));
+        grass = this.grassColor(
+          fx,
+          fy,
+          fw,
+          light,
+          st >= 0 && this.rubber ? RubberMap.wearAt(this.rubber, st, -s, side) : 0,
+        );
       }
       if (s < outer - fw) return grass;
     }
@@ -936,6 +1018,26 @@ function scan(pts, w, h, plot) {
 // Reparte el cielo y el terreno entre varios workers (src/terrainworker.js): cada uno dibuja una franja de
 // columnas de la pantalla en su propio núcleo y devuelve sus píxeles y sus marcas de profundidad.
 // Si algo falla (el navegador no tiene workers de módulos, por ejemplo), se vuelve a dibujar todo acá.
+// valor de la máscara (0..1, 1 = césped) en (u, v) píxeles, bilineal y repetida
+function maskAt(data, size, u, v) {
+  const m = size - 1;
+  u -= 0.5;
+  v -= 0.5;
+  const x0 = Math.floor(u),
+    y0 = Math.floor(v),
+    tx = u - x0,
+    ty = v - y0;
+  const r0 = (y0 & m) * size,
+    r1 = ((y0 + 1) & m) * size,
+    c0 = x0 & m,
+    c1 = (x0 + 1) & m;
+  return (
+    ((data[r0 + c0] * (1 - tx) + data[r0 + c1] * tx) * (1 - ty) +
+      (data[r1 + c0] * (1 - tx) + data[r1 + c1] * tx) * ty) /
+    255
+  );
+}
+
 class TerrainPool {
   static create(w, h) {
     if (typeof Worker === 'undefined') return null;
@@ -975,6 +1077,10 @@ class TerrainPool {
       worker.postMessage({ type: 'init', w, h, x0, x1 });
       this.parts.push(part);
     }
+  }
+
+  setGrassMask(mask) {
+    for (const p of this.parts) p.worker.postMessage({ type: 'grassMask', mask });
   }
 
   // Dibuja cielo y terreno en r.buf y r.clip. Devuelve false si no se pudo (y hay que dibujar en el hilo principal).
@@ -1033,10 +1139,18 @@ class TerrainPool {
       rubber: r.rubber ? true : null,
     };
     const m = r.rubber;
-    if (m && (m !== this.rubberMap || m.version !== this.rubberVersion)) {
-      frame.rubber = { length: m.length, rows: m.rows, lanes: m.lanes, span: m.span, bytes: m.bytes };
+    if (m && (m !== this.rubberMap || m.version !== this.rubberVersion || m.wearVersion !== this.wearVersion)) {
+      frame.rubber = {
+        length: m.length,
+        rows: m.rows,
+        lanes: m.lanes,
+        span: m.span,
+        bytes: m.bytes,
+        wearBytes: m.wearBytes,
+      };
       this.rubberMap = m;
       this.rubberVersion = m.version;
+      this.wearVersion = m.wearVersion;
     }
     const results = await Promise.all(
       this.parts.map(

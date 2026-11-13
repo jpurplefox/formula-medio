@@ -122,6 +122,76 @@ export function grassTexture(size = 128) {
   return withMips(size, data);
 }
 
+// Tierra (las calvas del césped, ver grassMask): marrón con manchas suaves, grano y piedritas
+export function dirtTexture(size = 128) {
+  const patch = fbm(size, 8, 4, 606);
+  const rand = rng(19);
+  const data = new Uint32Array(size * size);
+  for (let i = 0; i < data.length; i++) {
+    let v = (patch[i] - 0.5) * 34 + (rand() - 0.5) * 20;
+    const r = rand();
+    if (r < 0.04)
+      v += 28; // piedrita clara
+    else if (r < 0.1) v -= 20; // terrón en sombra
+    data[i] = rgb(112 + v, 96 + v * 0.9, 72 + v * 0.8);
+  }
+  return withMips(size, data);
+}
+
+// Dónde hay césped y dónde tierra: una imagen en blanco y negro (blanco = césped, negro = tierra) que se repite
+// sobre todo el pasto (GRASS_MASK_CELLS celdas por lado, en renderer.js). Se genera con tools/grass_mask.py y se
+// puede retocar a mano. Devuelve { size, data, soft, dry } con un byte por píxel (255 = césped; soft, desenfocada:
+// para lo lejos, el pasto seco alrededor y lo hondo de cada calva; dry, ruido suave: zonas grandes de pasto más
+// seco), o null si no se pudo cargar.
+export const GRASS_MASK_URL = new URL('../textures/grass-mask.png', import.meta.url).href;
+export async function loadGrassMask(url = GRASS_MASK_URL) {
+  try {
+    const img = await createImageBitmap(await (await fetch(url)).blob());
+    const size = img.width;
+    const c = new OffscreenCanvas(size, size);
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, 0, 0, size, size);
+    const px = g.getImageData(0, 0, size, size).data;
+    const data = new Uint8Array(size * size);
+    for (let i = 0; i < data.length; i++) data[i] = px[i * 4];
+    const n = fbm(size, 4, 3, 707);
+    let lo = Infinity,
+      hi = -Infinity;
+    for (const v of n) {
+      lo = Math.min(lo, v);
+      hi = Math.max(hi, v);
+    }
+    const dry = Uint8Array.from(n, (v) => Math.round(((v - lo) / (hi - lo)) * 255)); // estirado a 0..255
+    return { size, data, soft: blurWrap(data, size, Math.max(1, size >> 6)), dry };
+  } catch {
+    return null;
+  }
+}
+
+// Desenfoque de caja (dos pasadas por eje), repetido en los bordes
+function blurWrap(src, size, r) {
+  let a = Float32Array.from(src),
+    b = new Float32Array(src.length);
+  const m = size - 1,
+    n = 2 * r + 1;
+  for (let pass = 0; pass < 4; pass++) {
+    const horiz = pass % 2 === 0;
+    for (let y = 0; y < size; y++) {
+      let acc = 0;
+      for (let k = -r; k <= r; k++) acc += horiz ? a[y * size + (k & m)] : a[(k & m) * size + y];
+      for (let x = 0; x < size; x++) {
+        if (horiz) b[y * size + x] = acc / n;
+        else b[x * size + y] = acc / n;
+        const add = (x + r + 1) & m,
+          sub = (x - r) & m;
+        acc += horiz ? a[y * size + add] - a[y * size + sub] : a[add * size + y] - a[sub * size + y];
+      }
+    }
+    [a, b] = [b, a];
+  }
+  return Uint8Array.from(a, (v) => Math.round(v));
+}
+
 // Leca: piedritas color arena, con manchas suaves (donde la rastrillaron) y granos claros y oscuros
 export function gravelTexture(size = 128) {
   const patch = fbm(size, 8, 4, 505);
@@ -206,4 +276,102 @@ export function carbonTexture(size = 64) {
     }
   }
   return withMips(size, data);
+}
+
+// Ruido 3D para las nubes (ver el cielo en glrenderer.js): un cubo de size³ que se repite en los tres ejes, con dos
+// canales. r: la forma, ruido suave mezclado con Worley invertido (bolitas redondas que se juntan, como cúmulos);
+// g: el detalle, Worley más fino, para comer los bordes. Devuelve los bytes intercalados (r, g) por vóxel.
+export function cloudNoise(size = 64) {
+  const n = size * size * size,
+    out = new Uint8Array(n * 2);
+  const shape = new Float32Array(n),
+    detail = new Float32Array(n);
+  // Worley: distancia al punto más cercano de una grilla de g³ celdas (un punto al azar por celda), repetida
+  const worley = (g, seed, into, weight) => {
+    const rand = rng(seed),
+      pts = new Float32Array(g * g * g * 3);
+    for (let i = 0; i < pts.length; i++) pts[i] = rand();
+    const k = g / size,
+      m = g - 1;
+    for (let z = 0; z < size; z++) {
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const fx = x * k,
+            fy = y * k,
+            fz = z * k;
+          const cx = Math.floor(fx),
+            cy = Math.floor(fy),
+            cz = Math.floor(fz);
+          let best = 9;
+          for (let dz = -1; dz <= 1; dz++)
+            for (let dy = -1; dy <= 1; dy++)
+              for (let dx = -1; dx <= 1; dx++) {
+                const i = ((((cz + dz) & m) * g + ((cy + dy) & m)) * g + ((cx + dx) & m)) * 3;
+                const px = cx + dx + pts[i] - fx,
+                  py = cy + dy + pts[i + 1] - fy,
+                  pz = cz + dz + pts[i + 2] - fz;
+                best = Math.min(best, px * px + py * py + pz * pz);
+              }
+          into[(z * size + y) * size + x] += weight * (1 - Math.min(1, Math.sqrt(best)));
+        }
+      }
+    }
+  };
+  // ruido de valor 3D suave, repetido, con g³ celdas
+  const value = (g, seed, into, weight) => {
+    const rand = rng(seed),
+      grid = new Float32Array(g * g * g),
+      m = g - 1,
+      k = g / size;
+    for (let i = 0; i < grid.length; i++) grid[i] = rand();
+    const at = (x, y, z) => grid[((z & m) * g + (y & m)) * g + (x & m)];
+    const s = (t) => t * t * (3 - 2 * t);
+    for (let z = 0; z < size; z++) {
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const fx = x * k,
+            fy = y * k,
+            fz = z * k,
+            x0 = Math.floor(fx),
+            y0 = Math.floor(fy),
+            z0 = Math.floor(fz);
+          const u = s(fx - x0),
+            v = s(fy - y0),
+            w = s(fz - z0);
+          const l = (a, b, t) => a + (b - a) * t;
+          const c = l(
+            l(l(at(x0, y0, z0), at(x0 + 1, y0, z0), u), l(at(x0, y0 + 1, z0), at(x0 + 1, y0 + 1, z0), u), v),
+            l(
+              l(at(x0, y0, z0 + 1), at(x0 + 1, y0, z0 + 1), u),
+              l(at(x0, y0 + 1, z0 + 1), at(x0 + 1, y0 + 1, z0 + 1), u),
+              v,
+            ),
+            w,
+          );
+          into[(z * size + y) * size + x] += weight * c;
+        }
+      }
+    }
+  };
+  value(4, 801, shape, 0.35);
+  value(8, 802, shape, 0.15);
+  worley(4, 803, shape, 0.32);
+  worley(8, 804, shape, 0.18);
+  worley(8, 805, detail, 0.55);
+  worley(16, 806, detail, 0.3);
+  worley(32, 807, detail, 0.15);
+  // estirados a 0..255
+  for (const [ch, a] of [
+    [0, shape],
+    [1, detail],
+  ]) {
+    let lo = Infinity,
+      hi = -Infinity;
+    for (const v of a) {
+      lo = Math.min(lo, v);
+      hi = Math.max(hi, v);
+    }
+    for (let i = 0; i < n; i++) out[i * 2 + ch] = Math.round(((a[i] - lo) / (hi - lo)) * 255);
+  }
+  return { size, data: out };
 }
