@@ -15,7 +15,7 @@ export const FOG_END = 130;
 // (ver fog en glrenderer.js): así lo de cerca se ve nítido y lo que aparece, aparece ya perdido en la bruma
 export const GL_MAX_DIST = 320, GL_FOG_START = 50, FOG_MAX = 0.7;
 export const Z_NEAR = 0.6;
-export const WALL_H = 0.32; // altura de los muros (en celdas)
+export const WALL_H = 0.5; // altura de los muros (en celdas): ~1 m, como las barreras de bloques de la F1 (sólo se ve: no cuenta para los choques)
 export const WALL_T = 0.5; // espesor de los muros (en celdas)
 export const WALL_STRIPE = 1.2; // largo de cada franja del muro (en celdas)
 export { KERB_H }; // altura del lomo del piano (en celdas; está en track.js, con el resto del piano)

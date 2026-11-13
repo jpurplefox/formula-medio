@@ -12,6 +12,8 @@ import { DEFAULT_KERB, KERB_STYLE, MAX_KERB_COLORS, RIDGE, RIDGE_DEPTH, SAUSAGE_
 import { RUBBER_DARK, WEAR_REACH } from './rubber.js';
 import { TREE_FLOATS, treeMesh } from './trees.js';
 import { puffLook } from './smoke.js';
+import { SPONSORS, sponsorBanners } from './sponsors.js';
+import { fenceMesh } from './fences.js';
 import { asphaltTexture, cloudNoise, dirtTexture, grassTexture, gravelTexture, macroNoise, wallTexture } from './textures.js';
 import {
   DIRT_DEEP, DIRT_TPC, GRASS_MASK_CELLS, GRASS_STRIPE, WEAR_DIRT, FOG_MAX, GL_FOG_START, GRASS_BAND, GRASS_TPC, GRAVEL_TPC, RUNOFF_LIGHT, GUIDE_W, KERB_H, LINE_W, MACRO_TPC, GL_MAX_DIST as MAX_DIST, MODEL_NEAR, NEAR_RISE, PLANE_LEN,
@@ -71,6 +73,7 @@ uniform sampler2D uField, uStation, uLine, uAsphalt, uGrass, uGravel, uWall, uMa
 uniform sampler2D uDirt, uGrassMask; // tierra, y dónde hay tierra (r: 1 = césped, 0 = tierra; g: lo mismo, desenfocado; b: zonas de pasto seco)
 uniform highp sampler3D uClouds; // ruido de las nubes (cloudNoise de textures.js): r forma, g detalle
 uniform float uTime; // segundos, para que las nubes se muevan con el viento
+uniform sampler2D uBanners; // carteles de sponsors (sponsors.js), uno por fila
 uniform sampler2D uSkid; // marcas de bloqueos y patinadas (skids.js), sobre todo el mapa
 uniform sampler2D uWear; // pasto gastado (rubber.js): carriles desde el borde (izquierda al revés, derecha) × filas
 uniform sampler2D uSausage; // cuánta salchicha hay en cada celda (r, 0..1)
@@ -359,6 +362,35 @@ vec4 clouds(vec2 rd, float rise) {
   return vec4(col * fade, mix(1.0, T, fade));
 }
 
+// ---------- barreras ----------
+// Como las de la F1: bloques de espuma forrados (de BLOCK celdas de largo), con el borde redondeado, juntas oscuras y
+// una faja que los ata, en colores sobrios (gris y blanco, o un azul apagado con blanco). Cada tramo de SEG celdas, de
+// cada lado, elige sus colores o lleva un cartel de sponsor (sponsors.js) de todo el alto, con un borde fino oscuro;
+// el cartel se lee al derecho desde la pista de los dos lados. v: 0 arriba, 1 abajo; fw: celdas por píxel (de lejos,
+// las juntas y la faja se funden)
+const float BLOCK = 0.75, SEG = 24.0, BANNER_LEN = 4.0, BANNER_EDGE = 0.05;
+const float SPONSOR_N = ${glsl(SPONSORS.length)};
+vec3 wallFace(float st, float v, float sideS, float fw) {
+  float seg = floor(st / SEG) + (sideS > 0.0 ? 1000.0 : 0.0);
+  float pick = hash(seg * 1.7 + 3.0), banner = hash(seg * 3.1 + 11.0), who = hash(seg * 5.3 + 17.0);
+  if (banner < 0.55) {
+    if (v < BANNER_EDGE || v > 1.0 - BANNER_EDGE) return vec3(0.07, 0.07, 0.08);
+    float u = fract((sideS > 0.0 ? -st : st) / BANNER_LEN);
+    float row = floor(who * SPONSOR_N);
+    vec2 uv = vec2(u, (row + (v - BANNER_EDGE) / (1.0 - 2.0 * BANNER_EDGE)) / SPONSOR_N);
+    float lod = clamp(log2(max(1.0, fw / BANNER_LEN * ${glsl(512)})), 0.0, 6.0);
+    return textureLod(uBanners, uv, lod).rgb * (0.94 + 0.08 * (1.0 - v));
+  }
+  vec3 a = vec3(0.86, 0.87, 0.88), b = pick < 0.6 ? vec3(0.32, 0.33, 0.35) : vec3(0.16, 0.24, 0.4);
+  float bu = st / BLOCK, bf = fract(bu);
+  vec3 col = mod(floor(bu), 2.0) < 1.0 ? a : b;
+  float sharp = clamp(1.0 - fw / BLOCK * 2.0, 0.0, 1.0);
+  float seam = mix(1.0, smoothstep(0.0, 0.07, bf) * smoothstep(1.0, 0.93, bf), sharp);
+  float bulge = 1.0 + (0.85 + 0.2 * sin(3.14159265 * bf) - 1.0) * sharp;
+  float strap = 1.0 - 0.22 * sharp * exp(-pow((v - 0.72) / 0.05, 2.0)); // la faja que ata los bloques
+  return col * mix(0.4, 1.0, seam) * bulge * strap * (0.86 + 0.18 * (1.0 - v));
+}
+
 // ---------- montañas del fondo ----------
 // Tres capas alrededor del horizonte, de la más lejana a la más cercana: una cordillera alta y azulada, sierras, y
 // lomas con borde de bosque. La silueta de cada una es ruido leído sobre un círculo (de uMacro), así da la vuelta
@@ -481,9 +513,9 @@ void main() {
   if (wall) {
     float top = wallTop(p, s, wallIn);
     if (top - zr > 0.01) {
-      // cara del guardrail, con su textura: a lo largo según la posición sobre la línea central, a lo alto desde arriba
+      // cara de la barrera: a lo largo según la posición sobre la línea central, a lo alto desde arriba
       float st = max(0.0, stationAt(p));
-      c = texture(uWall, vec2(st / (2.0 * WALL_STRIPE), (top - zr) / WALL_H)).rgb;
+      c = wallFace(st, (top - zr) / WALL_H, sign(f.z), d * uPlane / uView.x);
     } else c = WALL_TOP;
   } else {
     // luz por pendiente: las laderas que miran al sol se aclaran
@@ -850,6 +882,21 @@ void main() {
   outColor = vec4(fog(c, vDepth), t.a * vAlpha);
 }`;
 
+// reja sobre el muro (fences.js): alambrado con transparencia; uv.x en metros a lo largo (la textura son 4 m, de
+// poste a poste), uv.y de arriba (0) a abajo (1)
+const FENCE_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uTex;
+in vec2 vUV;
+in float vDepth;
+out vec4 outColor;
+${FOG}
+void main() {
+  vec4 t = texture(uTex, vec2(vUV.x / 4.0, vUV.y));
+  if (t.a < 0.01) discard;
+  outColor = vec4(fog(t.rgb, vDepth), t.a);
+}`;
+
 // sombra de un árbol en el piso: un óvalo suave (la textura uTex), estirado lejos del sol
 const SOFT_SHADOW_FS = `#version 300 es
 precision highp float;
@@ -864,6 +911,27 @@ void main() {
 }`;
 
 // la sombra de un árbol: un óvalo suave, más oscuro cerca del pie (u: a lo ancho, v: del pie hacia lejos del sol)
+// el alambrado de la reja: 4 m de largo (256 px) por todo el alto (256 px), con su poste a la izquierda, el alambre
+// romboidal, dos alambres tensores y el cable de arriba. Fondo transparente (los mipmaps lo van desvaneciendo de lejos)
+function fenceImage(n = 256) {
+  const data = new Uint8Array(n * n * 4);
+  const put = (x, y, v, a) => {
+    const i = (y * n + x) * 4;
+    if (a <= data[i + 3] / 255) return;
+    data[i] = data[i + 1] = v;
+    data[i + 2] = Math.min(255, v + 8);
+    data[i + 3] = Math.round(a * 255);
+  };
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    // el rombo: dos familias de líneas a 45° cada 12 px
+    const d1 = (x + y) % 12, d2 = (x - y + 1200) % 12;
+    if (d1 === 0 || d2 === 0) put(x, y, 150, 0.8);
+    if (y < 4 || y === Math.round(n / 3) || y === Math.round((2 * n) / 3) || y > n - 3) put(x, y, 120, 0.95); // cable y alambres
+    if (x < 7) put(x, y, x < 2 || x > 4 ? 70 : 100, 1); // el poste, con un brillo al medio
+  }
+  return data;
+}
+
 // una bocanada de humo: redonda, de borde suave y con grumos (r: luz, a: cuánto tapa)
 function puffImage(n = 64) {
   const data = new Uint8Array(n * n * 4);
@@ -948,9 +1016,13 @@ export class GLRenderer {
     this.treeProg = this.program(TREE_VS, TREE_FS);
     this.softShadows = this.program(FLAT_VS, SOFT_SHADOW_FS);
     this.smokeProg = this.program(SMOKE_VS, SMOKE_FS);
+    this.fenceProg = this.program(FLAT_VS, FENCE_FS);
+    this.fenceTex = this.texture(fenceImage(), 256, 256, { mip: true });
+    this.fenceMeshes = new WeakMap();
     this.puffTex = this.texture(puffImage(), 64, 64, { clamp: true, mip: true });
     this.smoke = null; // humo de las ruedas (Smoke de smoke.js), lo pone el juego
     this.skids = null; // marcas de goma (SkidMarks de skids.js), las pone el juego
+    this.banners = this.texture(sponsorBanners(), 0, 0, { mip: true, clamp: true });
     this.noSkids = this.texture(new Uint8Array([0]), 1, 1, { format: 'R8' });
     this.smokeVao = gl.createVertexArray();
     this.smokeBuf = gl.createBuffer();
@@ -1183,6 +1255,34 @@ export class GLRenderer {
     }));
     gl.bindVertexArray(null);
     return true;
+  }
+
+  drawFences(track, cam, dirX, dirY, horizon) {
+    const gl = this.gl, fp = this.fenceProg;
+    let mesh = this.fenceMeshes.get(track);
+    if (!mesh) {
+      const v = fenceMesh(track, WALL_H);
+      const vao = gl.createVertexArray();
+      gl.bindVertexArray(vao);
+      this.buffer(v);
+      this.attrib(fp, 'aPos', 3, 5, 0);
+      this.attrib(fp, 'aUV', 2, 5, 3);
+      gl.bindVertexArray(null);
+      mesh = { vao, count: v.length / 5 };
+      this.fenceMeshes.set(track, mesh);
+    }
+    if (!mesh.count) return;
+    gl.useProgram(fp.p);
+    this.camera(fp, cam, dirX, dirY, horizon);
+    this.bind(0, this.fenceTex, fp, 'uTex');
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    gl.bindVertexArray(mesh.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+    gl.bindVertexArray(null);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
   }
 
   drawSmoke(cam, dirX, dirY, horizon) {
@@ -1543,6 +1643,7 @@ export class GLRenderer {
     this.bind(10, this.dirt, tp, 'uDirt');
     this.bind(11, this.grassMask, tp, 'uGrassMask');
     this.bind(14, skidTex, tp, 'uSkid');
+    this.bind(15, this.banners, tp, 'uBanners');
     gl.activeTexture(gl.TEXTURE13);
     gl.bindTexture(gl.TEXTURE_3D, this.clouds);
     gl.uniform1i(tp.u.uClouds, 13);
@@ -1675,6 +1776,9 @@ export class GLRenderer {
       gl.drawArrays(gl.TRIANGLES, 0, v.length / 5);
     }
     gl.bindVertexArray(null);
+
+    // 4a) rejas sobre el muro: transparentes, sin tapar lo de atrás
+    this.drawFences(track, cam, dirX, dirY, horizon);
 
     // 4b) humo de las ruedas: semitransparente, de lo más lejos a lo más cerca, sin tapar lo que viene atrás
     if (this.smoke?.puffs.length) this.drawSmoke(cam, dirX, dirY, horizon);
