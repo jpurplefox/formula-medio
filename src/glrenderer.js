@@ -9,10 +9,10 @@
 // "píxeles virtuales" de 960 de ancho que usa el resto del juego.
 
 import { DEFAULT_KERB, KERB_STYLE, MAX_KERB_COLORS, RIDGE, RIDGE_DEPTH, SAUSAGE_H, SAUSAGE_W, edgeReach, kerbAmount, stationAt } from './track.js';
-import { RUBBER_DARK } from './rubber.js';
-import { asphaltTexture, grassTexture, gravelTexture, macroNoise, wallTexture } from './textures.js';
+import { RUBBER_DARK, WEAR_REACH } from './rubber.js';
+import { asphaltTexture, dirtTexture, grassTexture, gravelTexture, macroNoise, wallTexture } from './textures.js';
 import {
-  FOG_END, FOG_START, GRASS_BAND, GRASS_TPC, GRAVEL_TPC, RUNOFF_LIGHT, GUIDE_W, KERB_H, LINE_W, MACRO_TPC, MAX_DIST, MODEL_NEAR, NEAR_RISE, PLANE_LEN,
+  DIRT_DEEP, DIRT_TPC, GRASS_MASK_CELLS, GRASS_STRIPE, WEAR_DIRT, FOG_END, FOG_START, GRASS_BAND, GRASS_TPC, GRAVEL_TPC, RUNOFF_LIGHT, GUIDE_W, KERB_H, LINE_W, MACRO_TPC, MAX_DIST, MODEL_NEAR, NEAR_RISE, PLANE_LEN,
   BODY_PIVOT_Z, ROAD_TPC, SHADOW, SHADOW_SHIFT, SUN, WALL_H, WALL_STRIPE, WALL_T, Z_NEAR,
   KERB_RUBBER_MAX, KERB_DIRT_MAX, WEAR_CELL,
 } from './renderer.js';
@@ -63,6 +63,8 @@ const TERRAIN_FS = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 uniform sampler2D uField, uStation, uLine, uAsphalt, uGrass, uGravel, uWall, uMacro, uRubber;
+uniform sampler2D uDirt, uGrassMask; // tierra, y dónde hay tierra (r: 1 = césped, 0 = tierra; g: lo mismo, desenfocado; b: zonas de pasto seco)
+uniform sampler2D uWear; // pasto gastado (rubber.js): carriles desde el borde (izquierda al revés, derecha) × filas
 uniform sampler2D uSausage; // cuánta salchicha hay en cada celda (r, 0..1)
 uniform vec4 uKerbStyle; // ancho del piano, largo de cada franja, ancho del verde, línea blanca (1) o no (0)
 uniform vec2 uMap;
@@ -89,6 +91,9 @@ const vec3 KERB_GREEN = vec3(46.0, 135.0, 80.0) / 255.0, SAUSAGE_YELLOW = vec3(2
 const vec3 DIRT = vec3(120.0, 96.0, 62.0) / 255.0, KERB_RUBBER = vec3(25.0) / 255.0;
 const float RUBBER_DARK = ${glsl(RUBBER_DARK)};
 const float ROAD_TPC = ${glsl(ROAD_TPC)}, GRAVEL_TPC = ${glsl(GRAVEL_TPC)}, RUNOFF_LIGHT = ${glsl(RUNOFF_LIGHT)}, GRASS_TPC = ${glsl(GRASS_TPC)}, GRASS_BAND = ${glsl(GRASS_BAND)}, MACRO_TPC = ${glsl(MACRO_TPC)};
+const float DIRT_TPC = ${glsl(DIRT_TPC)}, GRASS_MASK_CELLS = ${glsl(GRASS_MASK_CELLS)}, GRASS_STRIPE = ${glsl(GRASS_STRIPE)};
+const float WEAR_REACH = ${glsl(WEAR_REACH)}, WEAR_DIRT = ${glsl(WEAR_DIRT)}, DIRT_DEEP = ${glsl(DIRT_DEEP)};
+const vec3 DRY_GRASS = vec3(140.0, 134.0, 72.0) / 255.0;
 const vec3 EDGE_WHITE = vec3(225.0) / 255.0;
 const vec3 LINE_BLACK = vec3(20.0) / 255.0, LINE_WHITE = vec3(245.0) / 255.0, WALL_TOP = vec3(150.0, 150.0, 155.0) / 255.0;
 const vec3 SKY_TOP = vec3(70.0, 130.0, 210.0) / 255.0, MOUNTAIN = vec3(110.0, 135.0, 160.0) / 255.0;
@@ -138,6 +143,35 @@ vec3 zone(float s, vec4 b, vec3 grass, vec3 sausage, vec3 green, vec3 kerb, vec3
   return road;
 }
 
+// el césped (como grassColor de renderer.js): franjas del corte suaves que se pierden donde está gastado, pasto
+// seco alrededor de las calvas y en zonas grandes, y la tierra de la máscara con el borde deshilachado por el
+// grano del pasto, que crece donde pisan los autos (wear, 0..1)
+vec3 grassColor(vec2 p, float fw, float light, float wear) {
+  float k = float(textureSize(uGrassMask, 0).x) / GRASS_MASK_CELLS, mg = fw / GRASS_MASK_CELLS;
+  vec3 m = textureGrad(uGrassMask, p / GRASS_MASK_CELLS, vec2(mg, 0.0), vec2(0.0, mg)).rgb;
+  float dryZone = clamp((m.b - 0.5) / 0.2, 0.0, 1.0);
+  float worn = min(1.0, (1.0 - m.g) * 4.0 + wear);
+  float ph = (p.x + p.y) * (0.7071 / GRASS_BAND);
+  float fr = fract(ph), e = min(0.5, fw / GRASS_BAND);
+  float band = mod(floor(ph), 2.0);
+  if (fr < e) band += (1.0 - 2.0 * band) * ((e - fr) / (2.0 * e));
+  else if (fr > 1.0 - e) band += (1.0 - 2.0 * band) * ((fr - 1.0 + e) / (2.0 * e));
+  float g = fw * GRASS_TPC / 128.0;
+  vec3 tex = textureGrad(uGrass, p * GRASS_TPC / 128.0, vec2(g, 0.0), vec2(0.0, g)).rgb;
+  vec3 c = shade(tex, light * (1.0 + (band - 0.5) * GRASS_STRIPE * (1.0 - max(worn, dryZone))));
+  float dryness = min(1.0, worn * 0.8 + dryZone * 0.6);
+  c = mix(c, shade(DRY_GRASS, light * (0.8 + tex.g * 255.0 / 500.0)), dryness * 0.6);
+  float g4 = g * 0.25;
+  float grain = (textureGrad(uGrass, p * GRASS_TPC / 512.0, vec2(g4, 0.0), vec2(0.0, g4)).g - 0.525) * 4.0;
+  float f = (m.r + m.g) * 0.5 - wear * WEAR_DIRT + grain * 0.5;
+  float w = min(0.5, 0.06 + fw * k * 0.3);
+  float t = smoothstep(0.0, 1.0, (0.5 + w - f) / (2.0 * w));
+  if (t <= 0.0) return c;
+  float deep = min(1.0, clamp((0.45 - m.g) * 2.5, 0.0, 1.0) + wear * 0.5);
+  float gd = fw * DIRT_TPC / 128.0;
+  return mix(c, shade(textureGrad(uDirt, p * DIRT_TPC / 128.0, vec2(gd, 0.0), vec2(0.0, gd)).rgb, light * (1.0 - DIRT_DEEP * deep)), t);
+}
+
 // el color del piso (lo mismo que groundColor de renderer.js); mat: qué hay en la escapatoria (RUNOFF de track.js)
 vec3 ground(vec2 p, float fw, float s, float k, float q, float st, float side, float lit, float mat) {
   float light = lit * (0.88 + 0.24 * texture(uMacro, p * MACRO_TPC / 64.0).r);
@@ -157,13 +191,10 @@ vec3 ground(vec2 p, float fw, float s, float k, float q, float st, float side, f
       float gg = fw * GRAVEL_TPC / 128.0;
       grass = shade(textureGrad(uGravel, p * GRAVEL_TPC / 128.0, vec2(gg, 0.0), vec2(0.0, gg)).rgb, light);
     } else {
-      float ph = (p.x + p.y) * (0.7071 / GRASS_BAND);
-      float fr = fract(ph), e = min(0.5, fw / GRASS_BAND);
-      float band = mod(floor(ph), 2.0);
-      if (fr < e) band += (1.0 - 2.0 * band) * ((e - fr) / (2.0 * e));
-      else if (fr > 1.0 - e) band += (1.0 - 2.0 * band) * ((fr - 1.0 + e) / (2.0 * e));
-      float g = fw * GRASS_TPC / 128.0;
-      grass = shade(textureGrad(uGrass, p * GRASS_TPC / 128.0, vec2(g, 0.0), vec2(0.0, g)).rgb, light * (0.9 + band * 0.2));
+      float wear = 0.0;
+      if ((uFlags & 2) != 0 && st >= 0.0 && s < 0.0 && s > -WEAR_REACH)
+        wear = texture(uWear, vec2(0.5 + sign(side) * -s / (2.0 * WEAR_REACH), st / uRubberSize.x)).r;
+      grass = grassColor(p, fw, light, wear);
     }
     if (s < outer - fw) return grass;
   }
@@ -596,11 +627,26 @@ export class GLRenderer {
     this.asphalt = repeatTex(asphaltTexture());
     this.grass = repeatTex(grassTexture());
     this.gravel = repeatTex(gravelTexture());
+    this.dirt = repeatTex(dirtTexture());
+    this.grassMask = this.texture(new Uint8Array([255, 255, 0, 255]), 1, 1); // todo césped hasta que llegue la imagen
     this.wall = repeatTex(wallTexture());
     const macro = macroNoise();
     this.macro = this.texture(Uint8Array.from(macro.data, (v) => Math.round(((v - 0.88) / 0.24) * 255)), macro.size, macro.size, { format: 'R8' });
 
     this.trackData = new WeakMap();
+  }
+
+  // césped/tierra (loadGrassMask de textures.js)
+  setGrassMask(mask) {
+    if (!mask) return;
+    this.gl.deleteTexture(this.grassMask);
+    const rgba = new Uint8Array(mask.size * mask.size * 4).fill(255);
+    for (let i = 0; i < mask.data.length; i++) {
+      rgba[4 * i] = mask.data[i];
+      rgba[4 * i + 1] = mask.soft[i];
+      rgba[4 * i + 2] = mask.dry[i];
+    }
+    this.grassMask = this.texture(rgba, mask.size, mask.size, { mip: true });
   }
 
   setZoom(zoom) {
@@ -679,13 +725,28 @@ export class GLRenderer {
       if (this.rubberTex) gl.deleteTexture(this.rubberTex);
       this.rubberTex = this.texture(map.bytes, map.lanes, map.rows, { format: 'R8' });
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      if (this.wearTex) gl.deleteTexture(this.wearTex);
+      this.wearTex = this.texture(map.wearBytes, map.wearLanes, map.rows, { format: 'R8' });
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       this.rubberMap = map;
       this.rubberVersion = map.version;
-    } else if (this.rubberVersion !== map.version) {
-      gl.bindTexture(gl.TEXTURE_2D, this.rubberTex);
+      this.wearVersion = map.wearVersion;
+      map.wearDirty = null;
+    } else {
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, map.lanes, map.rows, gl.RED, gl.UNSIGNED_BYTE, map.bytes);
-      this.rubberVersion = map.version;
+      if (this.rubberVersion !== map.version) {
+        gl.bindTexture(gl.TEXTURE_2D, this.rubberTex);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, map.lanes, map.rows, gl.RED, gl.UNSIGNED_BYTE, map.bytes);
+        this.rubberVersion = map.version;
+      }
+      // el pasto gastado cambia en el momento: se suben sólo las filas que cambiaron
+      if (this.wearVersion !== map.wearVersion && map.wearDirty) {
+        const { lo, hi } = map.wearDirty, n = map.wearLanes;
+        gl.bindTexture(gl.TEXTURE_2D, this.wearTex);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, lo, n, hi - lo + 1, gl.RED, gl.UNSIGNED_BYTE, map.wearBytes.subarray(lo * n, (hi + 1) * n));
+        this.wearVersion = map.wearVersion;
+        map.wearDirty = null;
+      }
     }
     return this.rubberTex;
   }
@@ -906,6 +967,8 @@ export class GLRenderer {
     this.bind(6, this.wall, tp, 'uWall');
     this.bind(7, this.macro, tp, 'uMacro');
     this.bind(9, t.sausage, tp, 'uSausage');
+    this.bind(10, this.dirt, tp, 'uDirt');
+    this.bind(11, this.grassMask, tp, 'uGrassMask');
     const ks = track.kerbStyle ?? KERB_STYLE;
     gl.uniform4f(tp.u.uKerbStyle, ks.width, ks.stripe, ks.green, ks.line ? 1 : 0);
     gl.uniform2f(tp.u.uMap, track.W, track.H);
@@ -920,6 +983,7 @@ export class GLRenderer {
     gl.uniform1i(tp.u.uFlags, this.rubber ? 2 : 0);
     if (this.rubber) {
       this.bind(3, rubber, tp, 'uRubber');
+      this.bind(12, this.wearTex, tp, 'uWear');
       gl.uniform2f(tp.u.uRubberSize, this.rubber.length, this.rubber.span);
     }
     gl.uniform3f(tp.u.uCam, cam.x, cam.y, cam.z);

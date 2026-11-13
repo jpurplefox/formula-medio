@@ -18,6 +18,7 @@ import { RubberMap } from './rubber.js';
 import { DESIGNS } from './teamliveries.js';
 import { airDensity, carLimits, DEFAULT_TUNE, GRAVITY } from './dynamics.js';
 import { DAMAGE_LEVELS, damaged, NO_DAMAGE } from './damage.js';
+import { loadGrassMask } from './textures.js';
 import { drawCar, drawShape, trackShape } from './menuview.js';
 
 const VIEW_W = 960;
@@ -95,6 +96,8 @@ if (!renderer) {
   canvas.height = VIEW_H;
   renderer = new Renderer(canvas);
 }
+// dónde hay césped y dónde tierra (textures/grass-mask.png); mientras carga, todo césped
+loadGrassMask().then((mask) => mask && renderer.setGrassMask(mask));
 // encima, en un canvas aparte, lo que se dibuja en 2D: el volante y el semáforo
 const overlay = document.getElementById('overlay');
 overlay.width = VIEW_W;
