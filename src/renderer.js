@@ -4,8 +4,29 @@
 // no estaba tapada (y-buffer). Así las lomas tapan lo que tienen detrás.
 // Orden de dibujo: cielo → terreno (con muros como escalones) → sprites y modelos 3D, de lejos a cerca.
 
-import { DEFAULT_KERB, KERB_H, KERB_STYLE, RIDGE, SAUSAGE_H, SAUSAGE_W, edgeReach, kerbLift, stationAt, kerbAmount, runoffAt, sampleField } from './track.js';
-import { asphaltTexture, dirtTexture, grassTexture, gravelTexture, macroNoise, sample, wallTexture } from './textures.js';
+import {
+  DEFAULT_KERB,
+  KERB_H,
+  KERB_STYLE,
+  RIDGE,
+  SAUSAGE_H,
+  SAUSAGE_W,
+  edgeReach,
+  kerbLift,
+  stationAt,
+  kerbAmount,
+  runoffAt,
+  sampleField,
+} from './track.js';
+import {
+  asphaltTexture,
+  dirtTexture,
+  grassTexture,
+  gravelTexture,
+  macroNoise,
+  sample,
+  wallTexture,
+} from './textures.js';
 import { RUBBER_DARK, RubberMap, WEAR_REACH } from './rubber.js';
 
 export const MAX_DIST = 140;
@@ -13,7 +34,9 @@ export const FOG_START = 25;
 export const FOG_END = 130;
 // con WebGL se dibuja más lejos (~640 m) y la bruma empieza más lejos y sube de a poco, sin tapar todo al final
 // (ver fog en glrenderer.js): así lo de cerca se ve nítido y lo que aparece, aparece ya perdido en la bruma
-export const GL_MAX_DIST = 320, GL_FOG_START = 50, FOG_MAX = 0.7;
+export const GL_MAX_DIST = 320,
+  GL_FOG_START = 50,
+  FOG_MAX = 0.7;
 export const Z_NEAR = 0.6;
 export const WALL_H = 0.5; // altura de los muros (en celdas): ~1 m, como las barreras de bloques de la F1 (sólo se ve: no cuenta para los choques)
 export const WALL_T = 0.5; // espesor de los muros (en celdas)
@@ -34,7 +57,12 @@ export const GRASS_BAND = 2.2; // ancho de cada franja del corte de césped (en 
 export const MACRO_TPC = 2; // muestras de la variación grande por celda (se repite cada 32 celdas, ~80 m)
 // nubes (sólo con WebGL, ver glrenderer.js), en celdas (~2 m): la capa de cúmulos, cada cuánto se repite el ruido,
 // cuánto cielo tapan (0..1), qué tan densas son, hasta dónde se ven, el viento (celdas por segundo) y cuánto cambian
-export const CLOUD_BASE = 350, CLOUD_TOP = 750, CLOUD_TILE = 1600, CLOUD_COVER = 0.36, CLOUD_SIGMA = 0.05, CLOUD_FAR = 12000;
+export const CLOUD_BASE = 350,
+  CLOUD_TOP = 750,
+  CLOUD_TILE = 1600,
+  CLOUD_COVER = 0.36,
+  CLOUD_SIGMA = 0.05,
+  CLOUD_FAR = 12000;
 export const CLOUD_WIND = [14, 5]; // ~30 m/s: allá arriba sopla más, y si no, a 1 km no se nota que se muevan
 export const CLOUD_CHURN = 0.0015; // cuánto cambia la forma por segundo (fracción del ruido): crecen y se deshacen
 export const PLANE_LEN = 0.7; // medio ancho del plano de la cámara a distancia 1: campo de visión de unos 70°
@@ -46,11 +74,22 @@ export const BODY_PIVOT_Z = 0.3; // m: altura del eje sobre el que rola y cabece
 export const SUN = [0.45, 0.6, 0.66]; // hacia dónde está el sol (arriba a la izquierda del mapa, como el sombreado del terreno)
 export const SHADOW_SHIFT = 0.35; // cuánto se corre la sombra del auto, alejándose del sol (m)
 // contorno de la sombra del auto visto desde arriba (m): alerón delantero, cuerpo, alerón trasero
-export const SHADOW = [[2.75, -0.95], [2.75, 0.95], [1.9, 1.0], [-2.0, 1.0], [-2.75, 0.55], [-2.75, -0.55], [-2.0, -1.0], [1.9, -1.0]];
+export const SHADOW = [
+  [2.75, -0.95],
+  [2.75, 0.95],
+  [1.9, 1.0],
+  [-2.0, 1.0],
+  [-2.75, 0.55],
+  [-2.75, -0.55],
+  [-2.0, -1.0],
+  [1.9, -1.0],
+];
 
 export const rgb = (r, g, b) => (0xff000000 | (b << 16) | (g << 8) | r) >>> 0;
 
-const FR = 196, FG = 214, FB = 230;
+const FR = 196,
+  FG = 214,
+  FB = 230;
 const FOG = rgb(FR, FG, FB);
 const EDGE_WHITE = rgb(225, 225, 225);
 const KERB_GREEN = rgb(46, 135, 80); // franja verde abrasiva detrás del piano
@@ -86,12 +125,18 @@ function kerbColors(track) {
 function mix(c, f) {
   if (f <= 0) return c;
   if (f >= 256) return FOG;
-  const r = c & 255, g = (c >>> 8) & 255, b = (c >>> 16) & 255;
-  return 0xff000000 | ((b + (((FB - b) * f) >> 8)) << 16) | ((g + (((FG - g) * f) >> 8)) << 8) | (r + (((FR - r) * f) >> 8));
+  const r = c & 255,
+    g = (c >>> 8) & 255,
+    b = (c >>> 16) & 255;
+  return (
+    0xff000000 | ((b + (((FB - b) * f) >> 8)) << 16) | ((g + (((FG - g) * f) >> 8)) << 8) | (r + (((FR - r) * f) >> 8))
+  );
 }
 
 function shade(c, k) {
-  const r = Math.min(255, (c & 255) * k), g = Math.min(255, ((c >>> 8) & 255) * k), b = Math.min(255, ((c >>> 16) & 255) * k);
+  const r = Math.min(255, (c & 255) * k),
+    g = Math.min(255, ((c >>> 8) & 255) * k),
+    b = Math.min(255, ((c >>> 16) & 255) * k);
   return rgb(r | 0, g | 0, b | 0);
 }
 
@@ -125,7 +170,8 @@ function fogFactor(d) {
 function lightField(track) {
   const { W, H, height } = track;
   const light = new Float32Array(W * H).fill(1);
-  const lx = -0.6, ly = -0.8; // el sol viene de arriba a la izquierda del mapa
+  const lx = -0.6,
+    ly = -0.8; // el sol viene de arriba a la izquierda del mapa
   for (let y = 1; y < H - 1; y++) {
     for (let x = 1; x < W - 1; x++) {
       const i = y * W + x;
@@ -195,13 +241,15 @@ export class Renderer {
   // con el borde deshilachado por el grano del pasto, que crece donde pisan los autos (wear, 0..1, de rubber.js)
   grassColor(fx, fy, fw, light, wear) {
     const mask = this.grassMask;
-    let g = 1, soft = 1, dry = 0;
+    let g = 1,
+      soft = 1,
+      dry = 0;
     const k = mask ? mask.size / GRASS_MASK_CELLS : 1;
     if (mask) {
       g = maskAt(mask.data, mask.size, fx * k, fy * k);
       soft = maskAt(mask.soft, mask.size, fx * k, fy * k);
       dry = maskAt(mask.dry, mask.size, fx * k, fy * k);
-      g += (soft - g) * Math.min(1, fw * k / 4); // a lo lejos, la versión suave (no hay mipmaps): que no titile
+      g += (soft - g) * Math.min(1, (fw * k) / 4); // a lo lejos, la versión suave (no hay mipmaps): que no titile
     }
     const dryZone = Math.max(0, Math.min(1, (dry - 0.5) / 0.2));
     const worn = Math.min(1, (1 - soft) * 4 + wear);
@@ -217,14 +265,21 @@ export class Renderer {
     const dryness = Math.min(1, worn * 0.8 + dryZone * 0.6);
     if (dryness > 0) c = blend(c, shade(DRY_GRASS, light * (0.8 + ((tex >>> 8) & 255) / 500)), dryness * 0.6);
     // tierra: el borde lo mueve el grano del pasto (más grueso), así queda deshilachado
-    const grain = (((sample(this.grass, fx * GRASS_TPC * 0.25, fy * GRASS_TPC * 0.25, fw * GRASS_TPC * 0.25) >>> 8) & 255) / 255 - 0.525) * 4;
+    const grain =
+      (((sample(this.grass, fx * GRASS_TPC * 0.25, fy * GRASS_TPC * 0.25, fw * GRASS_TPC * 0.25) >>> 8) & 255) / 255 -
+        0.525) *
+      4;
     const f = (g + soft) * 0.5 - wear * WEAR_DIRT + grain * 0.5;
     const w = Math.min(0.5, 0.06 + fw * k * 0.3);
     let t = Math.max(0, Math.min(1, (0.5 + w - f) / (2 * w)));
     t = t * t * (3 - 2 * t);
     if (t <= 0) return c;
     const deep = Math.min(1, Math.max(0, (0.45 - soft) * 2.5) + wear * 0.5);
-    return blend(c, shade(sample(this.dirt, fx * DIRT_TPC, fy * DIRT_TPC, fw * DIRT_TPC), light * (1 - DIRT_DEEP * deep)), t);
+    return blend(
+      c,
+      shade(sample(this.dirt, fx * DIRT_TPC, fy * DIRT_TPC, fw * DIRT_TPC), light * (1 - DIRT_DEEP * deep)),
+      t,
+    );
   }
 
   // césped/tierra (loadGrassMask de textures.js); también a los workers, si los hay
@@ -237,8 +292,10 @@ export class Renderer {
   // cam: { x, y, z, ground, angle, pitch, zoom? }
   async render(track, cam, sprites, models = []) {
     this.setZoom(cam.zoom || 1);
-    const dirX = Math.cos(cam.angle), dirY = Math.sin(cam.angle);
-    const planeX = -dirY * this.planeLen, planeY = dirX * this.planeLen;
+    const dirX = Math.cos(cam.angle),
+      dirY = Math.sin(cam.angle);
+    const planeX = -dirY * this.planeLen,
+      planeY = dirX * this.planeLen;
     const horizon = this.h / 2 + (cam.pitch || 0);
 
     if (!(this.pool && (await this.pool.draw(this, track, cam, horizon)))) {
@@ -251,8 +308,10 @@ export class Renderer {
 
   // cielo y terreno de las columnas x0..x1 (en un worker, sólo su parte de la pantalla)
   drawColumns(track, cam, horizon, x0, x1) {
-    const dirX = Math.cos(cam.angle), dirY = Math.sin(cam.angle);
-    const planeX = -dirY * this.planeLen, planeY = dirX * this.planeLen;
+    const dirX = Math.cos(cam.angle),
+      dirY = Math.sin(cam.angle);
+    const planeX = -dirY * this.planeLen,
+      planeY = dirX * this.planeLen;
     if (!this.lightFor.has(track)) this.lightFor.set(track, lightField(track));
     this.drawSky(cam.angle, horizon, x0, x1);
     this.drawTerrain(track, cam, dirX, dirY, planeX, planeY, horizon, x0, x1);
@@ -270,7 +329,7 @@ export class Renderer {
     const mtn = rgb(110, 135, 160);
     for (let x = x0; x < x1; x++) {
       const a = angle + Math.atan(((2 * x) / w - 1) * this.planeLen);
-      const i = ((((a / (Math.PI * 2)) * 1024) | 0) % 1024 + 1024) % 1024;
+      const i = (((((a / (Math.PI * 2)) * 1024) | 0) % 1024) + 1024) % 1024;
       const mh = this.mountains[i] * h * 0.09;
       for (let y = 0; y < hy; y++) {
         const dy = horizon - y;
@@ -284,10 +343,12 @@ export class Renderer {
   drawTerrain(track, cam, dirX, dirY, planeX, planeY, horizon, x0, x1) {
     const { w, h, buf, P, clip } = this;
     const { W, H, height, sdf, lat, kerbLeft, kerbRight, sausageLeft, sausageRight } = track;
-    const style = track.kerbStyle ?? KERB_STYLE, reach = edgeReach(style);
+    const style = track.kerbStyle ?? KERB_STYLE,
+      reach = edgeReach(style);
     const near = Math.max(reach + 1, track.runoff + 0.5); // hasta dónde hace falta saber dónde estamos
     // el muro es la franja continua que empieza a `runoff` celdas del borde de la pista
-    const wallIn = -track.runoff, wallOut = wallIn - WALL_T;
+    const wallIn = -track.runoff,
+      wallOut = wallIn - WALL_T;
     const light = this.lightFor.get(track);
     const camZ = cam.z;
     const invCP = 1 / (Math.max(0.3, cam.z - cam.ground) * P);
@@ -299,12 +360,15 @@ export class Renderer {
 
     for (let x = x0; x < x1; x++) {
       const cx = (2 * x) / w - 1;
-      const rdx = dirX + planeX * cx, rdy = dirY + planeY * cx;
+      const rdx = dirX + planeX * cx,
+        rdy = dirY + planeY * cx;
       const base = x * NCHK;
       let ybuf = h;
       let chk = 0;
       let wasWall = false;
-      let prevS = NaN, prevZ = 0, prevG = 0;
+      let prevS = NaN,
+        prevZ = 0,
+        prevG = 0;
       let wallDone = false; // el muro actual ya se dibujó entero al entrar
 
       for (let z = zStart; z < MAX_DIST && ybuf > 0;) {
@@ -316,9 +380,19 @@ export class Renderer {
         const maxStep = 0.15 + z * MAX_STEP_GROWTH;
         if (step > maxStep) step = maxStep;
 
-        const fx = cam.x + rdx * z, fy = cam.y + rdy * z;
-        let ground, isWall = false, ix, iy, i;
-        let s = -1e9, k = 0, q = 0, st = -1, side = 0, kerbShade = 1;
+        const fx = cam.x + rdx * z,
+          fy = cam.y + rdy * z;
+        let ground,
+          isWall = false,
+          ix,
+          iy,
+          i;
+        let s = -1e9,
+          k = 0,
+          q = 0,
+          st = -1,
+          side = 0,
+          kerbShade = 1;
         if (fx < 1 || fy < 1 || fx >= W - 1 || fy >= H - 1) {
           ix = Math.min(W - 1, Math.max(0, fx | 0));
           iy = Math.min(H - 1, Math.max(0, fy | 0));
@@ -328,11 +402,17 @@ export class Renderer {
           ix = fx | 0;
           iy = fy | 0;
           i = iy * W + ix;
-          const gx = fx - 0.5, gy = fy - 0.5;
-          const x0 = gx | 0, y0 = gy | 0;
-          const u = gx - x0, v = gy - y0;
+          const gx = fx - 0.5,
+            gy = fy - 0.5;
+          const x0 = gx | 0,
+            y0 = gy | 0;
+          const u = gx - x0,
+            v = gy - y0;
           const j = y0 * W + x0;
-          const a = (1 - u) * (1 - v), b = u * (1 - v), c = (1 - u) * v, d = u * v;
+          const a = (1 - u) * (1 - v),
+            b = u * (1 - v),
+            c = (1 - u) * v,
+            d = u * v;
           ground = height[j] * a + height[j + 1] * b + height[j + W] * c + height[j + W + 1] * d;
           s = sdf[j] * a + sdf[j + 1] * b + sdf[j + W] * c + sdf[j + W + 1] * d;
           // cerca del borde y en la escapatoria: dónde estamos sobre la línea central y de qué lado, para saber si
@@ -349,7 +429,9 @@ export class Renderer {
           // el piano es un lomo por fuera del borde (con serrucho, ver kerbLift); detrás, el verde (plano) y, en
           // algunas curvas, la salchicha: otro lomo, más alto y angosto
           if (k > 0 && s < 0) {
-            const kb = -style.width * k, gb = kb - style.green * k, sb = gb - SAUSAGE_W * q;
+            const kb = -style.width * k,
+              gb = kb - style.green * k,
+              sb = gb - SAUSAGE_W * q;
             if (s > kb) {
               ground += kerbLift(s, kb, k, st);
               kerbShade = 1 - 0.22 * Math.cos((Math.PI * (s - kb)) / -kb); // la cara que mira a la pista, más iluminada
@@ -410,9 +492,12 @@ export class Renderer {
             } else {
               const fw = Math.max(0.03, (z * pl) / w, step * 0.5);
               if (st < 0 && (s >= 1 || (this.rubber && s > -WEAR_REACH)) && lazyStation) {
-                const gx = fx - 0.5, gy = fy - 0.5;
-                const x0 = gx | 0, y0 = gy | 0;
-                const u = gx - x0, v = gy - y0;
+                const gx = fx - 0.5,
+                  gy = fy - 0.5;
+                const x0 = gx | 0,
+                  y0 = gy | 0;
+                const u = gx - x0,
+                  v = gy - y0;
                 const j = y0 * W + x0;
                 st = stationAt(track, fx, fy);
                 side = (lat[j] * (1 - u) + lat[j + 1] * u) * (1 - v) + (lat[j + W] * (1 - u) + lat[j + W + 1] * u) * v;
@@ -446,22 +531,32 @@ export class Renderer {
     const style = track.kerbStyle ?? KERB_STYLE;
     // variación de brillo a gran escala, igual para pasto y asfalto
     const mc = this.macro;
-    const light = lit * mc.data[((((fy * MACRO_TPC) | 0) & (mc.size - 1)) * mc.size) + (((fx * MACRO_TPC) | 0) & (mc.size - 1))];
-    const isKerb = k > 0.02, isSausage = isKerb && q > 0.02;
+    const light =
+      lit * mc.data[(((fy * MACRO_TPC) | 0) & (mc.size - 1)) * mc.size + (((fx * MACRO_TPC) | 0) & (mc.size - 1))];
+    const isKerb = k > 0.02,
+      isSausage = isKerb && q > 0.02;
     // bordes de lo pintado (en las puntas, más angosto): piano, verde, salchicha, y la línea blanca adentro
     const kb = isKerb ? -style.width * k : 0;
     const gb = isKerb ? kb - style.green * k : 0;
-    const outer = isSausage ? gb - SAUSAGE_W * q : gb, lb = isKerb && !style.line ? 0 : LINE_W;
+    const outer = isSausage ? gb - SAUSAGE_W * q : gb,
+      lb = isKerb && !style.line ? 0 : LINE_W;
 
     let grass = 0;
     if (s < outer + fw) {
       // lo de afuera: pasto, leca o asfalto (más claro que el de la pista: no tiene goma), según la escapatoria
       // de ese lado en ese tramo (RUNOFF de track.js), hasta el muro; más allá, pasto
       const mat = st >= 0 && s > -track.runoff ? runoffAt(side > 0 ? track.runoffRight : track.runoffLeft, st) : 0;
-      if (mat === 2) grass = shade(sample(this.asphalt, fx * ROAD_TPC, fy * ROAD_TPC, fw * ROAD_TPC), light * RUNOFF_LIGHT);
+      if (mat === 2)
+        grass = shade(sample(this.asphalt, fx * ROAD_TPC, fy * ROAD_TPC, fw * ROAD_TPC), light * RUNOFF_LIGHT);
       else if (mat === 1) grass = shade(sample(this.gravel, fx * GRAVEL_TPC, fy * GRAVEL_TPC, fw * GRAVEL_TPC), light);
       else {
-        grass = this.grassColor(fx, fy, fw, light, st >= 0 && this.rubber ? RubberMap.wearAt(this.rubber, st, -s, side) : 0);
+        grass = this.grassColor(
+          fx,
+          fy,
+          fw,
+          light,
+          st >= 0 && this.rubber ? RubberMap.wearAt(this.rubber, st, -s, side) : 0,
+        );
       }
       if (s < outer - fw) return grass;
     }
@@ -471,7 +566,8 @@ export class Renderer {
     const dark = this.rubber && st >= 0 ? RUBBER_DARK * RubberMap.sample(this.rubber, st, side) : 0;
     let roadC = shade(asphalt, light * (1 - dark));
     // línea de largada a cuadros
-    const ax = fx - line.x, ay = fy - line.y;
+    const ax = fx - line.x,
+      ay = fy - line.y;
     const a = ax * line.dx + ay * line.dy;
     if (a > -0.7 && a < 0.7) {
       const l = -ax * line.dy + ay * line.dx;
@@ -484,29 +580,34 @@ export class Renderer {
     if (guide && s > 0 && st >= 0) {
       const u = st | 0;
       const d = Math.abs(side - guide.offset[u]);
-      if (d < GUIDE_W + fw) roadC = blend(roadC, shade(guide.color[u], lit), 0.8 * Math.min(1, (GUIDE_W + fw - d) / (2 * fw)));
+      if (d < GUIDE_W + fw)
+        roadC = blend(roadC, shade(guide.color[u], lit), 0.8 * Math.min(1, (GUIDE_W + fw - d) / (2 * fw)));
     }
     if (s > lb + fw) return roadC;
 
-    let kerbC = EDGE_WHITE, greenC = KERB_GREEN, sausageC = SAUSAGE_YELLOW;
+    let kerbC = EDGE_WHITE,
+      greenC = KERB_GREEN,
+      sausageC = SAUSAGE_YELLOW;
     if (isKerb) {
       // franjas perpendiculares a la pista, según la posición sobre la línea central
       // los colores del circuito se repiten en orden; en el borde entre franjas se mezcla con la vecina
       const cols = kerbColors(track);
-      const n = cols.length, stripe = style.stripe;
+      const n = cols.length,
+        stripe = style.stripe;
       const ph = st / stripe;
       const i = Math.floor(ph);
       const fr = ph - i;
       const cur = cols[((i % n) + n) % n];
       const e = Math.min(0.5, fw / stripe);
       const ow = fr < e ? (e - fr) / (2 * e) : fr > 1 - e ? (fr - 1 + e) / (2 * e) : 0;
-      const other = cols[((((fr < e ? i - 1 : i + 1) % n) + n) % n)];
+      const other = cols[(((fr < e ? i - 1 : i + 1) % n) + n) % n];
       kerbC = ow > 0 ? blend(cur, other, ow) : cur;
       // desgaste: manchas de goma del lado de la pista y de tierra del lado del pasto (de lejos, el promedio)
       const t = Math.max(0, Math.min(1, (s - kb) / -kb));
       const fade = Math.max(0, Math.min(1, 1 - fw / WEAR_CELL));
       const cell = Math.floor(st / WEAR_CELL) + (side > 0 ? 7919 : 0);
-      const n1 = 0.5 + (hash(cell) - 0.5) * fade, n2 = 0.5 + (hash(cell + 101) - 0.5) * fade;
+      const n1 = 0.5 + (hash(cell) - 0.5) * fade,
+        n2 = 0.5 + (hash(cell + 101) - 0.5) * fade;
       kerbC = blend(kerbC, KERB_RUBBER, KERB_RUBBER_MAX * smooth(0.35, 1, t) * n1);
       kerbC = blend(kerbC, DIRT, KERB_DIRT_MAX * (1 - smooth(0, 0.4, t)) * n2 * n2);
       // serrucho: la cara empinada de cada escalón queda en sombra (de lejos no se distingue)
@@ -522,7 +623,9 @@ export class Renderer {
 
     // antialiasing: cerca de un cambio de zona, mezclamos los dos colores
     let edge = outer;
-    const near = (e) => { if (Math.abs(s - e) < Math.abs(s - edge)) edge = e; };
+    const near = (e) => {
+      if (Math.abs(s - e) < Math.abs(s - edge)) edge = e;
+    };
     if (isKerb) {
       near(gb);
       near(kb);
@@ -530,7 +633,8 @@ export class Renderer {
     }
     near(lb);
     const zs = s - edge;
-    if (zs > -fw && zs < fw) return blend(zone(edge - fw, outer, gb, kb, lb, c), zone(edge + fw, outer, gb, kb, lb, c), (zs + fw) / (2 * fw));
+    if (zs > -fw && zs < fw)
+      return blend(zone(edge - fw, outer, gb, kb, lb, c), zone(edge + fw, outer, gb, kb, lb, c), (zs + fw) / (2 * fw));
     return zone(s, outer, gb, kb, lb, c);
   }
 
@@ -540,7 +644,8 @@ export class Renderer {
     const pl2 = this.planeLen * this.planeLen;
     const visible = [];
     for (const s of sprites) {
-      const rx = s.x - cam.x, ry = s.y - cam.y;
+      const rx = s.x - cam.x,
+        ry = s.y - cam.y;
       const depth = rx * dirX + ry * dirY;
       if (depth < 0.3 || depth > FOG_END) continue;
       const camX = (rx * planeX + ry * planeY) / (pl2 * depth);
@@ -549,7 +654,8 @@ export class Renderer {
     }
     // los modelos se ordenan junto con los sprites por la profundidad de su centro
     for (const m of models) {
-      const rx = m.x - cam.x, ry = m.y - cam.y;
+      const rx = m.x - cam.x,
+        ry = m.y - cam.y;
       const depth = rx * dirX + ry * dirY;
       if (depth < -3 || depth > FOG_END) continue;
       // lejos y fuera de la pantalla: no se dibuja (cerca puede asomar aunque el centro esté afuera)
@@ -598,33 +704,54 @@ export class Renderer {
   drawModel(track, cam, m, dirX, dirY, horizon) {
     const { w, h, buf, P, clip, mcol, miz } = this;
     const k = 1 / m.meters; // metros → celdas
-    const ca = Math.cos(m.angle), sa = Math.sin(m.angle);
-    const cp = Math.cos(m.pitch || 0), sp = Math.sin(m.pitch || 0);
+    const ca = Math.cos(m.angle),
+      sa = Math.sin(m.angle);
+    const cp = Math.cos(m.pitch || 0),
+      sp = Math.sin(m.pitch || 0);
     // ejes del auto en el mundo: adelante y arriba (con la pendiente) y derecha
-    const Fx = ca * cp, Fy = sa * cp, Fz = sp;
-    const Rx = -sa, Ry = ca, Rz = 0;
-    const Ux = -ca * sp, Uy = -sa * sp, Uz = cp;
+    const Fx = ca * cp,
+      Fy = sa * cp,
+      Fz = sp;
+    const Rx = -sa,
+      Ry = ca,
+      Rz = 0;
+    const Ux = -ca * sp,
+      Uy = -sa * sp,
+      Uz = cp;
     // la carrocería (todo menos las ruedas) rola y cabecea sobre la suspensión, alrededor de BODY_PIVOT_Z
-    const cr = Math.cos(m.roll || 0), sr = Math.sin(m.roll || 0), cd = Math.cos(m.dive || 0), sd = Math.sin(m.dive || 0);
+    const cr = Math.cos(m.roll || 0),
+      sr = Math.sin(m.roll || 0),
+      cd = Math.cos(m.dive || 0),
+      sd = Math.sin(m.dive || 0);
     const lean = (lx, ly, lz, z0 = BODY_PIVOT_Z) => {
       const z = lz - z0;
-      const y1 = ly * cr - z * sr, z1 = ly * sr + z * cr;
+      const y1 = ly * cr - z * sr,
+        z1 = ly * sr + z * cr;
       return [lx * cd + z1 * sd, y1, z0 + z1 * cd - lx * sd];
     };
     // a coordenadas de cámara: d = profundidad, s = a la derecha, u = arriba; ta, tb = coordenadas en la textura
     const toCam = (X, Y, Z, ta = 0, tb = 0) => {
-      const dx = X - cam.x, dy = Y - cam.y;
+      const dx = X - cam.x,
+        dy = Y - cam.y;
       return { d: dx * dirX + dy * dirY, s: dy * dirX - dx * dirY, u: Z - cam.z, ta, tb };
     };
     // en pantalla, 1/d y las coordenadas de textura divididas por d varían linealmente: se interpolan así
     // y en cada píxel se vuelve a dividir (corrección de perspectiva)
-    const project = (p) => ({ x: w / 2 + (p.s * P) / p.d, y: horizon - (p.u * P) / p.d, iz: 1 / p.d, ia: p.ta / p.d, ib: p.tb / p.d });
+    const project = (p) => ({
+      x: w / 2 + (p.s * P) / p.d,
+      y: horizon - (p.u * P) / p.d,
+      iz: 1 / p.d,
+      ia: p.ta / p.d,
+      ib: p.tb / p.d,
+    });
 
     // sombra: el contorno del auto apoyado sobre el terreno, que oscurece lo que ya está dibujado
     if (m.shadow) {
-      const ox = SHADOW_SHIFT * SUN[0] * k, oy = SHADOW_SHIFT * SUN[1] * k;
+      const ox = SHADOW_SHIFT * SUN[0] * k,
+        oy = SHADOW_SHIFT * SUN[1] * k;
       const pts = SHADOW.map(([lx, ly]) => {
-        const X = m.x + (ca * lx - sa * ly) * k + ox, Y = m.y + (sa * lx + ca * ly) * k + oy;
+        const X = m.x + (ca * lx - sa * ly) * k + ox,
+          Y = m.y + (sa * lx + ca * ly) * k + oy;
         return toCam(X, Y, sampleField(track.height, track.W, X, Y) + 0.02 * k);
       });
       const poly = clipNear(pts);
@@ -638,43 +765,71 @@ export class Renderer {
 
     // 1) cada cara visible, recortada y proyectada, con su color ya iluminado y con niebla
     const polys = [];
-    let bx0 = w, by0 = h, bx1 = -1, by1 = -1;
-    const cs = Math.cos(m.spin || 0), ss = Math.sin(m.spin || 0);
-    const st = m.steer || 0, cst = Math.cos(st), sst = Math.sin(st);
+    let bx0 = w,
+      by0 = h,
+      bx1 = -1,
+      by1 = -1;
+    const cs = Math.cos(m.spin || 0),
+      ss = Math.sin(m.spin || 0);
+    const st = m.steer || 0,
+      cst = Math.cos(st),
+      sst = Math.sin(st);
     // la rueda gira sobre su eje y, si es delantera, dobla con la dirección (sirve para puntos y para normales);
     // lo montado en la mangueta (fixed) sólo dobla
     const turn = (wh, lx, ly, lz, fixed) => {
       if (!fixed) {
-        const ax = lx - wh.x, az = lz - wh.z;
+        const ax = lx - wh.x,
+          az = lz - wh.z;
         lx = wh.x + ax * cs + az * ss;
         lz = wh.z - ax * ss + az * cs;
       }
       if (wh.front) {
         // dobla sobre el eje de la mangueta, en la punta de los brazos de la suspensión
-        const py = wh.y + (wh.pivot || 0), bx = lx - wh.x, by = ly - py;
+        const py = wh.y + (wh.pivot || 0),
+          bx = lx - wh.x,
+          by = ly - py;
         lx = wh.x + bx * cst - by * sst;
         ly = py + bx * sst + by * cst;
       }
       return [lx, ly, lz];
     };
     // la cabeza gira alrededor del cuello
-    const ch = Math.cos(m.head || 0), sh = Math.sin(m.head || 0);
+    const ch = Math.cos(m.head || 0),
+      sh = Math.sin(m.head || 0);
     // y se inclina con las fuerzas (headTilt: hacia el costado, como el rolido, y hacia adelante)
-    const [hr, hp] = m.headTilt || [0, 0], chr = Math.cos(hr), shr = Math.sin(hr), chp = Math.cos(hp), shp = Math.sin(hp);
+    const [hr, hp] = m.headTilt || [0, 0],
+      chr = Math.cos(hr),
+      shr = Math.sin(hr),
+      chp = Math.cos(hp),
+      shp = Math.sin(hp);
     const look = (hd, lx, ly, lz) => {
-      const bx = lx - hd.x, by = ly - hd.y, bz = lz - (hd.z || 0);
-      const x = bx * ch - by * sh, y = bx * sh + by * ch, y1 = y * chr - bz * shr, z1 = y * shr + bz * chr;
+      const bx = lx - hd.x,
+        by = ly - hd.y,
+        bz = lz - (hd.z || 0);
+      const x = bx * ch - by * sh,
+        y = bx * sh + by * ch,
+        y1 = y * chr - bz * shr,
+        z1 = y * shr + bz * chr;
       return [hd.x + x * chp + z1 * shp, hd.y + y1, (hd.z || 0) + z1 * chp - x * shp];
     };
     // el volante gira alrededor de su columna (Rodrigues)
     // (f: qué parte del giro sigue; los antebrazos lo siguen de a poco, de la muñeca al codo)
     const wt = m.wheelTurn || 0;
     const column = (co, lx, ly, lz, f = 1) => {
-      const ct = Math.cos(wt * f), stn = Math.sin(wt * f);
-      const ax = co.ax, ay = co.ay, az = co.az, vx = lx - co.x, vy = ly - co.y, vz = lz - co.z;
+      const ct = Math.cos(wt * f),
+        stn = Math.sin(wt * f);
+      const ax = co.ax,
+        ay = co.ay,
+        az = co.az,
+        vx = lx - co.x,
+        vy = ly - co.y,
+        vz = lz - co.z;
       const d = (ax * vx + ay * vy + az * vz) * (1 - ct);
-      return [co.x + vx * ct + (ay * vz - az * vy) * stn + ax * d, co.y + vy * ct + (az * vx - ax * vz) * stn + ay * d,
-        co.z + vz * ct + (ax * vy - ay * vx) * stn + az * d];
+      return [
+        co.x + vx * ct + (ay * vz - az * vy) * stn + ax * d,
+        co.y + vy * ct + (az * vx - ax * vz) * stn + ay * d,
+        co.z + vz * ct + (ax * vy - ay * vx) * stn + az * d,
+      ];
     };
     // al cambiar, las levas y las manos se acercan al piloto sobre la columna
     const pulled = (co, part, [x, y, z]) => {
@@ -683,12 +838,18 @@ export class Renderer {
     };
     for (const part of m.model) {
       if (part.tag && part.tag === m.hide) continue;
-      const wh = part.wheel, hd = part.head, co = part.column;
+      const wh = part.wheel,
+        hd = part.head,
+        co = part.column;
       const n = part.verts.length;
-      const wx = new Float64Array(n), wy = new Float64Array(n), wz = new Float64Array(n);
+      const wx = new Float64Array(n),
+        wy = new Float64Array(n),
+        wz = new Float64Array(n);
       for (let i = 0; i < n; i++) {
         const v = part.verts[i];
-        const [lx, ly, lz] = wh ? turn(wh, ...v, part.fixed) : lean(...(hd ? look(hd, ...v) : co ? pulled(co, part, column(co, ...v, part.follow?.[i])) : v));
+        const [lx, ly, lz] = wh
+          ? turn(wh, ...v, part.fixed)
+          : lean(...(hd ? look(hd, ...v) : co ? pulled(co, part, column(co, ...v, part.follow?.[i])) : v));
         wx[i] = m.x + (Fx * lx + Rx * ly + Ux * lz) * k;
         wy[i] = m.y + (Fy * lx + Ry * ly + Uy * lz) * k;
         wz[i] = m.z + (Fz * lx + Rz * ly + Uz * lz) * k;
@@ -700,13 +861,30 @@ export class Renderer {
         if (wh) [lx, ly, lz] = turn({ x: 0, y: 0, z: 0, front: wh.front }, lx, ly, lz, part.fixed);
         else {
           if (hd) [lx, ly, lz] = look({ x: 0, y: 0, z: 0 }, lx, ly, lz);
-          if (co) [lx, ly, lz] = column({ ...co, x: 0, y: 0, z: 0 }, lx, ly, lz, part.follow ? idx.reduce((a, i) => a + part.follow[i], 0) / idx.length : 1);
+          if (co)
+            [lx, ly, lz] = column(
+              { ...co, x: 0, y: 0, z: 0 },
+              lx,
+              ly,
+              lz,
+              part.follow ? idx.reduce((a, i) => a + part.follow[i], 0) / idx.length : 1,
+            );
           [lx, ly, lz] = lean(lx, ly, lz, 0);
         }
-        const nx = Fx * lx + Rx * ly + Ux * lz, ny = Fy * lx + Ry * ly + Uy * lz, nz = Fz * lx + Rz * ly + Uz * lz;
-        let fx = 0, fy = 0, fz = 0;
-        for (const i of idx) { fx += wx[i]; fy += wy[i]; fz += wz[i]; }
-        fx /= idx.length; fy /= idx.length; fz /= idx.length;
+        const nx = Fx * lx + Rx * ly + Ux * lz,
+          ny = Fy * lx + Ry * ly + Uy * lz,
+          nz = Fz * lx + Rz * ly + Uz * lz;
+        let fx = 0,
+          fy = 0,
+          fz = 0;
+        for (const i of idx) {
+          fx += wx[i];
+          fy += wy[i];
+          fz += wz[i];
+        }
+        fx /= idx.length;
+        fy /= idx.length;
+        fz /= idx.length;
         // si mira para el otro lado de la cámara, no se ve
         if (nx * (fx - cam.x) + ny * (fy - cam.y) + nz * (fz - cam.z) >= 0) continue;
         // en el mapa y crece hacia abajo: el sol está hacia -x, -y
@@ -715,7 +893,9 @@ export class Renderer {
         // la pantalla del volante, sin WebGL, queda apagada (su color)
         const tex = face.slot === 6 ? null : face.tex;
         const uv = tex ? face.uv : null;
-        const poly = clipNear(idx.map((i, a) => (uv ? toCam(wx[i], wy[i], wz[i], uv[a][0], uv[a][1]) : toCam(wx[i], wy[i], wz[i]))));
+        const poly = clipNear(
+          idx.map((i, a) => (uv ? toCam(wx[i], wy[i], wz[i], uv[a][0], uv[a][1]) : toCam(wx[i], wy[i], wz[i]))),
+        );
         if (poly.length < 3) continue;
         const depth = (fx - cam.x) * dirX + (fy - cam.y) * dirY;
         const pts = poly.map(project);
@@ -734,8 +914,10 @@ export class Renderer {
     if (!polys.length) return;
 
     // 2) se pintan en los buffers del modelo, quedándose en cada píxel con la cara más cercana
-    bx0 = Math.max(0, Math.floor(bx0)); by0 = Math.max(0, Math.floor(by0));
-    bx1 = Math.min(w - 1, Math.ceil(bx1)); by1 = Math.min(h - 1, Math.ceil(by1));
+    bx0 = Math.max(0, Math.floor(bx0));
+    by0 = Math.max(0, Math.floor(by0));
+    bx1 = Math.min(w - 1, Math.ceil(bx1));
+    by1 = Math.min(h - 1, Math.ceil(by1));
     if (bx0 > bx1 || by0 > by1) return;
     for (let y = by0; y <= by1; y++) miz.fill(0, y * w + bx0, y * w + bx1 + 1);
     for (const { pts, color, tex, fp, light, fog } of polys) {
@@ -763,8 +945,10 @@ export class Renderer {
 function clipNear(pts) {
   const out = [];
   for (let i = 0; i < pts.length; i++) {
-    const a = pts[i], b = pts[(i + 1) % pts.length];
-    const ina = a.d >= MODEL_NEAR, inb = b.d >= MODEL_NEAR;
+    const a = pts[i],
+      b = pts[(i + 1) % pts.length];
+    const ina = a.d >= MODEL_NEAR,
+      inb = b.d >= MODEL_NEAR;
     if (ina) out.push(a);
     if (ina !== inb) {
       const t = (MODEL_NEAR - a.d) / (b.d - a.d);
@@ -779,28 +963,51 @@ function clipNear(pts) {
 // Interpola 1/profundidad (iz) y las coordenadas de textura divididas por la profundidad (ia, ib), que varían
 // linealmente en la pantalla. plot(x, y, iz, ia, ib) por cada píxel.
 function scan(pts, w, h, plot) {
-  let top = Infinity, bottom = -Infinity;
+  let top = Infinity,
+    bottom = -Infinity;
   for (const p of pts) {
     if (p.y < top) top = p.y;
     if (p.y > bottom) bottom = p.y;
   }
   const n = pts.length;
-  const ya = Math.max(0, Math.ceil(top - 0.5)), yb = Math.min(h - 1, Math.ceil(bottom - 0.5) - 1);
+  const ya = Math.max(0, Math.ceil(top - 0.5)),
+    yb = Math.min(h - 1, Math.ceil(bottom - 0.5) - 1);
   for (let y = ya; y <= yb; y++) {
     const yc = y + 0.5;
-    let xl = Infinity, xr = -Infinity, zl = 0, zr = 0, al = 0, ar = 0, bl = 0, br = 0;
+    let xl = Infinity,
+      xr = -Infinity,
+      zl = 0,
+      zr = 0,
+      al = 0,
+      ar = 0,
+      bl = 0,
+      br = 0;
     for (let i = 0; i < n; i++) {
-      const a = pts[i], b = pts[(i + 1) % n];
+      const a = pts[i],
+        b = pts[(i + 1) % n];
       if (a.y <= yc === b.y <= yc) continue;
       const t = (yc - a.y) / (b.y - a.y);
       const x = a.x + (b.x - a.x) * t;
-      if (x < xl) { xl = x; zl = a.iz + (b.iz - a.iz) * t; al = a.ia + (b.ia - a.ia) * t; bl = a.ib + (b.ib - a.ib) * t; }
-      if (x > xr) { xr = x; zr = a.iz + (b.iz - a.iz) * t; ar = a.ia + (b.ia - a.ia) * t; br = a.ib + (b.ib - a.ib) * t; }
+      if (x < xl) {
+        xl = x;
+        zl = a.iz + (b.iz - a.iz) * t;
+        al = a.ia + (b.ia - a.ia) * t;
+        bl = a.ib + (b.ib - a.ib) * t;
+      }
+      if (x > xr) {
+        xr = x;
+        zr = a.iz + (b.iz - a.iz) * t;
+        ar = a.ia + (b.ia - a.ia) * t;
+        br = a.ib + (b.ib - a.ib) * t;
+      }
     }
     if (!(xl < xr)) continue;
     const span = xr - xl;
-    const dz = (zr - zl) / span, da = (ar - al) / span, db = (br - bl) / span;
-    const xa = Math.max(0, Math.ceil(xl - 0.5)), xb = Math.min(w - 1, Math.ceil(xr - 0.5) - 1);
+    const dz = (zr - zl) / span,
+      da = (ar - al) / span,
+      db = (br - bl) / span;
+    const xa = Math.max(0, Math.ceil(xl - 0.5)),
+      xb = Math.min(w - 1, Math.ceil(xr - 0.5) - 1);
     for (let x = xa; x <= xb; x++) {
       const f = x + 0.5 - xl;
       plot(x, y, zl + f * dz, al + f * da, bl + f * db);
@@ -816,9 +1023,19 @@ function maskAt(data, size, u, v) {
   const m = size - 1;
   u -= 0.5;
   v -= 0.5;
-  const x0 = Math.floor(u), y0 = Math.floor(v), tx = u - x0, ty = v - y0;
-  const r0 = (y0 & m) * size, r1 = ((y0 + 1) & m) * size, c0 = x0 & m, c1 = (x0 + 1) & m;
-  return ((data[r0 + c0] * (1 - tx) + data[r0 + c1] * tx) * (1 - ty) + (data[r1 + c0] * (1 - tx) + data[r1 + c1] * tx) * ty) / 255;
+  const x0 = Math.floor(u),
+    y0 = Math.floor(v),
+    tx = u - x0,
+    ty = v - y0;
+  const r0 = (y0 & m) * size,
+    r1 = ((y0 + 1) & m) * size,
+    c0 = x0 & m,
+    c1 = (x0 + 1) & m;
+  return (
+    ((data[r0 + c0] * (1 - tx) + data[r0 + c1] * tx) * (1 - ty) +
+      (data[r1 + c0] * (1 - tx) + data[r1 + c1] * tx) * ty) /
+    255
+  );
 }
 
 class TerrainPool {
@@ -840,10 +1057,18 @@ class TerrainPool {
     this.failed = false;
     this.parts = [];
     for (let k = 0; k < n; k++) {
-      const x0 = Math.round((k * w) / n), x1 = Math.round(((k + 1) * w) / n);
+      const x0 = Math.round((k * w) / n),
+        x1 = Math.round(((k + 1) * w) / n);
       const worker = new Worker(new URL('./terrainworker.js', import.meta.url), { type: 'module' });
       // buffers que van y vuelven en cada cuadro (se transfieren, no se copian)
-      const part = { worker, x0, x1, pix: new Uint32Array((x1 - x0) * h), clip: new Int16Array((x1 - x0) * NCHK), done: null };
+      const part = {
+        worker,
+        x0,
+        x1,
+        pix: new Uint32Array((x1 - x0) * h),
+        clip: new Int16Array((x1 - x0) * NCHK),
+        done: null,
+      };
       worker.onmessage = (e) => part.done?.(e.data);
       worker.onerror = () => {
         this.failed = true;
@@ -864,8 +1089,42 @@ class TerrainPool {
     const offset = (r.guide && r.guide.offset) || null;
     if (track !== this.track || offset !== this.offset) {
       // el circuito (y por dónde pasa la trazada) se manda una sola vez, copiado a cada worker
-      const { W, H, height, sdf, lat, station, kerbLeft, kerbRight, sausageLeft, sausageRight, kerbStyle, kerbColors, runoffLeft, runoffRight, runoff, line } = track;
-      const data = { W, H, height, sdf, lat, station, kerbLeft, kerbRight, sausageLeft, sausageRight, kerbStyle, kerbColors, runoffLeft, runoffRight, runoff, line };
+      const {
+        W,
+        H,
+        height,
+        sdf,
+        lat,
+        station,
+        kerbLeft,
+        kerbRight,
+        sausageLeft,
+        sausageRight,
+        kerbStyle,
+        kerbColors,
+        runoffLeft,
+        runoffRight,
+        runoff,
+        line,
+      } = track;
+      const data = {
+        W,
+        H,
+        height,
+        sdf,
+        lat,
+        station,
+        kerbLeft,
+        kerbRight,
+        sausageLeft,
+        sausageRight,
+        kerbStyle,
+        kerbColors,
+        runoffLeft,
+        runoffRight,
+        runoff,
+        line,
+      };
       for (const p of this.parts) p.worker.postMessage({ type: 'track', track: data, offset });
       this.track = track;
       this.offset = offset;
@@ -881,15 +1140,27 @@ class TerrainPool {
     };
     const m = r.rubber;
     if (m && (m !== this.rubberMap || m.version !== this.rubberVersion || m.wearVersion !== this.wearVersion)) {
-      frame.rubber = { length: m.length, rows: m.rows, lanes: m.lanes, span: m.span, bytes: m.bytes, wearBytes: m.wearBytes };
+      frame.rubber = {
+        length: m.length,
+        rows: m.rows,
+        lanes: m.lanes,
+        span: m.span,
+        bytes: m.bytes,
+        wearBytes: m.wearBytes,
+      };
       this.rubberMap = m;
       this.rubberVersion = m.version;
       this.wearVersion = m.wearVersion;
     }
-    const results = await Promise.all(this.parts.map((p) => new Promise((resolve) => {
-      p.done = resolve;
-      p.worker.postMessage({ ...frame, pix: p.pix, clip: p.clip }, [p.pix.buffer, p.clip.buffer]);
-    })));
+    const results = await Promise.all(
+      this.parts.map(
+        (p) =>
+          new Promise((resolve) => {
+            p.done = resolve;
+            p.worker.postMessage({ ...frame, pix: p.pix, clip: p.clip }, [p.pix.buffer, p.clip.buffer]);
+          }),
+      ),
+    );
     if (results.includes(null)) return false;
     const { w, h } = this;
     results.forEach(({ pix, clip }, k) => {

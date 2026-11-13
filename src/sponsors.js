@@ -12,7 +12,8 @@ export const SPONSORS = [
   { name: 'ASADO RACING', bg: '#5a1a12', fg: '#ffcf8a', accent: '#ff7a1a' },
 ];
 
-export const BANNER_W = 512, BANNER_H = 64;
+export const BANNER_W = 512,
+  BANNER_H = 64;
 
 // la imagen con todos los carteles, uno debajo del otro
 export function sponsorBanners() {
@@ -33,7 +34,8 @@ export function sponsorBanners() {
     g.textBaseline = 'middle';
     const w = Math.min(BANNER_W - 90, g.measureText(s.name).width);
     for (const side of [-1, 1]) {
-      const cx = BANNER_W / 2 + side * (w / 2 + 26), cy = y + BANNER_H / 2;
+      const cx = BANNER_W / 2 + side * (w / 2 + 26),
+        cy = y + BANNER_H / 2;
       g.beginPath();
       g.moveTo(cx, cy - 11);
       g.lineTo(cx + 11, cy);

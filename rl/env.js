@@ -23,9 +23,9 @@ import { halfWidthAt } from '../src/track.js';
 import { OBS_SIZE, observe, stationAt, trackHeading } from '../src/sensors.js';
 import { loadTrack } from './tracks.js';
 
-export const PHYSICS_DT = 1 / 60;
+const PHYSICS_DT = 1 / 60;
 export const SUBSTEPS = 3;
-export const EPISODE_STEPS = 2400; // 2 minutos
+const EPISODE_STEPS = 2400; // 2 minutos
 const PROGRESS_REWARD = 0.02; // por metro
 const GRASS_PENALTY = 0.1; // por decisión en el pasto
 const WALL_PENALTY = 1; // por un golpe a fondo
@@ -70,7 +70,9 @@ export function rng(seed) {
 // (el desgaste varía siempre ±30 %)
 export function randomSetup(rand, spread) {
   const [down, up] = Array.isArray(spread) ? spread : [spread, spread];
-  return Object.fromEntries(SETUP_KEYS.map((k) => [k, k === 'wear' ? 1 + (2 * rand() - 1) * 0.3 : 1 - down + (down + up) * rand()]));
+  return Object.fromEntries(
+    SETUP_KEYS.map((k) => [k, k === 'wear' ? 1 + (2 * rand() - 1) * 0.3 : 1 - down + (down + up) * rand()]),
+  );
 }
 
 // Puesta a punto al azar para la red que aprende: alerones hasta TUNE_SPREAD puntos más o menos que los del circuito,
@@ -79,11 +81,16 @@ export function randomSetup(rand, spread) {
 // o menos punta, subvirantes o sobrevirantes y que frenan más con un eje o con el otro.
 // Con spread 0, la del circuito y su aire.
 export const TUNE_SPREAD = 3;
-const AIR_CHANCE = 1 / 3, MAX_ALTITUDE = 2300;
+const AIR_CHANCE = 1 / 3,
+  MAX_ALTITUDE = 2300;
 export function randomTune(car, rand, track, spread = TUNE_SPREAD) {
   if (spread) {
-    const t = track.tune, wing = (x) => Math.max(WING_MIN, Math.min(WING_MAX, x + Math.round((2 * rand() - 1) * spread)));
-    const brake = Math.max(-BRAKE_TUNE_MAX, Math.min(BRAKE_TUNE_MAX, (t.brake ?? 0) + Math.round((2 * rand() - 1) * spread)));
+    const t = track.tune,
+      wing = (x) => Math.max(WING_MIN, Math.min(WING_MAX, x + Math.round((2 * rand() - 1) * spread)));
+    const brake = Math.max(
+      -BRAKE_TUNE_MAX,
+      Math.min(BRAKE_TUNE_MAX, (t.brake ?? 0) + Math.round((2 * rand() - 1) * spread)),
+    );
     car.ownTune = { front: wing(t.front), rear: wing(t.rear), balance: Math.round((2 * rand() - 1) * spread), brake };
     car.ownAir = rand() < AIR_CHANCE ? airDensity(rand() * MAX_ALTITUDE) : null;
   }
@@ -97,7 +104,7 @@ export function randomTyres(car, rand, track) {
   car.wear = 0.9 * rand();
   const temp = 60 + 55 * rand();
   car.tyreTemp = car.tyreTemp.map(() => temp + 10 * (rand() - 0.5));
-  car.fuel = FUEL_PER_KM * 20 * rand() * (track.length * track.meters) / 1000;
+  car.fuel = (FUEL_PER_KM * 20 * rand() * (track.length * track.meters)) / 1000;
 }
 
 export class RaceEnv {
@@ -126,7 +133,12 @@ export class RaceEnv {
     const side = (this.rand() - 0.5) * halfWidthAt(track, u) * (rough ? 2.6 : 1);
     const h = trackHeading(track, u);
     const { x, y } = pointOnCenter(track, u);
-    const car = new Car(x - Math.sin(h) * side, y + Math.cos(h) * side, h + (this.rand() - 0.5) * (rough ? 1.6 : 0.2), profile);
+    const car = new Car(
+      x - Math.sin(h) * side,
+      y + Math.cos(h) * side,
+      h + (this.rand() - 0.5) * (rough ? 1.6 : 0.2),
+      profile,
+    );
     Object.assign(car, RIVAL_AIDS); // con las ayudas del juego
     const standing = this.rand() < STANDING_START;
     car.speed = standing ? 0 : this.rand() * (rough ? 0.4 : 0.8) * line.speed[Math.floor(u) % line.speed.length];
@@ -155,7 +167,8 @@ export class RaceEnv {
   step(steer, pedal) {
     const { track, car } = this;
     const input = { steer: clamp(steer), throttle: Math.max(0, clamp(pedal)), brake: Math.max(0, -clamp(pedal)) };
-    let reward = 0, lap = null;
+    let reward = 0,
+      lap = null;
     const L = track.length;
     for (let k = 0; k < SUBSTEPS; k++) {
       const bump = car.bump;
@@ -196,8 +209,21 @@ export class RaceEnv {
     this.ret += reward;
     const info = { lap, track: this.id };
     if (done || truncated) {
-      info.episode = { r: this.ret, l: this.steps, dist: this.dist, track: this.id,
-        end: retired ? 'retired' : this.grass > GRASS_LIMIT ? 'grass' : this.stuck > STUCK_LIMIT ? 'stuck' : this.back > BACKWARDS_LIMIT ? 'back' : 'time' };
+      info.episode = {
+        r: this.ret,
+        l: this.steps,
+        dist: this.dist,
+        track: this.id,
+        end: retired
+          ? 'retired'
+          : this.grass > GRASS_LIMIT
+            ? 'grass'
+            : this.stuck > STUCK_LIMIT
+              ? 'stuck'
+              : this.back > BACKWARDS_LIMIT
+                ? 'back'
+                : 'time',
+      };
     }
     return { obs: observe(track, car, this.u, [], this.obs), reward, done, truncated, info };
   }
@@ -210,12 +236,14 @@ export function pointOnCenter(track, u) {
   const { n, x, y, st } = track.path;
   const L = st[n];
   u = ((u % L) + L) % L;
-  let lo = 0, hi = n;
+  let lo = 0,
+    hi = n;
   while (hi - lo > 1) {
     const mid = (lo + hi) >> 1;
     if (st[mid] <= u) lo = mid;
     else hi = mid;
   }
-  const b = (lo + 1) % n, t = (u - st[lo]) / Math.max(1e-9, st[lo + 1] - st[lo]);
+  const b = (lo + 1) % n,
+    t = (u - st[lo]) / Math.max(1e-9, st[lo + 1] - st[lo]);
   return { x: x[lo] + (x[b] - x[lo]) * t, y: y[lo] + (y[b] - y[lo]) * t };
 }

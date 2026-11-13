@@ -1,0 +1,17 @@
+{
+  "name": "formula-medio",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "regress": "node tools/regress.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.14.0",
+    "globals": "17.14.0",
+    "prettier": "3.10.0"
+  }
+}

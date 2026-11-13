@@ -1,0 +1,13 @@
+# Prettier sólo formatea el código (*.js): los JSON de models/, tracks/ y cars/ son datos generados, y el HTML y el
+# Markdown quedan como están escritos.
+*
+!*.js
+!**/
+!**/*.js
+node_modules/
+site/
+rl/.venv/
+rl/runs/
+tools/.cache/
+tools/.out/
+.claude/

@@ -3,7 +3,12 @@
 
 import { Renderer } from './renderer.js';
 
-let r = null, x0 = 0, x1 = 0, track = null, offset = null, rubber = null;
+let r = null,
+  x0 = 0,
+  x1 = 0,
+  track = null,
+  offset = null,
+  rubber = null;
 
 onmessage = ({ data: m }) => {
   if (m.type === 'init') {

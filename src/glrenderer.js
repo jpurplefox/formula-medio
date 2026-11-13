@@ -8,17 +8,72 @@
 // La resolución de la imagen es la de la pantalla (con un tope); las cuentas de cámara siguen en los mismos
 // "píxeles virtuales" de 960 de ancho que usa el resto del juego.
 
-import { DEFAULT_KERB, KERB_STYLE, MAX_KERB_COLORS, RIDGE, RIDGE_DEPTH, SAUSAGE_H, SAUSAGE_W, edgeReach, kerbAmount, stationAt } from './track.js';
+import {
+  DEFAULT_KERB,
+  KERB_STYLE,
+  MAX_KERB_COLORS,
+  RIDGE,
+  RIDGE_DEPTH,
+  SAUSAGE_H,
+  SAUSAGE_W,
+  edgeReach,
+  kerbAmount,
+  stationAt,
+} from './track.js';
 import { RUBBER_DARK, WEAR_REACH } from './rubber.js';
 import { TREE_FLOATS, treeMesh } from './trees.js';
 import { puffLook } from './smoke.js';
 import { SPONSORS, sponsorBanners } from './sponsors.js';
 import { fenceMesh } from './fences.js';
-import { asphaltTexture, cloudNoise, dirtTexture, grassTexture, gravelTexture, macroNoise, wallTexture } from './textures.js';
 import {
-  DIRT_DEEP, DIRT_TPC, GRASS_MASK_CELLS, GRASS_STRIPE, WEAR_DIRT, FOG_MAX, GL_FOG_START, GRASS_BAND, GRASS_TPC, GRAVEL_TPC, RUNOFF_LIGHT, GUIDE_W, KERB_H, LINE_W, MACRO_TPC, GL_MAX_DIST as MAX_DIST, MODEL_NEAR, NEAR_RISE, PLANE_LEN,
-  BODY_PIVOT_Z, CLOUD_BASE, CLOUD_CHURN, CLOUD_COVER, CLOUD_FAR, CLOUD_SIGMA, CLOUD_TILE, CLOUD_TOP, CLOUD_WIND, ROAD_TPC, SHADOW, SHADOW_SHIFT, SUN, WALL_H, WALL_STRIPE, WALL_T, Z_NEAR,
-  KERB_RUBBER_MAX, KERB_DIRT_MAX, WEAR_CELL,
+  asphaltTexture,
+  cloudNoise,
+  dirtTexture,
+  grassTexture,
+  gravelTexture,
+  macroNoise,
+  wallTexture,
+} from './textures.js';
+import {
+  DIRT_DEEP,
+  DIRT_TPC,
+  GRASS_MASK_CELLS,
+  GRASS_STRIPE,
+  WEAR_DIRT,
+  FOG_MAX,
+  GL_FOG_START,
+  GRASS_BAND,
+  GRASS_TPC,
+  GRAVEL_TPC,
+  RUNOFF_LIGHT,
+  GUIDE_W,
+  KERB_H,
+  LINE_W,
+  MACRO_TPC,
+  GL_MAX_DIST as MAX_DIST,
+  MODEL_NEAR,
+  NEAR_RISE,
+  PLANE_LEN,
+  BODY_PIVOT_Z,
+  CLOUD_BASE,
+  CLOUD_CHURN,
+  CLOUD_COVER,
+  CLOUD_FAR,
+  CLOUD_SIGMA,
+  CLOUD_TILE,
+  CLOUD_TOP,
+  CLOUD_WIND,
+  ROAD_TPC,
+  SHADOW,
+  SHADOW_SHIFT,
+  SUN,
+  WALL_H,
+  WALL_STRIPE,
+  WALL_T,
+  Z_NEAR,
+  KERB_RUBBER_MAX,
+  KERB_DIRT_MAX,
+  WEAR_CELL,
 } from './renderer.js';
 import { sampleField } from './track.js';
 import { lineFrame, pointAt } from './ai.js';
@@ -922,54 +977,83 @@ function fenceImage(n = 256) {
     data[i + 2] = Math.min(255, v + 8);
     data[i + 3] = Math.round(a * 255);
   };
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    // el rombo: dos familias de líneas a 45° cada 12 px
-    const d1 = (x + y) % 12, d2 = (x - y + 1200) % 12;
-    if (d1 === 0 || d2 === 0) put(x, y, 150, 0.8);
-    if (y < 4 || y === Math.round(n / 3) || y === Math.round((2 * n) / 3) || y > n - 3) put(x, y, 120, 0.95); // cable y alambres
-    if (x < 7) put(x, y, x < 2 || x > 4 ? 70 : 100, 1); // el poste, con un brillo al medio
-  }
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) {
+      // el rombo: dos familias de líneas a 45° cada 12 px
+      const d1 = (x + y) % 12,
+        d2 = (x - y + 1200) % 12;
+      if (d1 === 0 || d2 === 0) put(x, y, 150, 0.8);
+      if (y < 4 || y === Math.round(n / 3) || y === Math.round((2 * n) / 3) || y > n - 3) put(x, y, 120, 0.95); // cable y alambres
+      if (x < 7) put(x, y, x < 2 || x > 4 ? 70 : 100, 1); // el poste, con un brillo al medio
+    }
   return data;
 }
 
 // una bocanada de humo: redonda, de borde suave y con grumos (r: luz, a: cuánto tapa)
 function puffImage(n = 64) {
   const data = new Uint8Array(n * n * 4);
-  const h = (x, y) => { const v = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return v - Math.floor(v); };
+  const h = (x, y) => {
+    const v = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+    return v - Math.floor(v);
+  };
   const noise = (x, y) => {
-    const x0 = Math.floor(x), y0 = Math.floor(y), u = x - x0, v = y - y0, s = (t) => t * t * (3 - 2 * t);
-    const a = h(x0, y0), b = h(x0 + 1, y0), c = h(x0, y0 + 1), d = h(x0 + 1, y0 + 1);
+    const x0 = Math.floor(x),
+      y0 = Math.floor(y),
+      u = x - x0,
+      v = y - y0,
+      s = (t) => t * t * (3 - 2 * t);
+    const a = h(x0, y0),
+      b = h(x0 + 1, y0),
+      c = h(x0, y0 + 1),
+      d = h(x0 + 1, y0 + 1);
     return (a + (b - a) * s(u)) * (1 - s(v)) + (c + (d - c) * s(u)) * s(v);
   };
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const u = (x + 0.5) / n - 0.5, v = (y + 0.5) / n - 0.5, r = Math.hypot(u, v) * 2;
-    const lump = noise(x / 9, y / 9) * 0.6 + noise(x / 4.5 + 7, y / 4.5) * 0.4;
-    const a = Math.max(0, Math.min(1, (1 - r) * 1.6)) * (0.55 + 0.45 * lump);
-    const i = (y * n + x) * 4;
-    data[i] = Math.round(255 * (0.85 + 0.15 * lump));
-    data[i + 3] = Math.round(255 * a * a);
-  }
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) {
+      const u = (x + 0.5) / n - 0.5,
+        v = (y + 0.5) / n - 0.5,
+        r = Math.hypot(u, v) * 2;
+      const lump = noise(x / 9, y / 9) * 0.6 + noise(x / 4.5 + 7, y / 4.5) * 0.4;
+      const a = Math.max(0, Math.min(1, (1 - r) * 1.6)) * (0.55 + 0.45 * lump);
+      const i = (y * n + x) * 4;
+      data[i] = Math.round(255 * (0.85 + 0.15 * lump));
+      data[i + 3] = Math.round(255 * a * a);
+    }
   return data;
 }
 
 function treeShadowImage(n = 64) {
   const data = new Uint8Array(n * n * 4);
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const u = (x + 0.5) / n - 0.5, v = (y + 0.5) / n;
-    const r = Math.hypot(u / 0.42, (v - 0.55) / 0.43);
-    const a = Math.max(0, Math.min(1, (1 - r) / 0.45)) * (0.75 + 0.25 * (1 - v));
-    data[(y * n + x) * 4 + 3] = Math.round(255 * a * a * (3 - 2 * a));
-  }
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) {
+      const u = (x + 0.5) / n - 0.5,
+        v = (y + 0.5) / n;
+      const r = Math.hypot(u / 0.42, (v - 0.55) / 0.43);
+      const a = Math.max(0, Math.min(1, (1 - r) / 0.45)) * (0.75 + 0.25 * (1 - v));
+      data[(y * n + x) * 4 + 3] = Math.round(255 * a * a * (3 - 2 * a));
+    }
   return data;
 }
 
 // árboles: qué especie, giro, tono y fase del viento le toca a cada uno (siempre lo mismo para el mismo lugar)
-const TREE_KINDS = [{ kind: 'pine', seed: 1 }, { kind: 'broadleaf', seed: 1 }, { kind: 'broadleaf', seed: 2 }]; // dos variantes de copa
-const TREE_LODS = [{ cell: 0.2, upTo: 40 }, { cell: 0.32, upTo: 80 }, { cell: 0.5, upTo: 150 }, { cell: 0.65, upTo: Infinity }]; // celdas de distancia
+const TREE_KINDS = [
+  { kind: 'pine', seed: 1 },
+  { kind: 'broadleaf', seed: 1 },
+  { kind: 'broadleaf', seed: 2 },
+]; // dos variantes de copa
+const TREE_LODS = [
+  { cell: 0.2, upTo: 40 },
+  { cell: 0.32, upTo: 80 },
+  { cell: 0.5, upTo: 150 },
+  { cell: 0.65, upTo: Infinity },
+]; // celdas de distancia
 const TREE_SIZE = 1.6; // escala de las mallas respecto del "scale" de cada árbol del circuito: pinos de 13 a 24 m, copas de 9 a 16 m
 function treeLooks(trees) {
   return trees.map((t) => {
-    const h = (k) => { const v = Math.sin(t.x * 12.9898 + t.y * 78.233 + k * 37.719) * 43758.5453; return v - Math.floor(v); };
+    const h = (k) => {
+      const v = Math.sin(t.x * 12.9898 + t.y * 78.233 + k * 37.719) * 43758.5453;
+      return v - Math.floor(v);
+    };
     const a = h(1) * Math.PI * 2;
     const k = h(2);
     return { kind: k < 0.5 ? 0 : k < 0.75 ? 1 : 2, cos: Math.cos(a), sin: Math.sin(a), tint: h(3) * 2 - 1 };
@@ -1002,7 +1086,10 @@ export class GLRenderer {
     // píxeles virtuales (los del resto del juego) y la resolución real de la imagen
     this.w = w;
     this.h = h;
-    this.scale = Math.min(MAX_SCALE, Math.max(1, Math.ceil((window.devicePixelRatio || 1) * (canvas.clientWidth || w) / w)));
+    this.scale = Math.min(
+      MAX_SCALE,
+      Math.max(1, Math.ceil(((window.devicePixelRatio || 1) * (canvas.clientWidth || w)) / w)),
+    );
     canvas.width = w * this.scale;
     canvas.height = h * this.scale;
     this.setZoom(1);
@@ -1054,7 +1141,10 @@ export class GLRenderer {
     this.attrib(this.sprites, 'aUV', 2, 5, 3);
     gl.bindVertexArray(null);
 
-    const repeatTex = (t) => this.texture(new Uint8Array(t.levels[0].buffer, t.levels[0].byteOffset, t.levels[0].byteLength), t.size, t.size, { mip: true });
+    const repeatTex = (t) =>
+      this.texture(new Uint8Array(t.levels[0].buffer, t.levels[0].byteOffset, t.levels[0].byteLength), t.size, t.size, {
+        mip: true,
+      });
     this.asphalt = repeatTex(asphaltTexture());
     this.grass = repeatTex(grassTexture());
     this.gravel = repeatTex(gravelTexture());
@@ -1063,7 +1153,12 @@ export class GLRenderer {
     this.grassMask = this.texture(new Uint8Array([255, 255, 0, 255]), 1, 1); // todo césped hasta que llegue la imagen
     this.wall = repeatTex(wallTexture());
     const macro = macroNoise();
-    this.macro = this.texture(Uint8Array.from(macro.data, (v) => Math.round(((v - 0.88) / 0.24) * 255)), macro.size, macro.size, { format: 'R8' });
+    this.macro = this.texture(
+      Uint8Array.from(macro.data, (v) => Math.round(((v - 0.88) / 0.24) * 255)),
+      macro.size,
+      macro.size,
+      { format: 'R8' },
+    );
 
     this.trackData = new WeakMap();
   }
@@ -1113,25 +1208,31 @@ export class GLRenderer {
   }
 
   buffer(data) {
-    const gl = this.gl, b = gl.createBuffer();
+    const gl = this.gl,
+      b = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, b);
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
     return b;
   }
 
   attrib(prog, name, size, stride, offset) {
-    const gl = this.gl, loc = ATTRIBS.indexOf(name);
+    const gl = this.gl,
+      loc = ATTRIBS.indexOf(name);
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride * 4, offset * 4);
   }
 
   // formatos: RGBA8 (por defecto), R8, RGBA16F (con filtro), R32F y RGBA32F (sin filtro, se leen con texelFetch)
   texture(data, w, h, { format = 'RGBA8', mip = false, nearest = false, clamp = false } = {}) {
-    const gl = this.gl, t = gl.createTexture();
+    const gl = this.gl,
+      t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
     const f = {
-      RGBA8: [gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE], R8: [gl.R8, gl.RED, gl.UNSIGNED_BYTE],
-      RGBA16F: [gl.RGBA16F, gl.RGBA, gl.FLOAT], R32F: [gl.R32F, gl.RED, gl.FLOAT], RGBA32F: [gl.RGBA32F, gl.RGBA, gl.FLOAT],
+      RGBA8: [gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE],
+      R8: [gl.R8, gl.RED, gl.UNSIGNED_BYTE],
+      RGBA16F: [gl.RGBA16F, gl.RGBA, gl.FLOAT],
+      R32F: [gl.R32F, gl.RED, gl.FLOAT],
+      RGBA32F: [gl.RGBA32F, gl.RGBA, gl.FLOAT],
     }[format];
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     if (data instanceof HTMLCanvasElement) gl.texImage2D(gl.TEXTURE_2D, 0, f[0], f[1], f[2], data);
@@ -1156,20 +1257,24 @@ export class GLRenderer {
   treeModels() {
     if (this.trees) return this.trees;
     if (this.treeParts) return null;
-    const parts = this.treeParts = TREE_KINDS.map(() => TREE_LODS.map(() => null));
+    const parts = (this.treeParts = TREE_KINDS.map(() => TREE_LODS.map(() => null)));
     let left = TREE_KINDS.length * TREE_LODS.length;
     const add = (k, l, data, index) => {
       parts[k][l] = this.treeMeshGL(data, index);
       if (--left === 0) this.trees = parts;
     };
-    const kinds = TREE_KINDS, cells = TREE_LODS.map((d) => d.cell);
+    const kinds = TREE_KINDS,
+      cells = TREE_LODS.map((d) => d.cell);
     try {
       const worker = new Worker(new URL('./treeworker.js', import.meta.url), { type: 'module' });
       worker.onmessage = ({ data: m }) => {
         add(m.k, m.l, m.data, m.index);
         if (!left) worker.terminate();
       };
-      worker.onerror = () => { worker.terminate(); this.buildTreesHere(add, kinds, cells); };
+      worker.onerror = () => {
+        worker.terminate();
+        this.buildTreesHere(add, kinds, cells);
+      };
       worker.postMessage({ kinds, cells });
     } catch {
       this.buildTreesHere(add, kinds, cells);
@@ -1184,7 +1289,8 @@ export class GLRenderer {
     const next = () => {
       const job = jobs.shift();
       if (!job) return;
-      const [k, l, kind, seed, cell] = job, m = treeMesh(kind, cell, seed);
+      const [k, l, kind, seed, cell] = job,
+        m = treeMesh(kind, cell, seed);
       add(k, l, m.data, m.index);
       setTimeout(next, 0);
     };
@@ -1192,15 +1298,17 @@ export class GLRenderer {
   }
 
   treeMeshGL(data, index) {
-    const gl = this.gl, F = 4;
+    const gl = this.gl,
+      F = 4;
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
     this.buffer(data);
-    const B = TREE_FLOATS * F, at = (name, size, off) => {
-      const loc = ATTRIBS.indexOf(name);
-      gl.enableVertexAttribArray(loc);
-      gl.vertexAttribPointer(loc, size, gl.FLOAT, false, B, off * F);
-    };
+    const B = TREE_FLOATS * F,
+      at = (name, size, off) => {
+        const loc = ATTRIBS.indexOf(name);
+        gl.enableVertexAttribArray(loc);
+        gl.vertexAttribPointer(loc, size, gl.FLOAT, false, B, off * F);
+      };
     at('aPos', 3, 0);
     at('aNormal', 3, 3);
     at('aColor', 3, 6);
@@ -1211,7 +1319,10 @@ export class GLRenderer {
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, index, gl.STATIC_DRAW);
     const inst = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, inst);
-    for (const [name, off] of [['iPos', 0], ['iRot', 4]]) {
+    for (const [name, off] of [
+      ['iPos', 0],
+      ['iRot', 4],
+    ]) {
       const loc = ATTRIBS.indexOf(name);
       gl.enableVertexAttribArray(loc);
       gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, 8 * F, off * F);
@@ -1223,19 +1334,31 @@ export class GLRenderer {
 
   // los árboles que se ven, cada uno en su nivel de detalle
   drawTrees(track, cam, dirX, dirY, horizon) {
-    const gl = this.gl, tp = this.treeProg, models = this.treeModels(), M = track.meters;
+    const gl = this.gl,
+      tp = this.treeProg,
+      models = this.treeModels(),
+      M = track.meters;
     if (!models) return false;
-    if (!this.treeLooks || this.treeLooks.trees !== track.trees) this.treeLooks = { trees: track.trees, looks: treeLooks(track.trees) };
+    if (!this.treeLooks || this.treeLooks.trees !== track.trees)
+      this.treeLooks = { trees: track.trees, looks: treeLooks(track.trees) };
     const looks = this.treeLooks.looks;
     const lists = TREE_KINDS.map(() => TREE_LODS.map(() => []));
-    const rx = -dirY, ry = dirX, wide = this.planeLen * 1.15;
+    const rx = -dirY,
+      ry = dirX,
+      wide = this.planeLen * 1.15;
     track.trees.forEach((t, i) => {
-      const dx = t.x - cam.x, dy = t.y - cam.y;
-      const depth = dx * dirX + dy * dirY, side = dx * rx + dy * ry, k = (TREE_SIZE * t.scale) / M;
+      const dx = t.x - cam.x,
+        dy = t.y - cam.y;
+      const depth = dx * dirX + dy * dirY,
+        side = dx * rx + dy * ry,
+        k = (TREE_SIZE * t.scale) / M;
       if (depth < -4 * k || depth > MAX_DIST || Math.abs(side) > Math.max(0, depth) * wide + 4 * k) return;
-      const l = looks[i], lod = TREE_LODS.findIndex((d) => depth < d.upTo), list = lists[l.kind];
+      const l = looks[i],
+        lod = TREE_LODS.findIndex((d) => depth < d.upTo),
+        list = lists[l.kind];
       // cerca del cambio de nivel se dibujan los dos, cada uno en parte de los píxeles (se van pasando de a poco)
-      const upTo = TREE_LODS[lod].upTo, band = upTo * TREE_BLEND;
+      const upTo = TREE_LODS[lod].upTo,
+        band = upTo * TREE_BLEND;
       if (depth > upTo - band && lod + 1 < TREE_LODS.length) {
         const f = (depth - (upTo - band)) / band;
         list[lod].push(t.x, t.y, t.z, k, l.cos, l.sin, l.tint, 2 + f);
@@ -1245,20 +1368,23 @@ export class GLRenderer {
     gl.useProgram(tp.p);
     this.camera(tp, cam, dirX, dirY, horizon);
     gl.uniform1f(tp.u.uTime, this.time ?? (performance.now() / 1000) % 100000);
-    models.forEach((levels, kind) => levels.forEach((m, lod) => {
-      const v = lists[kind][lod];
-      if (!v.length) return;
-      gl.bindVertexArray(m.vao);
-      gl.bindBuffer(gl.ARRAY_BUFFER, m.inst);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.DYNAMIC_DRAW);
-      gl.drawElementsInstanced(gl.TRIANGLES, m.count, m.type, 0, v.length / 8);
-    }));
+    models.forEach((levels, kind) =>
+      levels.forEach((m, lod) => {
+        const v = lists[kind][lod];
+        if (!v.length) return;
+        gl.bindVertexArray(m.vao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, m.inst);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.DYNAMIC_DRAW);
+        gl.drawElementsInstanced(gl.TRIANGLES, m.count, m.type, 0, v.length / 8);
+      }),
+    );
     gl.bindVertexArray(null);
     return true;
   }
 
   drawFences(track, cam, dirX, dirY, horizon) {
-    const gl = this.gl, fp = this.fenceProg;
+    const gl = this.gl,
+      fp = this.fenceProg;
     let mesh = this.fenceMeshes.get(track);
     if (!mesh) {
       const v = fenceMesh(track, WALL_H);
@@ -1286,7 +1412,10 @@ export class GLRenderer {
   }
 
   drawSmoke(cam, dirX, dirY, horizon) {
-    const gl = this.gl, sp = this.smokeProg, rx = -dirY, ry = dirX;
+    const gl = this.gl,
+      sp = this.smokeProg,
+      rx = -dirY,
+      ry = dirX;
     const list = [];
     for (const p of this.smoke.puffs) {
       const depth = (p.x - cam.x) * dirX + (p.y - cam.y) * dirY;
@@ -1297,15 +1426,22 @@ export class GLRenderer {
     const v = new Float32Array(list.length * 6 * 7);
     let o = 0;
     for (const [, p] of list) {
-      const { alpha, size } = puffLook(p), h = size / 2;
-      const c = Math.cos(p.spin), s = Math.sin(p.spin); // cada una girada distinto, así los grumos no se repiten
+      const { alpha, size } = puffLook(p),
+        h = size / 2;
+      const c = Math.cos(p.spin),
+        s = Math.sin(p.spin); // cada una girada distinto, así los grumos no se repiten
       const uv = (a, b) => [0.5 + (a * c - b * s) * 0.5, 0.5 + (a * s + b * c) * 0.5];
       const corner = (a, b) => {
         const [u, w] = uv(a, b);
         v.set([p.x + rx * h * a, p.y + ry * h * a, p.z + h * (1 - b), u, w, alpha, p.shade], o);
         o += 7;
       };
-      corner(-1, 1); corner(1, 1); corner(1, -1); corner(-1, 1); corner(1, -1); corner(-1, -1);
+      corner(-1, 1);
+      corner(1, 1);
+      corner(1, -1);
+      corner(-1, 1);
+      corner(1, -1);
+      corner(-1, -1);
     }
     gl.useProgram(sp.p);
     this.camera(sp, cam, dirX, dirY, horizon);
@@ -1326,18 +1462,36 @@ export class GLRenderer {
   // para seguir las lomas). Se arma una vez por circuito
   treeShadows(track) {
     if (this.treeShadowMeshes.has(track)) return this.treeShadowMeshes.get(track);
-    const gl = this.gl, M = track.meters, v = [];
-    const sl = Math.hypot(SUN[0], SUN[1]), sx = SUN[0] / sl, sy = SUN[1] / sl, px = -sy, py = sx;
+    const gl = this.gl,
+      M = track.meters,
+      v = [];
+    const sl = Math.hypot(SUN[0], SUN[1]),
+      sx = SUN[0] / sl,
+      sy = SUN[1] / sl,
+      px = -sy,
+      py = sx;
     const reach = sl / SUN[2]; // cuánto se estira la sombra por cada metro de alto
     const z = (x, y) => sampleField(track.height, track.W, x, y) + 0.04;
     const N = 4;
     for (const t of track.trees) {
-      const k = (TREE_SIZE * t.scale) / M, w = 2.3 * k, back = 1.2 * k, len = 8.5 * k * reach + 2 * k;
+      const k = (TREE_SIZE * t.scale) / M,
+        w = 2.3 * k,
+        back = 1.2 * k,
+        len = 8.5 * k * reach + 2 * k;
       for (let i = 0; i < N; i++) {
-        const a0 = -back + ((len + back) * i) / N, a1 = -back + ((len + back) * (i + 1)) / N;
-        const v0 = i / N, v1 = (i + 1) / N;
-        const P = (a, b) => { const X = t.x + sx * a + px * b, Y = t.y + sy * a + py * b; return [X, Y, z(X, Y)]; };
-        const A = P(a0, -w), B = P(a0, w), C = P(a1, w), D = P(a1, -w);
+        const a0 = -back + ((len + back) * i) / N,
+          a1 = -back + ((len + back) * (i + 1)) / N;
+        const v0 = i / N,
+          v1 = (i + 1) / N;
+        const P = (a, b) => {
+          const X = t.x + sx * a + px * b,
+            Y = t.y + sy * a + py * b;
+          return [X, Y, z(X, Y)];
+        };
+        const A = P(a0, -w),
+          B = P(a0, w),
+          C = P(a1, w),
+          D = P(a1, -w);
         v.push(...A, 0, v0, ...B, 1, v0, ...C, 1, v1, ...A, 0, v0, ...C, 1, v1, ...D, 0, v1);
       }
     }
@@ -1378,13 +1532,15 @@ export class GLRenderer {
 
   // textura 3D de dos canales (r, g) que se repite, con mipmaps (para las nubes)
   texture3D({ size, data }) {
-    const gl = this.gl, t = gl.createTexture();
+    const gl = this.gl,
+      t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_3D, t);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.texImage3D(gl.TEXTURE_3D, 0, gl.RG8, size, size, size, 0, gl.RG, gl.UNSIGNED_BYTE, data);
     gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    for (const w of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, w, gl.REPEAT);
+    for (const w of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R])
+      gl.texParameteri(gl.TEXTURE_3D, w, gl.REPEAT);
     gl.generateMipmap(gl.TEXTURE_3D);
     return t;
   }
@@ -1413,9 +1569,20 @@ export class GLRenderer {
       }
       // el pasto gastado cambia en el momento: se suben sólo las filas que cambiaron
       if (this.wearVersion !== map.wearVersion && map.wearDirty) {
-        const { lo, hi } = map.wearDirty, n = map.wearLanes;
+        const { lo, hi } = map.wearDirty,
+          n = map.wearLanes;
         gl.bindTexture(gl.TEXTURE_2D, this.wearTex);
-        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, lo, n, hi - lo + 1, gl.RED, gl.UNSIGNED_BYTE, map.wearBytes.subarray(lo * n, (hi + 1) * n));
+        gl.texSubImage2D(
+          gl.TEXTURE_2D,
+          0,
+          0,
+          lo,
+          n,
+          hi - lo + 1,
+          gl.RED,
+          gl.UNSIGNED_BYTE,
+          map.wearBytes.subarray(lo * n, (hi + 1) * n),
+        );
         this.wearVersion = map.wearVersion;
         map.wearDirty = null;
       }
@@ -1434,11 +1601,25 @@ export class GLRenderer {
   trackTextures(track) {
     let t = this.trackData.get(track);
     if (!t) {
-      const { W, H, height, sdf, lat, station, kerbLeft, kerbRight, sausageLeft, sausageRight, runoffLeft, runoffRight } = track;
+      const {
+        W,
+        H,
+        height,
+        sdf,
+        lat,
+        station,
+        kerbLeft,
+        kerbRight,
+        sausageLeft,
+        sausageRight,
+        runoffLeft,
+        runoffRight,
+      } = track;
       const reach = edgeReach(track.kerbStyle ?? KERB_STYLE);
       // por celda: altura, distancia al borde, distancia de costado a la línea central y cuánto piano hay (0..1);
       // aparte, cuánta salchicha
-      const f = new Float32Array(W * H * 4), sq = new Float32Array(W * H * 4);
+      const f = new Float32Array(W * H * 4),
+        sq = new Float32Array(W * H * 4);
       for (let i = 0; i < W * H; i++) {
         f[i * 4] = height[i];
         f[i * 4 + 1] = sdf[i];
@@ -1451,12 +1632,20 @@ export class GLRenderer {
           }
         }
       }
-      const n = kerbLeft.length, rows = Math.ceil(n / LINE_TEX_W);
+      const n = kerbLeft.length,
+        rows = Math.ceil(n / LINE_TEX_W);
       t = {
         field: this.texture(f, W, H, { format: 'RGBA16F', clamp: true }),
         sausage: this.texture(sq, W, H, { format: 'RGBA16F', clamp: true }),
         station: this.texture(Float32Array.from(station), W, H, { format: 'R32F', nearest: true, clamp: true }),
-        n, rows, kerbLeft, kerbRight, runoffLeft, runoffRight, offset: undefined, line: null,
+        n,
+        rows,
+        kerbLeft,
+        kerbRight,
+        runoffLeft,
+        runoffRight,
+        offset: undefined,
+        line: null,
         guide: this.texture(new Uint8Array(LINE_TEX_W * rows * 4), LINE_TEX_W, rows, { nearest: true, clamp: true }),
       };
       this.trackData.set(track, t);
@@ -1476,7 +1665,8 @@ export class GLRenderer {
       t.offset = offset;
     }
     if (this.guide) {
-      const gl = this.gl, c = this.guide.color;
+      const gl = this.gl,
+        c = this.guide.color;
       const rows = Math.ceil(Math.min(c.length, t.n) / LINE_TEX_W);
       const bytes = new Uint8Array(LINE_TEX_W * rows * 4);
       bytes.set(new Uint8Array(c.buffer, c.byteOffset, Math.min(c.length, t.n) * 4));
@@ -1495,7 +1685,8 @@ export class GLRenderer {
       this.screenOff = this.screenTex;
     }
     if (!canvas) return this.screenOff;
-    if (this.screenOff === this.screenTex) this.screenTex = this.texture(canvas, canvas.width, canvas.height, { clamp: true });
+    if (this.screenOff === this.screenTex)
+      this.screenTex = this.texture(canvas, canvas.width, canvas.height, { clamp: true });
     else {
       gl.bindTexture(gl.TEXTURE_2D, this.screenTex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
@@ -1507,7 +1698,13 @@ export class GLRenderer {
     let t = this.texCache.get(tex);
     if (!t) {
       if (tex.canvas) t = this.texture(tex.canvas, tex.w, tex.h, { mip: true, clamp: true });
-      else t = this.texture(new Uint8Array(tex.levels[0].buffer, tex.levels[0].byteOffset, tex.levels[0].byteLength), tex.size, tex.size, { mip: true });
+      else
+        t = this.texture(
+          new Uint8Array(tex.levels[0].buffer, tex.levels[0].byteOffset, tex.levels[0].byteLength),
+          tex.size,
+          tex.size,
+          { mip: true },
+        );
       this.texCache.set(tex, t);
     }
     return t;
@@ -1525,7 +1722,8 @@ export class GLRenderer {
     const wheels = [];
     const texs = {};
     let helmetStart = -1;
-    let neck = { x: 0, y: 0, z: 0 }, column = { x: 0, y: 0, z: 0, ax: 1, ay: 0, az: 0 };
+    let neck = { x: 0, y: 0, z: 0 },
+      column = { x: 0, y: 0, z: 0, ax: 1, ay: 0, az: 0 };
     const parts = [...model.filter((p) => p.tag !== 'helmet'), ...model.filter((p) => p.tag === 'helmet')];
     for (const part of parts) {
       if (part.tag === 'helmet' && helmetStart < 0) helmetStart = data.length / STRIDE;
@@ -1574,7 +1772,23 @@ export class GLRenderer {
           const [x, y, z] = part.verts[face.idx[a]];
           const uv = face.uv ? face.uv[a] : [0, 0];
           const wv = part.follow ? 11 + part.follow[face.idx[a]] : w;
-          data.push(x, y, z, face.n[0], face.n[1], face.n[2], r, gg, b, uv[0] / size, uv[1] / size, tid, wv, ...smooth[a], gloss);
+          data.push(
+            x,
+            y,
+            z,
+            face.n[0],
+            face.n[1],
+            face.n[2],
+            r,
+            gg,
+            b,
+            uv[0] / size,
+            uv[1] / size,
+            tid,
+            wv,
+            ...smooth[a],
+            gloss,
+          );
         };
         for (let a = 1; a < face.idx.length - 1; a++) {
           vert(0);
@@ -1615,7 +1829,8 @@ export class GLRenderer {
   async render(track, cam, sprites, models = []) {
     const gl = this.gl;
     this.setZoom(cam.zoom || 1);
-    const dirX = Math.cos(cam.angle), dirY = Math.sin(cam.angle);
+    const dirX = Math.cos(cam.angle),
+      dirY = Math.sin(cam.angle);
     const horizon = this.h / 2 + (cam.pitch || 0);
     const t = this.trackTextures(track);
 
@@ -1654,7 +1869,10 @@ export class GLRenderer {
     gl.uniform1i(tp.u.uLineN, t.n);
     gl.uniform1f(tp.u.uRunoff, track.runoff);
     const kerb = (track.kerbColors ?? DEFAULT_KERB).slice(0, MAX_KERB_COLORS);
-    gl.uniform3fv(tp.u.uKerb, kerb.flatMap(([r, g, b]) => [r / 255, g / 255, b / 255]));
+    gl.uniform3fv(
+      tp.u.uKerb,
+      kerb.flatMap(([r, g, b]) => [r / 255, g / 255, b / 255]),
+    );
     gl.uniform1i(tp.u.uKerbN, kerb.length);
     const { line } = track;
     gl.uniform4f(tp.u.uStart, line.x, line.y, line.dx, line.dy);
@@ -1667,7 +1885,10 @@ export class GLRenderer {
     }
     gl.uniform3f(tp.u.uCam, cam.x, cam.y, cam.z);
     gl.uniform1f(tp.u.uGround, cam.ground);
-    gl.uniform1f(tp.u.uZStart, Math.max(Z_NEAR, ((cam.z - cam.ground - NEAR_RISE) * this.P) / Math.max(1, this.h - horizon)));
+    gl.uniform1f(
+      tp.u.uZStart,
+      Math.max(Z_NEAR, ((cam.z - cam.ground - NEAR_RISE) * this.P) / Math.max(1, this.h - horizon)),
+    );
     gl.uniform1f(tp.u.uPlane, this.planeLen);
     gl.uniform1f(tp.u.uP, this.P);
     gl.uniform1f(tp.u.uHorizon, horizon);
@@ -1693,11 +1914,15 @@ export class GLRenderer {
       gl.bindVertexArray(this.flatVao);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.dynamic);
       for (const m of shadowModels) {
-        const k = 1 / m.meters, ca = Math.cos(m.angle), sa = Math.sin(m.angle);
-        const ox = SHADOW_SHIFT * SUN[0] * k, oy = SHADOW_SHIFT * SUN[1] * k;
+        const k = 1 / m.meters,
+          ca = Math.cos(m.angle),
+          sa = Math.sin(m.angle);
+        const ox = SHADOW_SHIFT * SUN[0] * k,
+          oy = SHADOW_SHIFT * SUN[1] * k;
         const v = [];
         for (const [lx, ly] of SHADOW) {
-          const X = m.x + (ca * lx - sa * ly) * k + ox, Y = m.y + (sa * lx + ca * ly) * k + oy;
+          const X = m.x + (ca * lx - sa * ly) * k + ox,
+            Y = m.y + (sa * lx + ca * ly) * k + oy;
           v.push(X, Y, sampleField(track.height, track.W, X, Y) + 0.03 * k, 0, 0);
         }
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.DYNAMIC_DRAW);
@@ -1711,7 +1936,8 @@ export class GLRenderer {
 
     // 2b) sombras de los árboles
     if (track.trees?.length) {
-      const sp = this.softShadows, mesh = this.treeShadows(track);
+      const sp = this.softShadows,
+        mesh = this.treeShadows(track);
       gl.useProgram(sp.p);
       this.camera(sp, cam, dirX, dirY, horizon);
       this.bind(0, this.treeShadowTex, sp, 'uTex');
@@ -1756,7 +1982,8 @@ export class GLRenderer {
     const sprp = this.sprites;
     gl.useProgram(sprp.p);
     this.camera(sprp, cam, dirX, dirY, horizon);
-    const rx = -dirY, ry = dirX;
+    const rx = -dirY,
+      ry = dirX;
     const groups = new Map();
     for (const s of sprites) {
       if (s.tree && trees3d) continue; // los árboles van en 3D (drawTrees)
@@ -1764,9 +1991,45 @@ export class GLRenderer {
       if (depth < 0.3 || depth > MAX_DIST) continue; // con la bruma al FOG_MAX, todavía se ven un poco
       if (!groups.has(s.tex)) groups.set(s.tex, []);
       const v = groups.get(s.tex);
-      const hw = s.width / 2, z0 = s.z || 0, z1 = z0 + s.height;
-      const ax = s.x - rx * hw, ay = s.y - ry * hw, bx = s.x + rx * hw, by = s.y + ry * hw;
-      v.push(ax, ay, z0, 0, 1, bx, by, z0, 1, 1, bx, by, z1, 1, 0, ax, ay, z0, 0, 1, bx, by, z1, 1, 0, ax, ay, z1, 0, 0);
+      const hw = s.width / 2,
+        z0 = s.z || 0,
+        z1 = z0 + s.height;
+      const ax = s.x - rx * hw,
+        ay = s.y - ry * hw,
+        bx = s.x + rx * hw,
+        by = s.y + ry * hw;
+      v.push(
+        ax,
+        ay,
+        z0,
+        0,
+        1,
+        bx,
+        by,
+        z0,
+        1,
+        1,
+        bx,
+        by,
+        z1,
+        1,
+        0,
+        ax,
+        ay,
+        z0,
+        0,
+        1,
+        bx,
+        by,
+        z1,
+        1,
+        0,
+        ax,
+        ay,
+        z1,
+        0,
+        0,
+      );
     }
     gl.bindVertexArray(this.flatVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.dynamic);
@@ -1785,7 +2048,8 @@ export class GLRenderer {
 
     // 5) ayuda de trazada, semitransparente, al final
     if (this.guide) {
-      const gp = this.guides, mesh = this.guideMesh(track, this.guide);
+      const gp = this.guides,
+        mesh = this.guideMesh(track, this.guide);
       gl.useProgram(gp.p);
       this.camera(gp, cam, dirX, dirY, horizon);
       this.bind(0, t.guide, gp, 'uGuide');
@@ -1804,16 +2068,29 @@ export class GLRenderer {
   // un auto (m: { model, x, y, z, angle, pitch, roll, ... } como en render), con el programa de los autos ya en uso.
   // basis: [F, R, U] para orientarlo de cualquier forma (si no, sale de angle y pitch)
   drawModel(m, alpha = 1, basis = null) {
-    const gl = this.gl, mp = this.models;
+    const gl = this.gl,
+      mp = this.models;
     const g = this.modelGeometry(m.model);
-    const ca = Math.cos(m.angle || 0), sa = Math.sin(m.angle || 0);
-    const cp = Math.cos(m.pitch || 0), sp = Math.sin(m.pitch || 0);
-    const [F, R, U] = basis ?? [[ca * cp, sa * cp, sp], [-sa, ca, 0], [-ca * sp, -sa * sp, cp]];
+    const ca = Math.cos(m.angle || 0),
+      sa = Math.sin(m.angle || 0);
+    const cp = Math.cos(m.pitch || 0),
+      sp = Math.sin(m.pitch || 0);
+    const [F, R, U] = basis ?? [
+      [ca * cp, sa * cp, sp],
+      [-sa, ca, 0],
+      [-ca * sp, -sa * sp, cp],
+    ];
     gl.uniform3f(mp.u.uPos, m.x, m.y, m.z);
     gl.uniform3f(mp.u.uF, ...F);
     gl.uniform3f(mp.u.uR, ...R);
     gl.uniform3f(mp.u.uU, ...U);
-    gl.uniform4f(mp.u.uBody, Math.cos(m.roll || 0), Math.sin(m.roll || 0), Math.cos(m.dive || 0), Math.sin(m.dive || 0));
+    gl.uniform4f(
+      mp.u.uBody,
+      Math.cos(m.roll || 0),
+      Math.sin(m.roll || 0),
+      Math.cos(m.dive || 0),
+      Math.sin(m.dive || 0),
+    );
     gl.uniform1f(mp.u.uK, 1 / m.meters);
     gl.uniform2f(mp.u.uSpin, Math.cos(m.spin || 0), Math.sin(m.spin || 0));
     const st = m.steer || 0; // ángulo de las ruedas delanteras (rad)
@@ -1848,7 +2125,8 @@ export class GLRenderer {
   // (pitch), así se lo ve desde arriba sin cambiar la proyección del juego (que no cabecea). dist: de la cámara al
   // auto (m); P: distancia focal (píxeles). Devuelve cómo se proyecta un punto del auto, para dibujar su sombra.
   showcase(model, { yaw = 0, pitch = 0, dist = 14, P, z0 = 0.45 }, w, h) {
-    const gl = this.gl, mp = this.models;
+    const gl = this.gl,
+      mp = this.models;
     if (this.canvas.width !== w || this.canvas.height !== h) Object.assign(this.canvas, { width: w, height: h });
     gl.viewport(0, 0, w, h);
     gl.clearColor(0, 0, 0, 0);
@@ -1864,9 +2142,16 @@ export class GLRenderer {
     gl.uniform1f(mp.u.uHorizon, h / 2);
     gl.uniform2f(mp.u.uView, w, h);
     // girar alrededor del eje vertical y después inclinar la parte de arriba hacia la cámara (alrededor de y)
-    const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const cy = Math.cos(yaw),
+      sy = Math.sin(yaw),
+      cp = Math.cos(pitch),
+      sp = Math.sin(pitch);
     const tilt = ([x, y, z]) => [x * cp - z * sp, y, x * sp + z * cp];
-    const basis = [[cy, sy, 0], [-sy, cy, 0], [0, 0, 1]].map(tilt);
+    const basis = [
+      [cy, sy, 0],
+      [-sy, cy, 0],
+      [0, 0, 1],
+    ].map(tilt);
     // el punto z0 del auto (sobre su centro) queda en el centro de la imagen
     const c = tilt([0, 0, z0]);
     const pos = [dist - c[0], -c[1], -c[2]];
@@ -1874,7 +2159,8 @@ export class GLRenderer {
     gl.bindVertexArray(null);
     return ([x, y, z]) => {
       const [F, R, U] = basis;
-      const wx = pos[0] + F[0] * x + R[0] * y + U[0] * z, wy = pos[1] + F[1] * x + R[1] * y + U[1] * z;
+      const wx = pos[0] + F[0] * x + R[0] * y + U[0] * z,
+        wy = pos[1] + F[1] * x + R[1] * y + U[1] * z;
       const wz = pos[2] + F[2] * x + R[2] * y + U[2] * z;
       return [w / 2 + (wy * P) / wx, h / 2 - (wz * P) / wx];
     };
@@ -1884,14 +2170,19 @@ export class GLRenderer {
   guideMesh(track, line) {
     let mesh = this.guideMeshes.get(line);
     if (mesh) return mesh;
-    const gl = this.gl, f = lineFrame(track), L = line.offset.length;
+    const gl = this.gl,
+      f = lineFrame(track),
+      L = line.offset.length;
     const data = new Float32Array((L + 1) * 2 * 5);
     let o = 0;
     for (let k = 0; k <= L; k++) {
-      const u = k % L, p = pointAt(f, u, line.offset[u]);
-      const nx = f.nx[u % f.L], ny = f.ny[u % f.L];
+      const u = k % L,
+        p = pointAt(f, u, line.offset[u]);
+      const nx = f.nx[u % f.L],
+        ny = f.ny[u % f.L];
       for (const side of [-1, 1]) {
-        const x = p.x + nx * GUIDE_W * side, y = p.y + ny * GUIDE_W * side;
+        const x = p.x + nx * GUIDE_W * side,
+          y = p.y + ny * GUIDE_W * side;
         data.set([x, y, sampleField(track.height, track.W, x, y) + GUIDE_LIFT, k, side], o);
         o += 5;
       }

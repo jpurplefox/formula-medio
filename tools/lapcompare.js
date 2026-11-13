@@ -11,7 +11,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Car, limitsOn } from '../src/car.js';
-import { Policy, NeuralDriver } from '../src/policy.js';
+import { GAME_NET, Policy, NeuralDriver } from '../src/policy.js';
 import { racingLine } from '../src/racingline.js';
 import { stationAt } from '../src/track.js';
 import { gridSlots } from '../src/ai.js';
@@ -20,12 +20,11 @@ import { TRACKS } from '../tracks/index.js';
 import { realLap } from './openf1.js';
 
 const root = (p) => new URL('../' + p, import.meta.url);
-const NET = 'models/v5/fase7.json';
 const DT = 1 / 60;
 
 const [ids = TRACK_IDS.join(','), out = 'tools/.out/vueltas.html'] = process.argv.slice(2);
 const profile = JSON.parse(readFileSync(root('cars/f1-2025.json'), 'utf8'));
-const policy = new Policy(JSON.parse(readFileSync(root(NET), 'utf8')));
+const policy = new Policy(JSON.parse(readFileSync(root(GAME_NET), 'utf8')));
 
 // Una vuelta lanzada de la red sola en la pista: [{ s (fracción de la vuelta), v }] y tiempo
 function netLap(track, setup) {
@@ -34,8 +33,12 @@ function netLap(track, setup) {
   if (setup) car.setup = setup;
   car.launch();
   car.throttle = 1;
-  const driver = new NeuralDriver(policy), line = racingLine(track, limitsOn(profile, track), { brakeUse: 0.93 });
-  let prev = stationAt(track, car.x, car.y), lap = 0, t0 = 0, pts = [];
+  const driver = new NeuralDriver(policy),
+    line = racingLine(track, limitsOn(profile, track), { brakeUse: 0.93 });
+  let prev = stationAt(track, car.x, car.y),
+    lap = 0,
+    t0 = 0,
+    pts = [];
   for (let t = 0; t < 500 && lap < 4; t += DT) {
     car.update(DT, driver.drive(DT, track, line, { car }), track);
     const u = stationAt(track, car.x, car.y);
@@ -78,25 +81,40 @@ function summary(pts, length) {
 const kmh = (v) => (v * 3.6).toFixed(0);
 
 function chart(id, real, lines) {
-  const W = 1000, H = 260, pad = 34, max = 100;
-  const X = (f) => pad + f * (W - pad - 8), Y = (v) => H - 20 - (v / max) * (H - 30);
+  const W = 1000,
+    H = 260,
+    pad = 34,
+    max = 100;
+  const X = (f) => pad + f * (W - pad - 8),
+    Y = (v) => H - 20 - (v / max) * (H - 30);
   const path = (pts, f) => 'M' + pts.map((p) => `${X(f(p)).toFixed(1)},${Y(p.v).toFixed(1)}`).join('L');
   let g = '';
-  for (let k = 50; k <= 350; k += 50) g += `<line x1="${pad}" x2="${W - 8}" y1="${Y(k / 3.6)}" y2="${Y(k / 3.6)}" class="grid"/><text x="${pad - 4}" y="${Y(k / 3.6) + 4}" class="ax">${k}</text>`;
-  for (let m = 0; m < real.length; m += 1000) g += `<text x="${X(m / real.length)}" y="${H - 4}" class="ax">${m / 1000} km</text>`;
-  const series = [`<path d="${path(real.pts, (p) => p.s / real.length)}" class="real"/>`]
-    .concat(lines.map((l) => `<path d="${path(l.pts, (p) => p.s)}" class="${l.cls}"/>`));
+  for (let k = 50; k <= 350; k += 50)
+    g += `<line x1="${pad}" x2="${W - 8}" y1="${Y(k / 3.6)}" y2="${Y(k / 3.6)}" class="grid"/><text x="${pad - 4}" y="${Y(k / 3.6) + 4}" class="ax">${k}</text>`;
+  for (let m = 0; m < real.length; m += 1000)
+    g += `<text x="${X(m / real.length)}" y="${H - 4}" class="ax">${m / 1000} km</text>`;
+  const series = [`<path d="${path(real.pts, (p) => p.s / real.length)}" class="real"/>`].concat(
+    lines.map((l) => `<path d="${path(l.pts, (p) => p.s)}" class="${l.cls}"/>`),
+  );
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="velocidad en ${id}">${g}${series.join('')}</svg>`;
 }
 
-const rows = [], charts = [];
+const rows = [],
+  charts = [];
 for (const id of ids.split(',')) {
   const def = TRACKS.find((t) => t.id === id);
   const real = realLap(def);
-  if (!real) { console.log(`${id}: no hay clasificación en el caché`); continue; }
+  if (!real) {
+    console.log(`${id}: no hay clasificación en el caché`);
+    continue;
+  }
   const track = loadTrack(id);
-  const limit = limitLap(track), net = netLap(track);
-  const rs = summary(real.pts.map((p) => ({ s: p.s / real.length, v: p.v })), real.length);
+  const limit = limitLap(track),
+    net = netLap(track);
+  const rs = summary(
+    real.pts.map((p) => ({ s: p.s / real.length, v: p.v })),
+    real.length,
+  );
   const ls = summary(limit.pts, real.length);
   const ns = net && summary(net.pts, real.length);
   // cada curva real con la del juego más cerca (en la vuelta)
@@ -104,18 +122,31 @@ for (const id of ids.split(',')) {
   const corners = rs.valleys.map((c) => [c.v, near(c.s, ls.valleys)?.v, near(c.s, ns?.valleys)?.v]);
   const ratio = (k) => corners.reduce((a, c) => a + (c[k] ?? c[0]) / c[0], 0) / corners.length;
   rows.push({ id, real, limit, net, rs, ls, ns, corners, curveLimit: ratio(1), curveNet: ratio(2) });
-  console.log(`${id.padEnd(12)} real ${real.lapTime.toFixed(2)} s (${real.driver}), punta ${kmh(rs.top)} · `
-    + `límite ${limit.lapTime.toFixed(2)} s, punta ${kmh(ls.top)}, curvas ×${ratio(1).toFixed(2)} · `
-    + (net ? `red ${net.lapTime.toFixed(2)} s, punta ${kmh(ns.top)}, curvas ×${ratio(2).toFixed(2)}` : 'red: no completó'));
-  charts.push(`<section><h2>${def.name} <small>pole ${real.driver} ${real.lapTime.toFixed(3)} s</small></h2>${chart(id, real, [
-    { pts: limit.pts, cls: 'limit' }, ...(net ? [{ pts: net.pts, cls: 'net' }] : [])])}
+  console.log(
+    `${id.padEnd(12)} real ${real.lapTime.toFixed(2)} s (${real.driver}), punta ${kmh(rs.top)} · ` +
+      `límite ${limit.lapTime.toFixed(2)} s, punta ${kmh(ls.top)}, curvas ×${ratio(1).toFixed(2)} · ` +
+      (net
+        ? `red ${net.lapTime.toFixed(2)} s, punta ${kmh(ns.top)}, curvas ×${ratio(2).toFixed(2)}`
+        : 'red: no completó'),
+  );
+  charts.push(`<section><h2>${def.name} <small>pole ${real.driver} ${real.lapTime.toFixed(3)} s</small></h2>${chart(
+    id,
+    real,
+    [{ pts: limit.pts, cls: 'limit' }, ...(net ? [{ pts: net.pts, cls: 'net' }] : [])],
+  )}
     <p class="corners">curvas (km/h, real / límite / red): ${corners.map((c) => c.map((v) => (v ? kmh(v) : '–')).join('/')).join(' · ')}</p></section>`);
 }
 
 const td = (x) => `<td>${x}</td>`;
-const table = `<table><tr><th>Circuito</th><th>Real</th><th>Límite</th><th>Red</th><th>Punta real</th><th>Punta límite</th><th>Punta red</th><th>Curvas límite/real</th><th>Curvas red/real</th></tr>${rows.map((r) =>
-  `<tr>${td(r.id)}${td(r.real.lapTime.toFixed(2))}${td(r.limit.lapTime.toFixed(2))}${td(r.net ? r.net.lapTime.toFixed(2) : '–')}${td(kmh(r.rs.top))}${td(kmh(r.ls.top))}${td(r.ns ? kmh(r.ns.top) : '–')}${td('×' + r.curveLimit.toFixed(2))}${td('×' + r.curveNet.toFixed(2))}</tr>`).join('')}</table>`;
-writeFileSync(out, `<!doctype html><meta charset="utf-8"><title>Vuelta real vs juego</title>
+const table = `<table><tr><th>Circuito</th><th>Real</th><th>Límite</th><th>Red</th><th>Punta real</th><th>Punta límite</th><th>Punta red</th><th>Curvas límite/real</th><th>Curvas red/real</th></tr>${rows
+  .map(
+    (r) =>
+      `<tr>${td(r.id)}${td(r.real.lapTime.toFixed(2))}${td(r.limit.lapTime.toFixed(2))}${td(r.net ? r.net.lapTime.toFixed(2) : '–')}${td(kmh(r.rs.top))}${td(kmh(r.ls.top))}${td(r.ns ? kmh(r.ns.top) : '–')}${td('×' + r.curveLimit.toFixed(2))}${td('×' + r.curveNet.toFixed(2))}</tr>`,
+  )
+  .join('')}</table>`;
+writeFileSync(
+  out,
+  `<!doctype html><meta charset="utf-8"><title>Vuelta real vs juego</title>
 <style>
 body{font:14px system-ui;margin:16px;background:#fff;color:#222}h2{font-size:15px;margin:18px 0 4px}small{color:#777;font-weight:400}
 svg{width:100%;height:auto;background:#fafafa}.grid{stroke:#e4e4e4}.ax{font-size:10px;fill:#888;text-anchor:end}
@@ -124,5 +155,6 @@ table{border-collapse:collapse}td,th{padding:3px 8px;border-bottom:1px solid #ee
 .key span{display:inline-block;width:18px;height:3px;margin:0 4px 3px 12px;vertical-align:middle}
 </style>
 <h1>Vuelta real vs juego</h1><p class="key"><span style="background:#222"></span>pole real 2025<span style="background:#2a73d6"></span>límite de la física<span style="background:#e8002d"></span>red del juego</p>
-${table}${charts.join('')}`);
+${table}${charts.join('')}`,
+);
 console.log(`→ ${out}`);

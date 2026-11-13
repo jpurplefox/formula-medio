@@ -22,21 +22,66 @@ const C = { root: 36, tones: [60, 64, 67] };
 const GM = { root: 43, tones: [62, 67, 70] };
 const A = { root: 45, tones: [61, 64, 69] };
 const SONG = [
-  DM, DM, BB, C, // introducción
-  DM, BB, F, C, DM, BB, GM, A, // tema
-  GM, BB, C, A, // remate
+  DM,
+  DM,
+  BB,
+  C, // introducción
+  DM,
+  BB,
+  F,
+  C,
+  DM,
+  BB,
+  GM,
+  A, // tema
+  GM,
+  BB,
+  C,
+  A, // remate
 ];
-const INTRO = 4, THEME = 12;
+const INTRO = 4,
+  THEME = 12;
 
 // melodía de los metales en el tema, por compás: [nota, semicorchea en que empieza, duración en semicorcheas]
 const MELODY = [
-  [[69, 0, 6], [67, 6, 2], [69, 8, 4], [74, 12, 4]],
-  [[72, 0, 8], [70, 8, 4], [69, 12, 4]],
-  [[69, 0, 6], [65, 6, 2], [67, 8, 4], [69, 12, 4]],
-  [[72, 0, 12], [67, 12, 4]],
-  [[69, 0, 6], [67, 6, 2], [69, 8, 4], [74, 12, 4]],
-  [[77, 0, 8], [74, 8, 4], [72, 12, 4]],
-  [[74, 0, 6], [72, 6, 2], [70, 8, 4], [69, 12, 4]],
+  [
+    [69, 0, 6],
+    [67, 6, 2],
+    [69, 8, 4],
+    [74, 12, 4],
+  ],
+  [
+    [72, 0, 8],
+    [70, 8, 4],
+    [69, 12, 4],
+  ],
+  [
+    [69, 0, 6],
+    [65, 6, 2],
+    [67, 8, 4],
+    [69, 12, 4],
+  ],
+  [
+    [72, 0, 12],
+    [67, 12, 4],
+  ],
+  [
+    [69, 0, 6],
+    [67, 6, 2],
+    [69, 8, 4],
+    [74, 12, 4],
+  ],
+  [
+    [77, 0, 8],
+    [74, 8, 4],
+    [72, 12, 4],
+  ],
+  [
+    [74, 0, 6],
+    [72, 6, 2],
+    [70, 8, 4],
+    [69, 12, 4],
+  ],
   [[73, 0, 16]],
 ];
 // ritmo del galope: corchea y dos semicorcheas (1 = toca); y qué nota del arpegio toca cada semicorchea
@@ -65,7 +110,8 @@ export class MenuMusic {
 
   // respuesta al impulso de una sala: ruido estéreo que se apaga de a poco
   hall(seconds) {
-    const rate = this.ctx.sampleRate, n = Math.round(rate * seconds);
+    const rate = this.ctx.sampleRate,
+      n = Math.round(rate * seconds);
     const b = this.ctx.createBuffer(2, n, rate);
     for (let c = 0; c < 2; c++) {
       const d = b.getChannelData(c);
@@ -105,9 +151,12 @@ export class MenuMusic {
 
   // todo lo que suena en una semicorchea
   play(step, t) {
-    const bar = Math.floor(step / BAR), s = step % BAR;
+    const bar = Math.floor(step / BAR),
+      s = step % BAR;
     const chord = SONG[bar];
-    const intro = bar < INTRO, theme = bar >= INTRO && bar < THEME, finale = bar >= THEME;
+    const intro = bar < INTRO,
+      theme = bar >= INTRO && bar < THEME,
+      finale = bar >= THEME;
 
     // cuerdas: el galope, sobre la fundamental (y en el remate, una octava más arriba)
     if (GALLOP[s]) {
@@ -178,20 +227,49 @@ export class MenuMusic {
   }
 
   strings(f, t, peak) {
-    this.saws([f], [-6, 6], t, STEP * 1.2, this.envelope(t, peak, 0.006, STEP * 0.5, STEP * 0.6, 0.5), this.lowpass(t, 2400, 2400));
+    this.saws(
+      [f],
+      [-6, 6],
+      t,
+      STEP * 1.2,
+      this.envelope(t, peak, 0.006, STEP * 0.5, STEP * 0.6, 0.5),
+      this.lowpass(t, 2400, 2400),
+    );
   }
 
   bass(f, t, dur) {
-    this.saws([f, f * 2], [-4, 4], t, dur + 0.3, this.envelope(t, 0.07, 0.05, dur - 0.05, 0.25), this.lowpass(t, 420, 420), 0);
+    this.saws(
+      [f, f * 2],
+      [-4, 4],
+      t,
+      dur + 0.3,
+      this.envelope(t, 0.07, 0.05, dur - 0.05, 0.25),
+      this.lowpass(t, 420, 420),
+      0,
+    );
   }
 
   // metales: tres sierras y la octava de abajo, con un filtro que se abre al atacar la nota
   brass(f, t, dur, peak) {
-    this.saws([f, f / 2], [-9, 0, 9], t, dur + 0.3, this.envelope(t, peak, 0.05, dur - 0.04, 0.22, 0.85), this.lowpass(t, 500, 2600, 0.18));
+    this.saws(
+      [f, f / 2],
+      [-9, 0, 9],
+      t,
+      dur + 0.3,
+      this.envelope(t, peak, 0.05, dur - 0.04, 0.22, 0.85),
+      this.lowpass(t, 500, 2600, 0.18),
+    );
   }
 
   brassChord(freqs, t, dur) {
-    this.saws(freqs.map((f) => f / 2), [-8, 8], t, dur + 0.3, this.envelope(t, 0.07, 0.015, dur * 0.4, 0.25, 0.6), this.lowpass(t, 900, 3200, 0.06));
+    this.saws(
+      freqs.map((f) => f / 2),
+      [-8, 8],
+      t,
+      dur + 0.3,
+      this.envelope(t, 0.07, 0.015, dur * 0.4, 0.25, 0.6),
+      this.lowpass(t, 900, 3200, 0.06),
+    );
   }
 
   // coro: senos y triángulos con un vibrato lento

@@ -52,26 +52,37 @@ import { getTrack, mod, RaceSim, recordPace, wrap } from './race.js';
 import { LIGHT_FIRST, lightsAt, lightsDuration, randomHold } from '../src/lights.js';
 import { RubberMap } from '../src/rubber.js';
 
-const DT = 1 / 60, SUBSTEPS = 3, DECISIONS = 20; // decisiones por segundo
+const DT = 1 / 60,
+  SUBSTEPS = 3,
+  DECISIONS = 20; // decisiones por segundo
 // goma ya puesta sobre la trazada al empezar cada episodio: entre nada (recién largada) y esto (rubber.js: 25 es una
 // marca clara; 75, casi negra), así la red corre con la pista en cualquier momento de la carrera
 const RUBBER_LAID = 75;
-const PROGRESS_REWARD = 0.02, WALL_PENALTY = 1;
-const GRASS_LIMIT = 6, STUCK_LIMIT = 6, BACKWARDS_LIMIT = 30, RESCUE_PENALTY = 4, STALL_PENALTY = 1, RETIRE_PENALTY = 10;
-const PACE_FLOOR = 0.75, PACE_PENALTY = 1, FREE_ROAD = 40;
-const FLYING_GAP = 6, FLYING_SPEED = [0.6, 0.8]; // largada en movimiento: m entre autos y fracción de la trazada
+const PROGRESS_REWARD = 0.02,
+  WALL_PENALTY = 1;
+const GRASS_LIMIT = 6,
+  STUCK_LIMIT = 6,
+  BACKWARDS_LIMIT = 30,
+  RESCUE_PENALTY = 4,
+  STALL_PENALTY = 1,
+  RETIRE_PENALTY = 10;
+const FLYING_GAP = 6,
+  FLYING_SPEED = [0.6, 0.8]; // largada en movimiento: m entre autos y fracción de la trazada
 const PASS_HOLD = 2.5; // s que el de atrás tiene que seguir adelante, sin tocarse, para contar la pasada
 const CONTACT_GAP = 0.5; // s sin tocarse para que el siguiente contacto sea otro toque
 // castigo, en segundos: por cada segundo con otro auto en la zona de al lado, por cada toque y por cada segundo y
 // rueda en el pasto
-const ZONE_TIME = 0.4, HIT_TIME = 2.5, GRASS_TIME = 0.8;
+const ZONE_TIME = 0.4,
+  HIT_TIME = 2.5,
+  GRASS_TIME = 0.8;
 // desventaja de motor del de adelante en las persecuciones, al principio y al final de la fase
 const CHASE_HANDICAP = [0.2, 0.08];
 // vueltas de cada escenario y margen de tiempo (la vuelta de la trazada × SLACK, más unos segundos)
 // (start: lo que suele durar, en vueltas, para repartir los pasos de la mezcla y cortar si nadie llega)
-export const HERD_SCENARIOS = { solo: 2, grid: 2, rolling: 2, chase: 1, flying: 1, start: 0.25 };
+const HERD_SCENARIOS = { solo: 2, grid: 2, rolling: 2, chase: 1, flying: 1, start: 0.25 };
 const START_MARGIN = 10; // m antes del comienzo de la frenada donde termina el arranque
-const SLACK = 1.25, EXTRA = 25; // con una grilla de 16 los últimos tardan en completar las dos vueltas
+const SLACK = 1.25,
+  EXTRA = 25; // con una grilla de 16 los últimos tardan en completar las dos vueltas
 const DAMAGE_LEVELS = ['off', 'reduced', 'real'];
 
 // Comienzo de la frenada de cada curva (celdas): desde el vértice (corners, rl/race.js), hacia atrás mientras la
@@ -79,7 +90,9 @@ const DAMAGE_LEVELS = ['off', 'reduced', 'real'];
 const brakeCache = new WeakMap();
 function brakePoints(track, line, corners) {
   if (brakeCache.has(track)) return brakeCache.get(track);
-  const v = line.speed, n = v.length, at = (i) => v[((i % n) + n) % n];
+  const v = line.speed,
+    n = v.length,
+    at = (i) => v[((i % n) + n) % n];
   const out = corners.map((c) => {
     let i = c;
     while (i > c - n / 2 && at(i - 1) > at(i)) i--;
@@ -90,13 +103,24 @@ function brakePoints(track, line, corners) {
 }
 
 export class HerdSim extends RaceSim {
-  constructor({ trackIds, agents = 16, seed = 1, mix = { grid: 1 }, spread = 0.02, rewards = {}, progress = 0,
-    damage = 'off', tuneSpread = TUNE_SPREAD }) {
+  constructor({
+    trackIds,
+    agents = 16,
+    seed = 1,
+    mix = { grid: 1 },
+    spread = 0.02,
+    rewards = {},
+    progress = 0,
+    damage = 'off',
+    tuneSpread = TUNE_SPREAD,
+  }) {
     super({ trackIds, agents, seed, mix: {}, spread, rewards, progress, damage, tuneSpread });
     this.rewards = { paceFloor: 1, ...rewards };
     this.scales = Object.fromEntries(Object.keys(HERD_SCENARIOS).map((k) => [k, 1]));
     // el peso es la parte de los pasos: cada escenario se elige según su peso dividido sus vueltas
-    this.mix = Object.entries(mix).filter(([, w]) => w > 0).map(([k, w]) => [k, w / HERD_SCENARIOS[k]]);
+    this.mix = Object.entries(mix)
+      .filter(([, w]) => w > 0)
+      .map(([k, w]) => [k, w / HERD_SCENARIOS[k]]);
     this.mixTotal = this.mix.reduce((a, [, w]) => a + w, 0);
   }
 
@@ -113,9 +137,23 @@ export class HerdSim extends RaceSim {
     const lights = scenario === 'grid' || scenario === 'start';
     const lightsTotal = lights ? lightsDuration(randomHold(r)) : 0;
     const time = lights ? r() * LIGHT_FIRST - lightsTotal : 0;
-    Object.assign(this, { id, track, line, clock, corners, scenario, damage, steps: 0, time, lightsTotal,
-      length: length + Math.ceil(-time * DECISIONS) });
-    const L = track.length, M = track.meters, half = track.halfWidth * M, A = this.agents;
+    Object.assign(this, {
+      id,
+      track,
+      line,
+      clock,
+      corners,
+      scenario,
+      damage,
+      steps: 0,
+      time,
+      lightsTotal,
+      length: length + Math.ceil(-time * DECISIONS),
+    });
+    const L = track.length,
+      M = track.meters,
+      half = track.halfWidth * M,
+      A = this.agents;
     const corner = () => (corners.length ? corners[Math.floor(r() * corners.length)] : r() * L);
     const spots = []; // { u, side (m), v (m/s), partner?, handicap? }
 
@@ -129,7 +167,8 @@ export class HerdSim extends RaceSim {
       // la mitad de las veces la grilla del circuito (como en el juego); si no, 250-500 m antes de una curva
       const first = gridSlots(track, 1)[0];
       const line0 = r() < 0.5 ? stationAt(track, first.x, first.y) : corner() - (250 + 250 * r()) / M;
-      for (let k = 0; k < A; k++) spots.push({ u: line0 - (k * 8) / M, side: (k % 2 ? -1 : 1) * Math.min(3, half * 0.5), v: 0 });
+      for (let k = 0; k < A; k++)
+        spots.push({ u: line0 - (k * 8) / M, side: (k % 2 ? -1 : 1) * Math.min(3, half * 0.5), v: 0 });
     } else if (scenario === 'start') {
       // la mitad de las veces la grilla del circuito y su primera frenada; si no, 300-700 m antes de una frenada
       const brakes = brakePoints(track, line, corners);
@@ -137,20 +176,28 @@ export class HerdSim extends RaceSim {
       let line0, brake;
       if (r() < 0.5 || !brakes.length) {
         line0 = stationAt(track, first.x, first.y);
-        brake = brakes.reduce((a, b) => (mod(b - line0, L) * M > 100 && mod(b - line0, L) < mod(a - line0, L) ? b : a), line0 + L / 2);
+        brake = brakes.reduce(
+          (a, b) => (mod(b - line0, L) * M > 100 && mod(b - line0, L) < mod(a - line0, L) ? b : a),
+          line0 + L / 2,
+        );
       } else {
         brake = brakes[Math.floor(r() * brakes.length)];
         line0 = brake - (300 + 400 * r()) / M;
       }
       this.finish = brake - START_MARGIN / M;
-      for (let k = 0; k < A; k++) spots.push({ u: line0 - (k * 8) / M, side: (k % 2 ? -1 : 1) * Math.min(3, half * 0.5), v: 0 });
+      for (let k = 0; k < A; k++)
+        spots.push({ u: line0 - (k * 8) / M, side: (k % 2 ? -1 : 1) * Math.min(3, half * 0.5), v: 0 });
     } else if (scenario === 'flying') {
       // 150-400 m antes de una curva, en dos filas como la grilla pero más juntos, todos a la misma fracción de la
       // velocidad de la trazada donde está el primero (±3 % cada uno)
       const line0 = corner() - (150 + 250 * r()) / M;
       const v = (FLYING_SPEED[0] + (FLYING_SPEED[1] - FLYING_SPEED[0]) * r()) * this.lineSpeed(line0);
       for (let k = 0; k < A; k++) {
-        spots.push({ u: line0 - (k * FLYING_GAP) / M, side: (k % 2 ? -1 : 1) * Math.min(3, half * 0.5), v: v * (0.97 + 0.06 * r()) });
+        spots.push({
+          u: line0 - (k * FLYING_GAP) / M,
+          side: (k % 2 ? -1 : 1) * Math.min(3, half * 0.5),
+          v: v * (0.97 + 0.06 * r()),
+        });
       }
     } else if (scenario === 'rolling') {
       let u = r() * L;
@@ -167,15 +214,25 @@ export class HerdSim extends RaceSim {
         const straight = r() < 0.5;
         const base = front + (p * L) / pairs;
         // la curva más cercana a su lugar de la pista
-        const c = corners.reduce((a, x) => (Math.abs(wrap(x - base, L)) < Math.abs(wrap(a - base, L)) ? x : a), corners[0] ?? base);
+        const c = corners.reduce(
+          (a, x) => (Math.abs(wrap(x - base, L)) < Math.abs(wrap(a - base, L)) ? x : a),
+          corners[0] ?? base,
+        );
         const u0 = straight ? c + (20 + 40 * r()) / M : c - (150 + 150 * r()) / M;
         const v = (straight ? 0.9 : 0.8 + 0.15 * r()) * this.lineSpeed(u0);
         const handicap = (h0 + (h1 - h0) * Math.min(1, this.progress)) * (0.75 + 0.5 * r());
         const gap = (straight ? 10 + 20 * r() : 12 + 25 * r()) / M;
-        spots.push({ u: u0, side: (r() - 0.5) * half * 0.5, v: v * (1 - handicap / 2), partner: spots.length + 1, handicap });
+        spots.push({
+          u: u0,
+          side: (r() - 0.5) * half * 0.5,
+          v: v * (1 - handicap / 2),
+          partner: spots.length + 1,
+          handicap,
+        });
         spots.push({ u: u0 - gap, side: (r() - 0.5) * half * 0.6, v: v * (1 + 0.05 * r()), partner: spots.length - 1 });
       }
-      while (spots.length < A) spots.push({ u: front + L / 2 + (spots.length * 50) / M, side: 0, v: 0.8 * this.lineSpeed(front) });
+      while (spots.length < A)
+        spots.push({ u: front + L / 2 + (spots.length * 50) / M, side: 0, v: 0.8 * this.lineSpeed(front) });
     }
 
     this.cars = spots.map((s) => {
@@ -186,8 +243,16 @@ export class HerdSim extends RaceSim {
       randomTyres(car, r, track);
       car.damageLevel = damage;
       // offset: dónde arrancó respecto del primero (m), para saber quién va adelante
-      const e = { kind: 'agent', car, u: stationAt(track, car.x, car.y), dist: 0, offset: wrap(s.u - spots[0].u, L) * M,
-        lastHit: -1e9, lastTouch: -1e9, lastGrass: -1e9 };
+      const e = {
+        kind: 'agent',
+        car,
+        u: stationAt(track, car.x, car.y),
+        dist: 0,
+        offset: wrap(s.u - spots[0].u, L) * M,
+        lastHit: -1e9,
+        lastTouch: -1e9,
+        lastGrass: -1e9,
+      };
       this.newEpisode(e);
       e.front = !!s.handicap; // el de adelante en una persecución
       e.standing = !s.v;
@@ -231,7 +296,8 @@ export class HerdSim extends RaceSim {
   countdown(actions) {
     const { cars } = this;
     cars.forEach((e, k) => {
-      const a = ACTIONS * k, pedal = clamp(actions[a + 1]);
+      const a = ACTIONS * k,
+        pedal = clamp(actions[a + 1]);
       e.input = { steer: 0, throttle: Math.max(0, pedal), brake: Math.max(0, -pedal) };
       e.car.throttle = e.input.throttle;
       for (let s = 0; s < SUBSTEPS; s++) e.car.revBy(DT, clamp(actions[a + 2]), clamp(actions[a + 3]));
@@ -246,20 +312,30 @@ export class HerdSim extends RaceSim {
     }
     this.setLights();
     this.steps++;
-    return cars.map((e) => ({ obs: this.observe(e), reward: 0, done: false, truncated: false, info: { lap: null, track: this.id } }));
+    return cars.map((e) => ({
+      obs: this.observe(e),
+      reward: 0,
+      done: false,
+      truncated: false,
+      info: { lap: null, track: this.id },
+    }));
   }
 
   step(actions) {
     if (this.time < 0) return this.countdown(actions);
-    const { track, line, cars } = this;
-    const L = track.length, M = track.meters, lapM = L * M;
+    const { track, cars } = this;
+    const L = track.length,
+      M = track.meters,
+      lapM = L * M;
     const all = cars.map((e) => e.car);
     const n = cars.length;
-    const rewards = new Float32Array(n), penalty = new Float32Array(n);
+    const rewards = new Float32Array(n),
+      penalty = new Float32Array(n);
     const scale = this.scales[this.scenario] ?? 1;
     const laps = cars.map(() => null);
     cars.forEach((e, k) => {
-      const steer = clamp(actions[ACTIONS * k]), pedal = clamp(actions[ACTIONS * k + 1]);
+      const steer = clamp(actions[ACTIONS * k]),
+        pedal = clamp(actions[ACTIONS * k + 1]);
       e.input = { steer, throttle: Math.max(0, pedal), brake: Math.max(0, -pedal) };
     });
     for (let s = 0; s < SUBSTEPS; s++) {
@@ -303,7 +379,7 @@ export class HerdSim extends RaceSim {
         e.u = u;
         const m = du * M;
         e.dist += m;
-        rewards[k] += PROGRESS_REWARD * (m < 0 ? 1 : this.rewards.progress ?? 1) * m * scale;
+        rewards[k] += PROGRESS_REWARD * (m < 0 ? 1 : (this.rewards.progress ?? 1)) * m * scale;
         // pasto: por cada rueda (car.grass: la fracción de las ruedas que lo pisan)
         const grassPen = GRASS_TIME * 4 * (e.car.grass ?? (e.car.onGrass ? 1 : 0)) * DT;
         penalty[k] += grassPen;
@@ -324,7 +400,10 @@ export class HerdSim extends RaceSim {
           }
         }
       });
-      this.rubber.update(DT, cars.map((e) => ({ car: e.car, st: e.u, lat: sampleField(track.lat, track.W, e.car.x, e.car.y) })));
+      this.rubber.update(
+        DT,
+        cars.map((e) => ({ car: e.car, st: e.u, lat: sampleField(track.lat, track.W, e.car.x, e.car.y) })),
+      );
     }
     const dt = DT * SUBSTEPS;
     // la zona de al lado (inZone, src/sensors.js: la misma que ve la red)
@@ -374,7 +453,16 @@ export class HerdSim extends RaceSim {
       e.ret += rewards[k];
       const info = { lap: laps[k], track: this.id };
       if (truncated || retired) info.episode = this.episodeInfo(e, retired);
-      return { obs: null, reward: rewards[k], done: retired, truncated: truncated && !retired, info, e, rescue, retired };
+      return {
+        obs: null,
+        reward: rewards[k],
+        done: retired,
+        truncated: truncated && !retired,
+        info,
+        e,
+        rescue,
+        retired,
+      };
     });
     // rescatados: vuelven a la pista donde estaban, a un costado y despacio; los que abandonaron, arreglados y con un
     // episodio nuevo (sin medir más su largada)
@@ -385,8 +473,15 @@ export class HerdSim extends RaceSim {
         const old = e.car;
         const side = (this.rand() < 0.5 ? -1 : 1) * halfWidthAt(track, e.u) * M * 0.6;
         e.car = this.place(e.u, side, 10);
-        Object.assign(e.car, { setup: old.setup, wear: old.wear, wearRate: old.wearRate, ownTune: old.ownTune, ownAir: old.ownAir,
-          damageLevel: old.damageLevel, damage: r.retired ? NO_DAMAGE : old.damage });
+        Object.assign(e.car, {
+          setup: old.setup,
+          wear: old.wear,
+          wearRate: old.wearRate,
+          ownTune: old.ownTune,
+          ownAir: old.ownAir,
+          damageLevel: old.damageLevel,
+          damage: r.retired ? NO_DAMAGE : old.damage,
+        });
         e.car.placeOn(track);
         Object.assign(e, { grass: 0, stuck: 0, back: 0, waiting: false });
         if (r.retired) {
@@ -405,7 +500,19 @@ export class HerdSim extends RaceSim {
   newEpisode(e) {
     super.newEpisode(e);
     // marks: cuándo completó cada vuelta, contando desde lapFrom (donde arrancó el episodio)
-    Object.assign(e, { penalty: 0, penMarks: [0], zone: 0, grassPen: 0, paceLaps: [], grassTime: 0, marks: [this.time], lapFrom: e.dist, passDone: false, passFrom: null, passBonus: 0 });
+    Object.assign(e, {
+      penalty: 0,
+      penMarks: [0],
+      zone: 0,
+      grassPen: 0,
+      paceLaps: [],
+      grassTime: 0,
+      marks: [this.time],
+      lapFrom: e.dist,
+      passDone: false,
+      passFrom: null,
+      passBonus: 0,
+    });
   }
 
   // Pasada en la persecución: el de atrás pasa al de adelante y sigue adelante PASS_HOLD s sin que se toquen. Sólo se
@@ -451,9 +558,30 @@ export class HerdSim extends RaceSim {
     // para ver: la vuelta 1 de una largada contra la trazada arrancando igual y, en la grilla, la 2 (sin castigo)
     const launch = e.startLap && lapTimes.length >= 1 ? lapTimes[0] / e.startIdeal : null;
     const lap2 = e.standing && lapTimes.length >= 2 ? lapTimes[1] / ideal : null;
-    return { r: e.ret, l: e.steps, dist: e.epDist, track: this.id, scenario: this.scenario, damage: this.damage, retired,
-      hits: e.hits, penalty: e.penalty, zone: e.zone, grassPen: e.grassPen, laps: e.epDist / (this.track.length * this.track.meters), passes: e.passes, front: e.front, rescues: e.rescues, danger: e.danger, grass: e.grassTime, pace: mean(e.paceLaps), paceLaps: e.paceLaps.length,
-      time, launch, lap2 };
+    return {
+      r: e.ret,
+      l: e.steps,
+      dist: e.epDist,
+      track: this.id,
+      scenario: this.scenario,
+      damage: this.damage,
+      retired,
+      hits: e.hits,
+      penalty: e.penalty,
+      zone: e.zone,
+      grassPen: e.grassPen,
+      laps: e.epDist / (this.track.length * this.track.meters),
+      passes: e.passes,
+      front: e.front,
+      rescues: e.rescues,
+      danger: e.danger,
+      grass: e.grassTime,
+      pace: mean(e.paceLaps),
+      paceLaps: e.paceLaps.length,
+      time,
+      launch,
+      lap2,
+    };
   }
 }
 

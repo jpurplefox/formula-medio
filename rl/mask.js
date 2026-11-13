@@ -11,7 +11,8 @@ export function packMask({ W, H, road }) {
 
 export function unpackMask(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const W = view.getUint32(0, true), H = view.getUint32(4, true);
+  const W = view.getUint32(0, true),
+    H = view.getUint32(4, true);
   const road = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) road[i] = (bytes[8 + (i >> 3)] >> (i & 7)) & 1;
   return { W, H, road };

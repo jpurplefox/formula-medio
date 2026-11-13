@@ -4,8 +4,11 @@
 import { airDensity, DEFAULT_TUNE } from './dynamics.js';
 
 export const T = { GRASS: 0, ROAD: 1, WALL: 3 };
-export const KERB_W = 0.9; // ancho del piano por defecto (en celdas)
-export const DEFAULT_KERB = [[235, 235, 235], [200, 30, 30]]; // blanco y rojo
+const KERB_W = 0.9; // ancho del piano por defecto (en celdas)
+export const DEFAULT_KERB = [
+  [235, 235, 235],
+  [200, 30, 30],
+]; // blanco y rojo
 export const MAX_KERB_COLORS = 4;
 // Lo que hay al costado de la pista donde hay piano, de adentro hacia afuera:
 //   piano      lomo con franjas de colores y serrucho (escalones a lo largo), de ancho width
@@ -25,7 +28,16 @@ export const RIDGE_DEPTH = 0.35; // cuánto baja el lomo al principio de cada es
 export const SAUSAGE_W = 0.45; // ancho de la salchicha (celdas)
 export const SAUSAGE_H = 0.09; // altura de la salchicha (celdas)
 
-const N8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+const N8 = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+  [1, 1],
+  [1, -1],
+  [-1, 1],
+  [-1, -1],
+];
 const N4 = N8.slice(0, 4);
 
 export function loadImage(src) {
@@ -56,24 +68,38 @@ export function buildTrackFromMask({ W, H, road: dark }, def, elevation = null) 
 // A partir del trazado sacado de la telemetría (tools/layout.py): la línea central en metros desde la largada y
 // las alturas. Cada celda mide CELL_M metros; alrededor queda lugar para el pasto, los muros y los árboles.
 // def.rotate (grados): gira el trazado, para que el mapa quede orientado como el dibujo de siempre
-const CELL_M = 2, LAYOUT_MARGIN = 45; // celdas
+const CELL_M = 2,
+  LAYOUT_MARGIN = 45; // celdas
 export function buildTrackFromLayout(layout, def) {
-  const a = ((def.rotate ?? 0) * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+  const a = ((def.rotate ?? 0) * Math.PI) / 180,
+    c = Math.cos(a),
+    s = Math.sin(a);
   const turned = layout.points.map(([x, y]) => [x * c - y * s, x * s + y * c]);
-  const x0 = Math.min(...turned.map((p) => p[0])), y0 = Math.min(...turned.map((p) => p[1]));
+  const x0 = Math.min(...turned.map((p) => p[0])),
+    y0 = Math.min(...turned.map((p) => p[1]));
   const pts = turned.map(([x, y]) => [(x - x0) / CELL_M + LAYOUT_MARGIN, (y - y0) / CELL_M + LAYOUT_MARGIN]);
   const W = Math.ceil(Math.max(...pts.map((p) => p[0])) + LAYOUT_MARGIN);
   const H = Math.ceil(Math.max(...pts.map((p) => p[1])) + LAYOUT_MARGIN);
   const n = pts.length;
   const path = {
-    n, x: Float64Array.from(pts, (p) => p[0]), y: Float64Array.from(pts, (p) => p[1]),
+    n,
+    x: Float64Array.from(pts, (p) => p[0]),
+    y: Float64Array.from(pts, (p) => p[1]),
     wrap: (b) => ((b % n) + n) % n,
     // la telemetría no trae los bordes (ver tools/layout.py): el ancho es el del circuito
     halfWidth: (def.widthMeters ?? 14) / 2 / CELL_M,
   };
   // largada: el primer punto, mirando hacia el siguiente
-  const dx = path.x[1] - path.x[0], dy = path.y[1] - path.y[0], l = Math.hypot(dx, dy);
-  const start = (road) => ({ x: path.x[0], y: path.y[0], dx: dx / l, dy: dy / l, half: lineHalf(road, W, H, path.x[0], path.y[0], dx / l, dy / l, def) });
+  const dx = path.x[1] - path.x[0],
+    dy = path.y[1] - path.y[0],
+    l = Math.hypot(dx, dy);
+  const start = (road) => ({
+    x: path.x[0],
+    y: path.y[0],
+    dx: dx / l,
+    dy: dy / l,
+    half: lineHalf(road, W, H, path.x[0], path.y[0], dx / l, dy / l, def),
+  });
   const elevation = { lapLengthMeters: layout.lapLengthMeters, heightsMeters: layout.heightsMeters };
   return buildTrackFromPath(path, W, H, def, elevation, start);
 }
@@ -87,7 +113,8 @@ function buildTrackFromPath(path, W, H, def, elevation, start) {
   const st = stations(path);
   const length = st[path.n]; // largo de la línea central, en celdas
   const meters = lapMeters / length;
-  const halfWidths = path.halfWidths ?? new Float32Array(path.n).fill(def.widthMeters ? def.widthMeters / 2 / meters : path.halfWidth);
+  const halfWidths =
+    path.halfWidths ?? new Float32Array(path.n).fill(def.widthMeters ? def.widthMeters / 2 / meters : path.halfWidth);
   const halfWidth = [...halfWidths].sort((a, b) => a - b)[path.n >> 1]; // el típico
 
   // 2) Reconstruimos la pista como una cinta de ancho constante alrededor de la línea central:
@@ -107,7 +134,16 @@ function buildTrackFromPath(path, W, H, def, elevation, start) {
   const { left: kerbLeft, right: kerbRight, sausageLeft, sausageRight } = kerbFlags(path, st, curv, kerbStyle.sausage);
   const corners = findCorners(path, st, curv, meters);
   const { left: runoffLeft, right: runoffRight } = runoffSurfaces(corners, st[path.n], meters, def.surfaces);
-  const height = computeHeight(elevation, (def.elevationScale ?? 1) / meters, station, length, sdf, -(runoff + 1), W, H);
+  const height = computeHeight(
+    elevation,
+    (def.elevationScale ?? 1) / meters,
+    station,
+    length,
+    sdf,
+    -(runoff + 1),
+    W,
+    H,
+  );
 
   const trees = placeTrees(dist, tiles, W, H, runoff);
   for (const t of trees) t.z = sampleField(height, W, t.x, t.y);
@@ -115,13 +151,39 @@ function buildTrackFromPath(path, W, H, def, elevation, start) {
   for (const b of boards) b.z = sampleField(height, W, b.x, b.y);
 
   return {
-    W, H, meters, runoff, halfWidth, halfWidths, tiles, road, sdf, station, lat, length, kerbLeft, kerbRight, runoffLeft, runoffRight, height,
-    sausageLeft, sausageRight, kerbStyle,
+    W,
+    H,
+    meters,
+    runoff,
+    halfWidth,
+    halfWidths,
+    tiles,
+    road,
+    sdf,
+    station,
+    lat,
+    length,
+    kerbLeft,
+    kerbRight,
+    runoffLeft,
+    runoffRight,
+    height,
+    sausageLeft,
+    sausageRight,
+    kerbStyle,
     path: { n: path.n, x: path.x, y: path.y, st }, // línea central: puntos y su posición acumulada
-    progress, maxProgress, line, spawn, trees, boards, scale: def.scale ?? 3, name: def.name,
+    progress,
+    maxProgress,
+    line,
+    spawn,
+    trees,
+    boards,
+    scale: def.scale ?? 3,
+    name: def.name,
     kerbColors: def.kerb ?? DEFAULT_KERB, // colores de las franjas del piano, en orden
     // el aire (más arriba, menos denso) y la puesta a punto por defecto de los autos ahí (dynamics.js)
-    air: airDensity(def.altitude ?? 0), tune: def.tune ?? DEFAULT_TUNE,
+    air: airDensity(def.altitude ?? 0),
+    tune: def.tune ?? DEFAULT_TUNE,
   };
 }
 
@@ -244,12 +306,18 @@ function traceCenterline(road, line, W, H, smooth) {
     while (t < 40 && onRoad(x + nx * t, y + ny * t)) t += 0.25;
     return t;
   };
-  let px = line.x, py = line.y, dx = line.dx, dy = line.dy;
-  const xs = [], ys = [], widths = [];
+  let px = line.x,
+    py = line.y,
+    dx = line.dx,
+    dy = line.dy;
+  const xs = [],
+    ys = [],
+    widths = [];
   for (let iter = 0; iter < 20000; iter++) {
     // centrarse en la sección transversal
     for (let k = 0; k < 2; k++) {
-      const a = reach(px, py, -dy, dx), b = reach(px, py, dy, -dx);
+      const a = reach(px, py, -dy, dx),
+        b = reach(px, py, dy, -dx);
       px += (-dy * (a - b)) / 2;
       py += (dx * (a - b)) / 2;
       if (k === 1) widths.push(a + b);
@@ -262,7 +330,8 @@ function traceCenterline(road, line, W, H, smooth) {
     if (n > 50 && Math.hypot(px - xs[0], py - ys[0]) < Math.max(1.5, widths[widths.length - 1] / 2)) break;
     // rumbo: hacia dónde venimos avanzando, suavizado
     if (n > 4) {
-      let ndx = px - xs[n - 5], ndy = py - ys[n - 5];
+      let ndx = px - xs[n - 5],
+        ndy = py - ys[n - 5];
       const l = Math.hypot(ndx, ndy) || 1;
       dx = dx * 0.5 + (ndx / l) * 0.5;
       dy = dy * 0.5 + (ndy / l) * 0.5;
@@ -273,13 +342,18 @@ function traceCenterline(road, line, W, H, smooth) {
     px += dx;
     py += dy;
   }
-  let x = Float64Array.from(xs), y = Float64Array.from(ys);
+  let x = Float64Array.from(xs),
+    y = Float64Array.from(ys);
   const n = x.length;
   const wrap = (b) => ((b % n) + n) % n;
   for (let pass = 0; pass < smooth; pass++) {
-    const nx = new Float64Array(n), ny = new Float64Array(n);
+    const nx = new Float64Array(n),
+      ny = new Float64Array(n);
     for (let b = 0; b < n; b++) {
-      for (let k = -3; k <= 3; k++) { nx[b] += x[wrap(b + k)]; ny[b] += y[wrap(b + k)]; }
+      for (let k = -3; k <= 3; k++) {
+        nx[b] += x[wrap(b + k)];
+        ny[b] += y[wrap(b + k)];
+      }
       nx[b] /= 7;
       ny[b] /= 7;
     }
@@ -310,15 +384,22 @@ function ribbon({ n, x, y, wrap }, st, halfWidths, W, H) {
   const station = new Float32Array(W * H).fill(-1);
   const lat = new Float32Array(W * H);
   for (let b = 0; b < n; b++) {
-    const ax = x[b], ay = y[b], bx = x[wrap(b + 1)], by = y[wrap(b + 1)];
-    const ex = bx - ax, ey = by - ay;
+    const ax = x[b],
+      ay = y[b],
+      bx = x[wrap(b + 1)],
+      by = y[wrap(b + 1)];
+    const ex = bx - ax,
+      ey = by - ay;
     const len2 = ex * ex + ey * ey || 1e-9;
     const len = Math.sqrt(len2);
-    const x0 = Math.max(0, Math.floor(Math.min(ax, bx) - R)), x1 = Math.min(W - 1, Math.ceil(Math.max(ax, bx) + R));
-    const y0 = Math.max(0, Math.floor(Math.min(ay, by) - R)), y1 = Math.min(H - 1, Math.ceil(Math.max(ay, by) + R));
+    const x0 = Math.max(0, Math.floor(Math.min(ax, bx) - R)),
+      x1 = Math.min(W - 1, Math.ceil(Math.max(ax, bx) + R));
+    const y0 = Math.max(0, Math.floor(Math.min(ay, by) - R)),
+      y1 = Math.min(H - 1, Math.ceil(Math.max(ay, by) + R));
     for (let cy = y0; cy <= y1; cy++) {
       for (let cx = x0; cx <= x1; cx++) {
-        const px = cx + 0.5 - ax, py = cy + 0.5 - ay;
+        const px = cx + 0.5 - ax,
+          py = cy + 0.5 - ay;
         const t = Math.max(0, Math.min(1, (px * ex + py * ey) / len2));
         const dd = Math.hypot(px - ex * t, py - ey * t);
         const i = cy * W + cx;
@@ -342,12 +423,17 @@ function ribbon({ n, x, y, wrap }, st, halfWidths, W, H) {
 
 // Medio ancho de la pista (celdas) en una posición st de la línea central
 export function halfWidthAt(track, st) {
-  const { halfWidths, path: { n, st: s } } = track;
-  let lo = 0, hi = n;
+  const {
+    halfWidths,
+    path: { n, st: s },
+  } = track;
+  let lo = 0,
+    hi = n;
   const u = ((st % s[n]) + s[n]) % s[n];
   while (hi - lo > 1) {
     const mid = (lo + hi) >> 1;
-    if (s[mid] <= u) lo = mid; else hi = mid;
+    if (s[mid] <= u) lo = mid;
+    else hi = mid;
   }
   const t = (u - s[lo]) / Math.max(1e-9, s[lo + 1] - s[lo]);
   return halfWidths[lo] * (1 - t) + halfWidths[(lo + 1) % n] * t;
@@ -357,22 +443,21 @@ export function halfWidthAt(track, st) {
 // Donde salta (en la largada, o entre dos tramos de pista cercanos) usa la celda más cercana.
 export function stationAt(track, x, y) {
   const { W, station } = track;
-  const gx = x - 0.5, gy = y - 0.5;
-  const x0 = Math.floor(gx), y0 = Math.floor(gy);
-  const u = gx - x0, v = gy - y0;
+  const gx = x - 0.5,
+    gy = y - 0.5;
+  const x0 = Math.floor(gx),
+    y0 = Math.floor(gy);
+  const u = gx - x0,
+    v = gy - y0;
   const j = y0 * W + x0;
-  const a = station[j], b = station[j + 1], c = station[j + W], d = station[j + W + 1];
-  const lo = Math.min(a, b, c, d), hi = Math.max(a, b, c, d);
+  const a = station[j],
+    b = station[j + 1],
+    c = station[j + W],
+    d = station[j + W + 1];
+  const lo = Math.min(a, b, c, d),
+    hi = Math.max(a, b, c, d);
   if (lo < 0 || hi - lo > 4) return station[Math.floor(y) * W + Math.floor(x)];
   return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
-}
-
-// Cuánto piano hay en este punto (0 = nada, 1 = ancho completo; en las puntas va de 0 a 1).
-// El piano va por fuera del borde: sdf entre -KERB_W·k y 0.
-export function kerbAt(track, x, y) {
-  const st = stationAt(track, x, y);
-  if (st < 0) return 0;
-  return kerbAmount(sampleField(track.lat, track.W, x, y) > 0 ? track.kerbRight : track.kerbLeft, st);
 }
 
 // Hasta dónde puede llegar lo que hay al costado de la pista (piano, verde y salchicha), en celdas desde el borde
@@ -380,7 +465,7 @@ export const edgeReach = (style) => style.width + style.green + SAUSAGE_W;
 
 // Bordes de las franjas del costado (distancias al borde de la pista, negativas: hacia afuera), con k = cuánto
 // piano hay y q = cuánta salchicha: el piano va de kerb a 0, el verde de green a kerb y la salchicha de sausage a green
-export function edgeBounds(style, k, q) {
+function edgeBounds(style, k, q) {
   const kerb = -style.width * k;
   const green = kerb - style.green * k;
   return { kerb, green, sausage: green - SAUSAGE_W * q };
@@ -393,7 +478,8 @@ export function edgeAt(style, s, k, q, st) {
   const b = edgeBounds(style, k, q);
   if (k > 0.02 && s > b.kerb) return { surface: 'kerb', lift: kerbLift(s, b.kerb, k, st) };
   if (k > 0.02 && s > b.green) return { surface: 'green', lift: 0 };
-  if (q > 0.02 && s > b.sausage) return { surface: 'sausage', lift: SAUSAGE_H * q * Math.sin((Math.PI * (s - b.sausage)) / (b.green - b.sausage)) };
+  if (q > 0.02 && s > b.sausage)
+    return { surface: 'sausage', lift: SAUSAGE_H * q * Math.sin((Math.PI * (s - b.sausage)) / (b.green - b.sausage)) };
   return { surface: 'runoff', lift: 0 }; // más allá: la escapatoria (ver edgeInfo)
 }
 
@@ -404,13 +490,6 @@ export function kerbLift(s, outer, k, st) {
   const r = st / RIDGE - Math.floor(st / RIDGE);
   const saw = r < 0.8 ? r / 0.8 : (1 - r) / 0.2;
   return KERB_H * k * Math.sin(Math.PI * t) * (1 - RIDGE_DEPTH * (1 - saw));
-}
-
-// Cuánta salchicha hay en este punto (0..1)
-export function sausageAt(track, x, y) {
-  const st = stationAt(track, x, y);
-  if (st < 0) return 0;
-  return kerbAmount(sampleField(track.lat, track.W, x, y) > 0 ? track.sausageRight : track.sausageLeft, st);
 }
 
 // Qué hay en un punto: 'road' (la pista), 'kerb' (el piano, por fuera del borde), 'green' (la franja verde detrás
@@ -447,7 +526,8 @@ export function runoffAt(kinds, st) {
 
 export function kerbAmount(amounts, st) {
   const n = amounts.length;
-  const i = Math.floor(st), t = st - i;
+  const i = Math.floor(st),
+    t = st - i;
   return amounts[i % n] * (1 - t) + amounts[(i + 1) % n] * t;
 }
 
@@ -484,8 +564,10 @@ export function curvature({ n, x, y, wrap }) {
 
 function kerbFlags({ n, wrap }, st, curv, sausages = true) {
   const L = Math.ceil(st[n]) + 1;
-  const left = new Uint8Array(L), right = new Uint8Array(L);
-  const sLeft = new Uint8Array(L), sRight = new Uint8Array(L);
+  const left = new Uint8Array(L),
+    right = new Uint8Array(L);
+  const sLeft = new Uint8Array(L),
+    sRight = new Uint8Array(L);
   let b = 0;
   for (let u = 0; u < L; u++) {
     while (b < n - 1 && st[b + 1] <= u) b++;
@@ -501,7 +583,8 @@ function kerbFlags({ n, wrap }, st, curv, sausages = true) {
       if (kb < -KERB_EXIT) right[u] = 1;
     }
   }
-  const kl = taper(cleanRuns(left)), kr = taper(cleanRuns(right));
+  const kl = taper(cleanRuns(left)),
+    kr = taper(cleanRuns(right));
   // la salchicha va detrás de un piano: donde no hay piano, tampoco
   const sl = taper(cleanRuns(sLeft)).map((q, u) => Math.min(q, kl[u]));
   const sr = taper(cleanRuns(sRight)).map((q, u) => Math.min(q, kr[u]));
@@ -532,7 +615,8 @@ function findCorners(path, st, curv, meters) {
     const b = wrap(start + k);
     if (!bent(b)) continue;
     const sign = Math.sign(curv[b]);
-    let peak = 0, end = k;
+    let peak = 0,
+      end = k;
     while (end < n && bent(wrap(start + end)) && Math.sign(curv[wrap(start + end)]) === sign) {
       peak = Math.max(peak, Math.abs(curv[wrap(start + end)]));
       end++;
@@ -560,16 +644,19 @@ function brakeBoards(path, st, corners, meters, sdf, W, H) {
       // punto de la línea central en esa posición
       let b = 0;
       while (b < n - 1 && st[b + 1] <= target) b++;
-      const dx = x[wrap(b + 3)] - x[wrap(b - 3)], dy = y[wrap(b + 3)] - y[wrap(b - 3)];
+      const dx = x[wrap(b + 3)] - x[wrap(b - 3)],
+        dy = y[wrap(b + 3)] - y[wrap(b - 3)];
       const len = Math.hypot(dx, dy) || 1;
       // normal hacia la derecha de la marcha (y crece hacia abajo); el cartel va del lado contrario a la curva
-      const nx = -dy / len, ny = dx / len;
+      const nx = -dy / len,
+        ny = dx / len;
       const side = -c.sign;
       // buscamos el borde de la pista y nos alejamos un poco más
       let off = 0;
       while (off < 30 && sampleField(sdf, W, x[b] + nx * side * off, y[b] + ny * side * off) > 0) off += 0.25;
       off += BOARD_OFFSET;
-      const bx = x[b] + nx * side * off, by = y[b] + ny * side * off;
+      const bx = x[b] + nx * side * off,
+        by = y[b] + ny * side * off;
       // si cae sobre otra parte de la pista (o fuera del mapa), no va
       if (bx < 2 || by < 2 || bx >= W - 2 || by >= H - 2 || sampleField(sdf, W, bx, by) > -1) continue;
       boards.push({ x: bx, y: by, meters: d });
@@ -589,16 +676,20 @@ function brakeBoards(path, st, corners, meters, sdf, W, H) {
 const RUNOFF_SLOW = 60; // m: radio por debajo del cual la curva es lenta (escapatoria de asfalto)
 const RUNOFF_FAST = 250; // m: radio hasta el cual una curva rápida lleva leca
 const GRAVEL_STRAIGHT = 100; // m de recta antes para que se llegue rápido y haga falta leca
-const ASPHALT_BEFORE = 80, ASPHALT_AFTER = 60; // m de asfalto antes del comienzo de la curva lenta y después del final
-const GRAVEL_BEFORE = 20, GRAVEL_AFTER = 80; // m de leca antes y después de la curva rápida
+const ASPHALT_BEFORE = 80,
+  ASPHALT_AFTER = 60; // m de asfalto antes del comienzo de la curva lenta y después del final
+const GRAVEL_BEFORE = 20,
+  GRAVEL_AFTER = 80; // m de leca antes y después de la curva rápida
 
 function runoffSurfaces(corners, length, meters, surfaces = []) {
   const L = Math.ceil(length) + 1;
-  const left = new Uint8Array(L), right = new Uint8Array(L);
+  const left = new Uint8Array(L),
+    right = new Uint8Array(L);
   const paint = (side, from, to, kind) => {
     const k = RUNOFF.indexOf(kind);
     if (k < 0) return;
-    const a = Math.floor(from / meters), b = Math.ceil(to / meters);
+    const a = Math.floor(from / meters),
+      b = Math.ceil(to / meters);
     for (let u = a; u <= b; u++) {
       const i = ((u % L) + L) % L;
       if (side !== 'right') left[i] = k;
@@ -609,11 +700,22 @@ function runoffSurfaces(corners, length, meters, surfaces = []) {
   const outside = (c) => (c.sign > 0 ? 'left' : 'right');
   for (const c of corners) {
     if (c.radius >= RUNOFF_SLOW && c.radius <= RUNOFF_FAST && c.straight >= GRAVEL_STRAIGHT) {
-      paint(outside(c), c.from * meters - GRAVEL_BEFORE, (c.to + (c.to < c.from ? length : 0)) * meters + GRAVEL_AFTER, 'gravel');
+      paint(
+        outside(c),
+        c.from * meters - GRAVEL_BEFORE,
+        (c.to + (c.to < c.from ? length : 0)) * meters + GRAVEL_AFTER,
+        'gravel',
+      );
     }
   }
   for (const c of corners) {
-    if (c.radius < RUNOFF_SLOW) paint(outside(c), c.from * meters - ASPHALT_BEFORE, (c.to + (c.to < c.from ? length : 0)) * meters + ASPHALT_AFTER, 'asphalt');
+    if (c.radius < RUNOFF_SLOW)
+      paint(
+        outside(c),
+        c.from * meters - ASPHALT_BEFORE,
+        (c.to + (c.to < c.from ? length : 0)) * meters + ASPHALT_AFTER,
+        'asphalt',
+      );
   }
   for (const [from, to, side, kind] of surfaces) paint(side, from, to + (to < from ? length * meters : 0), kind);
   return { left, right };
@@ -663,14 +765,16 @@ function computeHeight(elevation, cellsPerMeter, station, length, sdf, limit, W,
   const m = hs.length;
   const profile = (f) => {
     const t = (((f % 1) + 1) % 1) * m;
-    const i = Math.floor(t), u = t - i;
+    const i = Math.floor(t),
+      u = t - i;
     return (hs[i % m] * (1 - u) + hs[(i + 1) % m] * u) * cellsPerMeter;
   };
 
   // valores fijos sobre la pista, propagados al resto por cercanía
   const known = new Uint8Array(W * H);
   const queue = new Int32Array(W * H);
-  let head = 0, tail = 0;
+  let head = 0,
+    tail = 0;
   for (let i = 0; i < W * H; i++) {
     if (station[i] >= 0 && sdf[i] >= limit) {
       height[i] = profile(station[i] / length);
@@ -681,12 +785,18 @@ function computeHeight(elevation, cellsPerMeter, station, length, sdf, limit, W,
   const seen = known.slice();
   while (head < tail) {
     const j = queue[head++];
-    const x = j % W, y = (j / W) | 0;
+    const x = j % W,
+      y = (j / W) | 0;
     for (const [dx, dy] of N4) {
-      const nx = x + dx, ny = y + dy;
+      const nx = x + dx,
+        ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
       const k = ny * W + nx;
-      if (!seen[k]) { seen[k] = 1; height[k] = height[j]; queue[tail++] = k; }
+      if (!seen[k]) {
+        seen[k] = 1;
+        height[k] = height[j];
+        queue[tail++] = k;
+      }
     }
   }
   // suavizado que respeta la pista: el terreno queda en lomas suaves entre tramos
@@ -724,16 +834,23 @@ function boxBlurInPlace(a, W, H, r) {
 // Interpola un campo definido en el centro de las celdas (bilineal).
 // Es lo que hace que los bordes se vean curvos y no en escalones.
 export function sampleField(field, W, x, y) {
-  const gx = x - 0.5, gy = y - 0.5;
-  const x0 = Math.floor(gx), y0 = Math.floor(gy);
-  const u = gx - x0, v = gy - y0;
+  const gx = x - 0.5,
+    gy = y - 0.5;
+  const x0 = Math.floor(gx),
+    y0 = Math.floor(gy);
+  const u = gx - x0,
+    v = gy - y0;
   const i = y0 * W + x0;
-  const a = field[i], b = field[i + 1], c = field[i + W], d = field[i + W + 1];
+  const a = field[i],
+    b = field[i + 1],
+    c = field[i + W],
+    d = field[i + W + 1];
   return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
 }
 
 function idx(W, H, x, y) {
-  const ix = Math.floor(x), iy = Math.floor(y);
+  const ix = Math.floor(x),
+    iy = Math.floor(y);
   if (ix < 0 || iy < 0 || ix >= W || iy >= H) return -1;
   return iy * W + ix;
 }
@@ -741,25 +858,36 @@ function idx(W, H, x, y) {
 function largestComponent(mask, W, H) {
   const label = new Int32Array(W * H);
   const stack = new Int32Array(W * H);
-  let best = 0, bestSize = 0, next = 0;
+  let best = 0,
+    bestSize = 0,
+    next = 0;
   for (let i = 0; i < W * H; i++) {
     if (!mask[i] || label[i]) continue;
     next++;
-    let size = 0, sp = 0;
+    let size = 0,
+      sp = 0;
     stack[sp++] = i;
     label[i] = next;
     while (sp) {
       const j = stack[--sp];
       size++;
-      const x = j % W, y = (j / W) | 0;
+      const x = j % W,
+        y = (j / W) | 0;
       for (const [dx, dy] of N8) {
-        const nx = x + dx, ny = y + dy;
+        const nx = x + dx,
+          ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
         const k = ny * W + nx;
-        if (mask[k] && !label[k]) { label[k] = next; stack[sp++] = k; }
+        if (mask[k] && !label[k]) {
+          label[k] = next;
+          stack[sp++] = k;
+        }
       }
     }
-    if (size > bestSize) { bestSize = size; best = next; }
+    if (size > bestSize) {
+      bestSize = size;
+      best = next;
+    }
   }
   const out = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) out[i] = label[i] === best ? 1 : 0;
@@ -779,12 +907,17 @@ function fillHoles(mask, W, H, maxSize) {
     while (sp) {
       const j = stack[--sp];
       comp.push(j);
-      const x = j % W, y = (j / W) | 0;
+      const x = j % W,
+        y = (j / W) | 0;
       for (const [dx, dy] of N4) {
-        const nx = x + dx, ny = y + dy;
+        const nx = x + dx,
+          ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
         const k = ny * W + nx;
-        if (!mask[k] && !seen[k]) { seen[k] = 1; stack[sp++] = k; }
+        if (!mask[k] && !seen[k]) {
+          seen[k] = 1;
+          stack[sp++] = k;
+        }
       }
     }
     if (comp.length <= maxSize) for (const j of comp) mask[j] = 1;
@@ -821,18 +954,28 @@ function openThin(mask, W, H, r) {
 function distanceFrom(mask, W, H, maxDist) {
   const dist = new Int16Array(W * H).fill(-1);
   const queue = new Int32Array(W * H);
-  let head = 0, tail = 0;
-  for (let i = 0; i < W * H; i++) if (mask[i]) { dist[i] = 0; queue[tail++] = i; }
+  let head = 0,
+    tail = 0;
+  for (let i = 0; i < W * H; i++)
+    if (mask[i]) {
+      dist[i] = 0;
+      queue[tail++] = i;
+    }
   while (head < tail) {
     const j = queue[head++];
     const d = dist[j];
     if (d >= maxDist) continue;
-    const x = j % W, y = (j / W) | 0;
+    const x = j % W,
+      y = (j / W) | 0;
     for (const [dx, dy] of N8) {
-      const nx = x + dx, ny = y + dy;
+      const nx = x + dx,
+        ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
       const k = ny * W + nx;
-      if (dist[k] < 0) { dist[k] = d + 1; queue[tail++] = k; }
+      if (dist[k] < 0) {
+        dist[k] = d + 1;
+        queue[tail++] = k;
+      }
     }
   }
   return dist;
@@ -877,9 +1020,11 @@ function computeProgress(drivable, W, H, line) {
     const j = heap.pop();
     if (done[j]) continue;
     done[j] = 1;
-    const x = j % W, y = (j / W) | 0;
+    const x = j % W,
+      y = (j / W) | 0;
     for (const [dx, dy] of N8) {
-      const nx = x + dx, ny = y + dy;
+      const nx = x + dx,
+        ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
       const k = ny * W + nx;
       if (done[k] || !drivable(k)) continue;
@@ -897,8 +1042,13 @@ function computeProgress(drivable, W, H, line) {
 }
 
 class MinHeap {
-  constructor() { this.ids = []; this.keys = []; }
-  get size() { return this.ids.length; }
+  constructor() {
+    this.ids = [];
+    this.keys = [];
+  }
+  get size() {
+    return this.ids.length;
+  }
   push(id, key) {
     const { ids, keys } = this;
     let i = ids.length;
@@ -907,15 +1057,18 @@ class MinHeap {
     while (i > 0) {
       const p = (i - 1) >> 1;
       if (keys[p] <= key) break;
-      ids[i] = ids[p]; keys[i] = keys[p];
+      ids[i] = ids[p];
+      keys[i] = keys[p];
       i = p;
     }
-    ids[i] = id; keys[i] = key;
+    ids[i] = id;
+    keys[i] = key;
   }
   pop() {
     const { ids, keys } = this;
     const top = ids[0];
-    const id = ids.pop(), key = keys.pop();
+    const id = ids.pop(),
+      key = keys.pop();
     const n = ids.length;
     if (n) {
       let i = 0;
@@ -924,10 +1077,12 @@ class MinHeap {
         if (c >= n) break;
         if (c + 1 < n && keys[c + 1] < keys[c]) c++;
         if (keys[c] >= key) break;
-        ids[i] = ids[c]; keys[i] = keys[c];
+        ids[i] = ids[c];
+        keys[i] = keys[c];
         i = c;
       }
-      ids[i] = id; keys[i] = key;
+      ids[i] = id;
+      keys[i] = key;
     }
     return top;
   }
@@ -935,7 +1090,7 @@ class MinHeap {
 
 function placeTrees(dist, tiles, W, H, runoff) {
   let seed = 1234567;
-  const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const rand = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
   const trees = [];
   for (let y = 2; y < H - 2; y++) {
     for (let x = 2; x < W - 2; x++) {

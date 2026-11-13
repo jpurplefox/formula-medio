@@ -3,8 +3,8 @@
 // de carreras como las del juego (rl/race_eval.js), y la red lo ve en sus entradas (sensors.js)
 
 export const LIGHT_FIRST = 1; // cuándo se prende la primera (s)
-export const LIGHT_GAP = 1; // entre una luz y la siguiente (s)
-export const LIGHT_HOLD = [0.4, 2.6]; // cuánto quedan las 5 prendidas antes de apagarse (s, al azar entre estos)
+const LIGHT_GAP = 1; // entre una luz y la siguiente (s)
+const LIGHT_HOLD = [0.4, 2.6]; // cuánto quedan las 5 prendidas antes de apagarse (s, al azar entre estos)
 
 // cuánto dura la cuenta desde que arranca hasta que se apagan, con una espera de hold s con las 5 prendidas
 export const lightsDuration = (hold) => LIGHT_FIRST + 4 * LIGHT_GAP + hold;

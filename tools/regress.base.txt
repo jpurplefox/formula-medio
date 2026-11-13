@@ -1,0 +1,9 @@
+solo   4800 pasos 21dbce680635b304
+pack   600 pasos a64cb622f5aa1690
+start  1000 pasos c1a3bc337af190bf
+chase  1200 pasos ad1a293600dbcfc6
+race   4800 pasos aba7dacbcb4cbb48
+monza        toques por auto 6.0 (provocados 4.9) · pasto por auto 2.2 s (una rueda 0.3 s) · 1.ª vuelta +1.6 s · ganó en 169.7 s · el jugador terminó 15.º
+interlagos   toques por auto 5.5 (provocados 4.5) · pasto por auto 2.6 s (una rueda 0.4 s) · 1.ª vuelta +-0.3 s · ganó en 159.0 s · el jugador terminó 7.º
+daños por carrera: 14.50 autos con algo roto · 0.50 con un alerón destrozado · 0.00 pinchazos · 0.00 abandonos
+total: toques por auto 5.74 (provocados 4.69) · pasto por auto 2.43 s (una rueda 0.35 s) · 1.ª vuelta +0.68 s (jugador +0.00 s) · tiempo del ganador 164.35 s · jugador 11.00.º
