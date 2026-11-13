@@ -285,33 +285,35 @@ Game-style race (`GAME=1`, Hard as it was then, with the grass rescue described 
 
 ## How to run it
 
-`rl/curriculum.sh` trains the game network's recipe from scratch: phases 1–4 of the third attempt, 5–6 of the
-fourth, and a phase 7 for pace against faster rivals (~3 h). In phase 7 the rivals have 8 % more grip and power
-(`--rivals-boost 0.08`) and the classic AI runs at 1–1.1 pace: among equal networks the pace only improves up to that
-of the car ahead, so it needs faster cars ahead. It needs `rl/.venv` and the tracks exported in `rl/tracks/`
-(docs/ai.md, "How it is trained").
+`rl/curriculum.sh` trains the game network's recipe from scratch: the herd curriculum of v22 (`models/v22/fase18.json`),
+18 phases and ~5.5 h. Every car in each race is the network that is learning (`rl/herd.js`), with real damage from
+phase 1: phase 1 alone, phase 2 every scenario with opponents, phases 3–5 one skill each (launch, pace, chase),
+phase 6 integration and three more cycles of the three skills and an integration (phases 7–18). Each phase rewards
+one group of scenarios (`Budgets.GROUPS` in `rl/train.py`); the others are budgets that keep them from getting worse
+than in the previous phase. The script's header has the details. It needs `rl/.venv` and the tracks exported in
+`rl/tracks/` (docs/ai.md, "How it is trained").
 
 ```bash
-NAME=v5 sh rl/curriculum.sh        # models in models/v5/, logs and checkpoints in rl/runs/v5faseN
-NAME=v5 sh rl/curriculum.sh 5      # redo from phase 5 (uses rl/runs/v5fase4/model.zip)
+NAME=v23 sh rl/curriculum.sh        # models in models/v23/, logs and checkpoints in rl/runs/v23faseN
+NAME=v23 sh rl/curriculum.sh 7      # redo from phase 7 (uses rl/runs/v23fase6/model.zip and its medidas.json)
 ```
 
 Each phase starts from the final model of the previous one and is exported to `models/$NAME/faseN.json`. When
-continuing a model, each phase's learning rate goes from its initial value (`--lr`) to 0 within that phase. At the
-end it measures the new network against the game's in the game-style race; if it is better, `GAME_NET` is changed in
-`src/drivers/policy.js`.
+continuing a model, each phase's learning rate goes from its initial value (`--lr`) to 0 within that phase. Each
+phase is measured in the background (herd, solo lap and game-style race) into `rl/runs/$NAME-tabla.log`; at the end
+it measures the new network against the game's in the game-style race. If it is better, `GAME_NET` is changed in
+`src/drivers/policy.js` by hand.
 
 To change the recipe, what matters most:
-- `--contact-budget` (fraction of phase 7's caused contacts that is allowed) and `--contact-scale`.
-- `--rewards`: `progress`, `pass`, `paceFloor`, `paceAlways`, `paceCrowd`, `crowd`, `grass`, `wall` (`rl/race.js`,
-  `rl/env.js`). `paceCrowd` (since the fifth attempt of the recipe, 0.6): the pace floor also when crowded, lower, so
-  that at the starts falling into single file by lifting costs time and staying side by side pays off.
+- `--objective` (`launch`, `pace`, `chase`, `all`) and `--objective-weight`: what each phase rewards.
+- `--mix`: the share of each herd scenario (`solo`, `grid`, `rolling`, `chase`, `flying`, `start`).
+- The penalties of the single measure: `ZONE_TIME`, `HIT_TIME` and `GRASS_TIME` in `rl/herd.js`.
 - `--spread`: how much the cars vary (from −15 % to +20 % today). Going beyond ±20 % requires changing `SETUP_SPREAD`
   in `src/drivers/sensors.js` and rescaling the old networks with `rl/rescale_setup.py`.
-- The disadvantage of the car ahead in chases: `CHASE_HANDICAP` in `rl/race.js`.
+- The disadvantage of the car ahead in chases: `CHASE_HANDICAP` in `rl/herd.js`.
 
-The scripts of the earlier attempts (the 7-phase `curriculum.sh`, `curriculum3.sh`, `curriculum4.sh`) are in commit
-b3253db.
+The scripts of the earlier attempts are in the git history: the classic-AI-opponent `curriculum.sh` of v5 in commit
+47f1b3f, and the 7-phase `curriculum.sh`, `curriculum3.sh` and `curriculum4.sh` in commit b3253db.
 
 - Network: policy 384×384, critic 512×512.
 - Scenarios and rewards: `rl/race.js`. Random car and tyre variation: `randomSetup` and `randomTyres` in `rl/env.js`.

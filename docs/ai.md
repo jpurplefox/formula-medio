@@ -96,7 +96,7 @@ faster rivals: `models/v5/fase7.json` was the game network, with 36 % fewer cont
 and slightly faster (in the game the rivals have less grip and power). Details, results and what went wrong along the
 way: `rl/CURRICULUM.md`.
 
-Then came herd training (22 cars with the network, from v8 on; recipe in `rl/curriculum.sh`, ~3 h:
+Then came herd training (22 cars with the network, from v8 on; recipe in `rl/curriculum.sh`, ~5.5 h:
 `NAME=v23 sh rl/curriculum.sh`). The game network today is the one named by `GAME_NET` in `src/drivers/policy.js`.
 Only that one is kept in `models/`: the networks from the stages and the earlier attempts (`models/etapa1.json`,
 `models/fase1.json` to `fase7.json`, `models/v3/` to `models/v21/`) are in the git history, in commit e9ff553.
