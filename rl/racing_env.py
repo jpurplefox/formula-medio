@@ -16,8 +16,10 @@ TRACKS = ["interlagos", "monza", "albertpark", "barcelona", "montreal", "spa", "
 
 
 class Worker:
-    """mode "solo": envs single cars (phase 1); "race": envs races with several learning cars (phases 2 to 4).
-    config: options of RaceEnv / RaceSim (rl/env.js, rl/race.js), for example spread, agents, opponents, mix."""
+    """mode "solo": envs single cars (phase 1); "race": envs races with several learning cars and opponents
+    (rl/race.js); "herd": envs herd races, where every car is a learning agent (rl/herd.js, phases 2 on).
+    config: options of RaceEnv / RaceSim / HerdSim (rl/env.js, rl/race.js, rl/herd.js), for example spread, agents,
+    opponents, mix."""
 
     def __init__(self, envs: int, tracks: list[str], seed: int, mode: str = "solo", config: dict | None = None):
         args = [mode, str(envs), ",".join(tracks), str(seed), json.dumps(config or {})]
@@ -29,7 +31,7 @@ class Worker:
         )
         hello = json.loads(self.proc.stdout.readline())
         self.obs_size = hello["obs_size"]
-        self.actions = hello.get("actions", 2)  # network outputs (src/drivers/sensors.js, ACTIONS)
+        self.actions = hello["actions"]  # network outputs (src/drivers/sensors.js, ACTIONS)
         self.n = hello["envs"]  # agents in total
 
     def _read(self, count: int) -> np.ndarray:

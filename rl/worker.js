@@ -11,7 +11,7 @@
 //
 // On startup it writes a JSON line ({ obs_size, actions, envs }) and waits for commands. Each command starts with a
 // byte:
-//   0 = step: followed by the actions (float32, 2 per agent). Replies with a binary block
+//   0 = step: followed by the actions (float32, ACTIONS per agent: 4, see src/drivers/sensors.js). Replies with a binary block
 //       (observations, rewards, done, truncated; float32) and a JSON line with what happened to each
 //       agent that finished a lap or an episode (and the last observation of that episode).
 //       Agents that finish start another episode on their own: the returned observation is already the new one.

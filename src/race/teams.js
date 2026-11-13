@@ -143,9 +143,9 @@ export const TEAMS = [
 // (fraction of the speed of their racing line; at Interlagos, 1.1 gives laps of ~68.8 s, 1.06 of ~69.7 s,
 // 0.98 of ~71.9 s, 0.93 of ~75 s and 0.87 of ~80 s). In slow corners they don't go above 0.975 (ai.js).
 // With the trained network (rl/) the pace is not chosen: the car sets it. setups: grip and power of the fastest and
-// the slowest (1 = yours). The network (v5) was trained with cars from 0.85 to 1.2; a bit lower it still stays off
-// the grass.
-// Measured with GAME=1 DIFFICULTY=… node rl/race_eval.js: the winner takes 260 s (Fácil), 251 s (Normal), 243 s
+// the slowest (1 = yours). The game network (GAME_NET in src/drivers/policy.js) is trained with cars from 0.85 to 1.2
+// (--spread 0.15,0.2 in rl/curriculum.sh); a bit lower it still stays off the grass.
+// Measured with the v5 network (GAME=1 DIFFICULTY=… node rl/race_eval.js), not since: the winner takes 260 s (Fácil), 251 s (Normal), 243 s
 // (Difícil) and 237 s (Experto), and a player at the classic AI's fastest pace on that difficulty finishes
 // 5th, 4th, 6th and 9th.
 // With the classic AI, at Interlagos: laps of ~75 to 80 s (Fácil), ~71.5 to 74 s (Normal), ~69.5 to 72 s (Difícil)

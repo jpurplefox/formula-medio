@@ -85,7 +85,7 @@ const CHASE_HANDICAP = [0.2, 0.08];
 export const HERD_SCENARIOS = { solo: 2, grid: 2, rolling: 2, chase: 1, flying: 1, start: 0.25 };
 const START_MARGIN = 10; // m before the start of the braking zone where the launch ends
 const SLACK = 1.25,
-  EXTRA = 25; // with a grid of 16 the last cars take a while to complete the two laps
+  EXTRA = 25; // with a grid of 22 (as in the game) the last cars take a while to complete the two laps
 const DAMAGE_LEVELS = ['off', 'reduced', 'real'];
 
 // Start of the braking zone of each corner (cells): from the apex (corners, rl/race.js), backwards while the racing
