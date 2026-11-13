@@ -11,6 +11,7 @@
 import { DEFAULT_KERB, KERB_STYLE, MAX_KERB_COLORS, RIDGE, RIDGE_DEPTH, SAUSAGE_H, SAUSAGE_W, edgeReach, kerbAmount, stationAt } from './track.js';
 import { RUBBER_DARK, WEAR_REACH } from './rubber.js';
 import { TREE_FLOATS, treeMesh } from './trees.js';
+import { puffLook } from './smoke.js';
 import { asphaltTexture, cloudNoise, dirtTexture, grassTexture, gravelTexture, macroNoise, wallTexture } from './textures.js';
 import {
   DIRT_DEEP, DIRT_TPC, GRASS_MASK_CELLS, GRASS_STRIPE, WEAR_DIRT, FOG_MAX, GL_FOG_START, GRASS_BAND, GRASS_TPC, GRAVEL_TPC, RUNOFF_LIGHT, GUIDE_W, KERB_H, LINE_W, MACRO_TPC, GL_MAX_DIST as MAX_DIST, MODEL_NEAR, NEAR_RISE, PLANE_LEN,
@@ -70,6 +71,7 @@ uniform sampler2D uField, uStation, uLine, uAsphalt, uGrass, uGravel, uWall, uMa
 uniform sampler2D uDirt, uGrassMask; // tierra, y dónde hay tierra (r: 1 = césped, 0 = tierra; g: lo mismo, desenfocado; b: zonas de pasto seco)
 uniform highp sampler3D uClouds; // ruido de las nubes (cloudNoise de textures.js): r forma, g detalle
 uniform float uTime; // segundos, para que las nubes se muevan con el viento
+uniform sampler2D uSkid; // marcas de bloqueos y patinadas (skids.js), sobre todo el mapa
 uniform sampler2D uWear; // pasto gastado (rubber.js): carriles desde el borde (izquierda al revés, derecha) × filas
 uniform sampler2D uSausage; // cuánta salchicha hay en cada celda (r, 0..1)
 uniform vec4 uKerbStyle; // ancho del piano, largo de cada franja, ancho del verde, línea blanca (1) o no (0)
@@ -103,6 +105,7 @@ const vec3 DRY_GRASS = vec3(140.0, 134.0, 72.0) / 255.0;
 const vec3 EDGE_WHITE = vec3(225.0) / 255.0;
 const vec3 LINE_BLACK = vec3(20.0) / 255.0, LINE_WHITE = vec3(245.0) / 255.0, WALL_TOP = vec3(150.0, 150.0, 155.0) / 255.0;
 const vec3 SKY_TOP = vec3(70.0, 130.0, 210.0) / 255.0;
+const float SKID_DARK = 0.72; // cuánto oscurece una marca de goma del todo negra
 const vec3 FAR_LAND = vec3(68.0, 122.0, 58.0) / 255.0; // el pasto de lejos (el promedio de la textura, a la luz)
 const float FAR_HAZE = 1500.0; // en cuántas celdas más allá de lo que se dibuja se pierde casi todo
 const vec3 LAND_HAZE = vec3(150.0, 172.0, 178.0) / 255.0; // la tierra en el horizonte: más oscura y verdosa que el cielo
@@ -192,6 +195,7 @@ vec3 grassColor(vec2 p, float fw, float light, float wear) {
 
 // el color del piso (lo mismo que groundColor de renderer.js); mat: qué hay en la escapatoria (RUNOFF de track.js)
 vec3 ground(vec2 p, float fw, float s, float k, float q, float st, float side, float lit, float mat) {
+  float skid = 1.0 - SKID_DARK * texture(uSkid, p / uMap).r; // las marcas de goma oscurecen el asfalto y los pianos
   float light = lit * (0.88 + 0.24 * texture(uMacro, p * MACRO_TPC / 64.0).r);
   bool isKerb = k > 0.02, isSausage = isKerb && q > 0.02;
   float kb = isKerb ? -uKerbStyle.x * k : 0.0;
@@ -204,7 +208,7 @@ vec3 ground(vec2 p, float fw, float s, float k, float q, float st, float side, f
     // lo de afuera: pasto, leca o asfalto (más claro que el de la pista: no tiene goma)
     if (mat > 1.5) {
       float ga = fw * ROAD_TPC / 256.0;
-      grass = shade(textureGrad(uAsphalt, p * ROAD_TPC / 256.0, vec2(ga, 0.0), vec2(0.0, ga)).rgb, light * RUNOFF_LIGHT);
+      grass = shade(textureGrad(uAsphalt, p * ROAD_TPC / 256.0, vec2(ga, 0.0), vec2(0.0, ga)).rgb, light * RUNOFF_LIGHT * skid);
     } else if (mat > 0.5) {
       float gg = fw * GRAVEL_TPC / 128.0;
       grass = shade(textureGrad(uGravel, p * GRAVEL_TPC / 128.0, vec2(gg, 0.0), vec2(0.0, gg)).rgb, light);
@@ -225,7 +229,7 @@ vec3 ground(vec2 p, float fw, float s, float k, float q, float st, float side, f
     float v = (side / uRubberSize.y + 1.0) * 0.5;
     if (v > 0.0 && v < 1.0) dark = RUBBER_DARK * texture(uRubber, vec2(v, st / uRubberSize.x)).r;
   }
-  road = shade(road, light * (1.0 - dark));
+  road = shade(road, light * (1.0 - dark) * skid);
   vec2 a2 = p - uStart.xy;
   float al = dot(a2, uStart.zw);
   if (al > -0.7 && al < 0.7) {
@@ -254,7 +258,7 @@ vec3 ground(vec2 p, float fw, float s, float k, float q, float st, float side, f
     // serrucho: la cara empinada de cada escalón queda en sombra (de lejos no se distingue)
     float r = fract(st / RIDGE);
     float ridge = 1.0 + ((r < 0.8 ? 1.05 : 0.75) - 1.0) * clamp(1.0 - 2.0 * fw / RIDGE, 0.0, 1.0);
-    kerbC = shade(kerbC, light * (1.0 - dark) * ridge);
+    kerbC = shade(kerbC, light * (1.0 - dark) * ridge * skid);
     // el verde: pintura sobre el asfalto (se ve el grano); la salchicha, amarilla
     greenC = shade(mix(asphalt, KERB_GREEN, 0.75), light);
     if (isSausage) sausageC = shade(SAUSAGE_YELLOW, lit);
@@ -823,6 +827,29 @@ void main() {
   vec3 c = base * (vec3(1.0, 0.97, 0.9) * sun * 1.05 + vec3(0.55, 0.62, 0.75) * sky * 0.65);
   outColor = vec4(fog(c, vDepth), 1.0);
 }`;
+// humo de las ruedas (smoke.js): carteles de frente a la cámara con una bocanada suave; aColor = (opacidad, tono)
+const SMOKE_VS = `#version 300 es
+in vec3 aPos;
+in vec2 aUV;
+in vec3 aColor;
+${PROJECT}
+out vec2 vUV;
+out float vDepth, vAlpha, vShade;
+void main() { vUV = aUV; vAlpha = aColor.x; vShade = aColor.y; gl_Position = project(aPos, vDepth); }`;
+const SMOKE_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uTex;
+in vec2 vUV;
+in float vDepth, vAlpha, vShade;
+out vec4 outColor;
+${FOG}
+void main() {
+  vec4 t = texture(uTex, vUV);
+  // más claro arriba (le da el sol), un poco más gris abajo
+  vec3 c = vec3(0.9, 0.9, 0.93) * vShade * (0.88 + 0.2 * (1.0 - vUV.y)) * t.r;
+  outColor = vec4(fog(c, vDepth), t.a * vAlpha);
+}`;
+
 // sombra de un árbol en el piso: un óvalo suave (la textura uTex), estirado lejos del sol
 const SOFT_SHADOW_FS = `#version 300 es
 precision highp float;
@@ -837,6 +864,26 @@ void main() {
 }`;
 
 // la sombra de un árbol: un óvalo suave, más oscuro cerca del pie (u: a lo ancho, v: del pie hacia lejos del sol)
+// una bocanada de humo: redonda, de borde suave y con grumos (r: luz, a: cuánto tapa)
+function puffImage(n = 64) {
+  const data = new Uint8Array(n * n * 4);
+  const h = (x, y) => { const v = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return v - Math.floor(v); };
+  const noise = (x, y) => {
+    const x0 = Math.floor(x), y0 = Math.floor(y), u = x - x0, v = y - y0, s = (t) => t * t * (3 - 2 * t);
+    const a = h(x0, y0), b = h(x0 + 1, y0), c = h(x0, y0 + 1), d = h(x0 + 1, y0 + 1);
+    return (a + (b - a) * s(u)) * (1 - s(v)) + (c + (d - c) * s(u)) * s(v);
+  };
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const u = (x + 0.5) / n - 0.5, v = (y + 0.5) / n - 0.5, r = Math.hypot(u, v) * 2;
+    const lump = noise(x / 9, y / 9) * 0.6 + noise(x / 4.5 + 7, y / 4.5) * 0.4;
+    const a = Math.max(0, Math.min(1, (1 - r) * 1.6)) * (0.55 + 0.45 * lump);
+    const i = (y * n + x) * 4;
+    data[i] = Math.round(255 * (0.85 + 0.15 * lump));
+    data[i + 3] = Math.round(255 * a * a);
+  }
+  return data;
+}
+
 function treeShadowImage(n = 64) {
   const data = new Uint8Array(n * n * 4);
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
@@ -900,6 +947,19 @@ export class GLRenderer {
     this.shadows = this.program(FLAT_VS, SHADOW_FS);
     this.treeProg = this.program(TREE_VS, TREE_FS);
     this.softShadows = this.program(FLAT_VS, SOFT_SHADOW_FS);
+    this.smokeProg = this.program(SMOKE_VS, SMOKE_FS);
+    this.puffTex = this.texture(puffImage(), 64, 64, { clamp: true, mip: true });
+    this.smoke = null; // humo de las ruedas (Smoke de smoke.js), lo pone el juego
+    this.skids = null; // marcas de goma (SkidMarks de skids.js), las pone el juego
+    this.noSkids = this.texture(new Uint8Array([0]), 1, 1, { format: 'R8' });
+    this.smokeVao = gl.createVertexArray();
+    this.smokeBuf = gl.createBuffer();
+    gl.bindVertexArray(this.smokeVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.smokeBuf);
+    this.attrib(this.smokeProg, 'aPos', 3, 7, 0);
+    this.attrib(this.smokeProg, 'aUV', 2, 7, 3);
+    this.attrib(this.smokeProg, 'aColor', 2, 7, 5);
+    gl.bindVertexArray(null);
     this.treeShadowTex = this.texture(treeShadowImage(), 64, 64, { clamp: true });
     this.trees = null; // las mallas se arman en el primer cuadro con árboles (treeModels)
     this.treeShadowMeshes = new WeakMap();
@@ -1125,6 +1185,43 @@ export class GLRenderer {
     return true;
   }
 
+  drawSmoke(cam, dirX, dirY, horizon) {
+    const gl = this.gl, sp = this.smokeProg, rx = -dirY, ry = dirX;
+    const list = [];
+    for (const p of this.smoke.puffs) {
+      const depth = (p.x - cam.x) * dirX + (p.y - cam.y) * dirY;
+      if (depth > 0.2 && depth < MAX_DIST) list.push([depth, p]);
+    }
+    if (!list.length) return;
+    list.sort((a, b) => b[0] - a[0]);
+    const v = new Float32Array(list.length * 6 * 7);
+    let o = 0;
+    for (const [, p] of list) {
+      const { alpha, size } = puffLook(p), h = size / 2;
+      const c = Math.cos(p.spin), s = Math.sin(p.spin); // cada una girada distinto, así los grumos no se repiten
+      const uv = (a, b) => [0.5 + (a * c - b * s) * 0.5, 0.5 + (a * s + b * c) * 0.5];
+      const corner = (a, b) => {
+        const [u, w] = uv(a, b);
+        v.set([p.x + rx * h * a, p.y + ry * h * a, p.z + h * (1 - b), u, w, alpha, p.shade], o);
+        o += 7;
+      };
+      corner(-1, 1); corner(1, 1); corner(1, -1); corner(-1, 1); corner(1, -1); corner(-1, -1);
+    }
+    gl.useProgram(sp.p);
+    this.camera(sp, cam, dirX, dirY, horizon);
+    this.bind(0, this.puffTex, sp, 'uTex');
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    gl.bindVertexArray(this.smokeVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.smokeBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, v, gl.DYNAMIC_DRAW);
+    gl.drawArrays(gl.TRIANGLES, 0, list.length * 6);
+    gl.bindVertexArray(null);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+  }
+
   // las sombras de los árboles: un óvalo suave por árbol, estirado lejos del sol, apoyado en el piso (en tramos,
   // para seguir las lomas). Se arma una vez por circuito
   treeShadows(track) {
@@ -1153,6 +1250,30 @@ export class GLRenderer {
     const mesh = { vao, count: v.length / 5 };
     this.treeShadowMeshes.set(track, mesh);
     return mesh;
+  }
+
+  // las marcas de goma en una textura del tamaño de su imagen; después se sube sólo lo que cambió
+  skidTexture(sk) {
+    const gl = this.gl;
+    if (this.skidMap !== sk) {
+      if (this.skidTex) gl.deleteTexture(this.skidTex);
+      this.skidTex = this.texture(sk.data, sk.w, sk.h, { format: 'R8', clamp: true });
+      this.skidMap = sk;
+      sk.dirty = null;
+    } else if (sk.dirty) {
+      const { x0, y0, x1, y1 } = sk.dirty;
+      gl.bindTexture(gl.TEXTURE_2D, this.skidTex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, sk.w);
+      gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, x0);
+      gl.pixelStorei(gl.UNPACK_SKIP_ROWS, y0);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, x0, y0, x1 - x0 + 1, y1 - y0 + 1, gl.RED, gl.UNSIGNED_BYTE, sk.data);
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+      gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+      gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+      sk.dirty = null;
+    }
+    return this.skidTex;
   }
 
   // textura 3D de dos canales (r, g) que se repite, con mipmaps (para las nubes)
@@ -1409,6 +1530,7 @@ export class GLRenderer {
     gl.depthFunc(gl.ALWAYS);
     // la goma se sube antes de enganchar las demás: subirla usa la unidad activa y pisaría la última
     const rubber = this.rubber && this.rubberTexture(this.rubber);
+    const skidTex = this.skids ? this.skidTexture(this.skids) : this.noSkids; // (las marcas también)
     this.bind(0, t.field, tp, 'uField');
     this.bind(1, t.station, tp, 'uStation');
     this.bind(2, t.line, tp, 'uLine');
@@ -1420,6 +1542,7 @@ export class GLRenderer {
     this.bind(9, t.sausage, tp, 'uSausage');
     this.bind(10, this.dirt, tp, 'uDirt');
     this.bind(11, this.grassMask, tp, 'uGrassMask');
+    this.bind(14, skidTex, tp, 'uSkid');
     gl.activeTexture(gl.TEXTURE13);
     gl.bindTexture(gl.TEXTURE_3D, this.clouds);
     gl.uniform1i(tp.u.uClouds, 13);
@@ -1552,6 +1675,9 @@ export class GLRenderer {
       gl.drawArrays(gl.TRIANGLES, 0, v.length / 5);
     }
     gl.bindVertexArray(null);
+
+    // 4b) humo de las ruedas: semitransparente, de lo más lejos a lo más cerca, sin tapar lo que viene atrás
+    if (this.smoke?.puffs.length) this.drawSmoke(cam, dirX, dirY, horizon);
 
     // 5) ayuda de trazada, semitransparente, al final
     if (this.guide) {

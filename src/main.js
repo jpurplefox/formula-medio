@@ -15,6 +15,8 @@ import { EngineAudio } from './audio.js';
 import { NeuralDriver, Policy } from './policy.js';
 import { LIGHTS_OUT, lightsAt, lightsDuration, randomHold } from './lights.js';
 import { RubberMap } from './rubber.js';
+import { Smoke } from './smoke.js';
+import { SkidMarks } from './skids.js';
 import { DESIGNS } from './teamliveries.js';
 import { airDensity, carLimits, DEFAULT_TUNE, GRAVITY } from './dynamics.js';
 import { DAMAGE_LEVELS, damaged, NO_DAMAGE } from './damage.js';
@@ -444,6 +446,8 @@ function resetGame(track) {
   if (!guides.has(track)) guides.set(track, racingLine(track, limitsOn(carProfile, track)));
   // la goma arranca con la franja tenue de otra categoría sobre la trazada y la carrera la va marcando
   game.rubber = new RubberMap(track, guides.get(track).offset);
+  game.smoke = new Smoke(); // humo de las ruedas que se bloquean o patinan
+  game.skids = new SkidMarks(track); // y las marcas de goma que dejan (sólo se ven)
   for (const e of game.entries) e.car.rubber = game.rubber; // y agarra según cuánta haya (car.js)
   if (!aiLines.has(track)) aiLines.set(track, racingLine(track, limitsOn(carProfile, track), { brakeUse: AI_BRAKE_USE }));
   if (!tvCams.has(track)) tvCams.set(track, tvCameras(track));
@@ -566,6 +570,8 @@ function update(dt) {
     for (const e of g.entries) if (e.driver) raceLine(g, e);
     for (const e of g.entries) e.dist += Math.abs(e.car.speed) * dt;
     g.rubber.update(dt, states);
+    g.skids.update(dt, g.entries.filter((e) => !e.car.gone).map((e) => e.car));
+    g.smoke.update(dt, g.entries.filter((e) => !e.car.gone).map((e) => ({ car: e.car, z: sampleField(g.track.height, g.track.W, e.car.x, e.car.y) })), g.track.meters);
     g.recorder.add(dt, g.entries);
     timePasses(g);
   }
@@ -830,6 +836,8 @@ async function drawReplay() {
   const cam = replayCamera(r.mode, pose, track, tvCams.get(track), r.tv, r.t, renderer.w / 2 / 0.7);
   renderer.guide = null;
   renderer.rubber = g.rubber; // como quedó al terminar
+  renderer.smoke = null;
+  renderer.skids = g.skids; // las marcas quedan como terminó la carrera
   // sonido: se escucha desde la cámara; la de TV está quieta, las demás van con el auto
   const moving = cam.mode !== 'tv';
   playEngines(poses.map((p) => ({ ...p, x: p.x * M, y: p.y * M })), cam, M,
@@ -1017,6 +1025,8 @@ async function draw(time) {
   if (guide) paintGuide(guide, track, car);
   renderer.guide = guide;
   renderer.rubber = g.rubber;
+  renderer.smoke = g.smoke;
+  renderer.skids = g.skids;
   // nuestro auto en 3D
   const dt = Math.min(0.1, Math.max(0, (time - lastDraw) / 1000));
   lastDraw = time;
