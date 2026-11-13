@@ -966,7 +966,7 @@ function trackSprites(track) {
   }));
   // carteles de frenada: 3,2 m de ancho por 2,7 m de alto (tablero sobre patas), grandes para leerlos a tiempo
   for (const b of track.boards)
-    sprites.push({ x: b.x, y: b.y, z: b.z, width: 3.2 / M, height: 2.7 / M, tex: boardTex.get(b.meters) });
+    sprites.push({ x: b.x, y: b.y, z: b.z, width: 3.2 / M, height: 2.7 / M, tex: boardTex.get(b.meters), board: true }); // con WebGL van en 3D
   return sprites;
 }
 

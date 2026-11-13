@@ -594,7 +594,7 @@ function kerbFlags({ n, wrap }, st, curv, sausages = true) {
 // Carteles de distancia antes de las curvas fuertes (200, 150, 100 y 50 m hasta el punto donde empieza la curva),
 // del lado de afuera, que es por donde viene el auto antes de doblar.
 // Una curva es "fuerte" si su radio mínimo es chico y antes tiene una recta larga donde se llega rápido.
-const BOARD_DISTANCES = [200, 150, 100, 50]; // metros
+export const BOARD_DISTANCES = [200, 150, 100, 50]; // metros
 const BOARD_RADIUS = 110; // radio máximo de la curva (m) para que lleve carteles
 const BOARD_STRAIGHT = 250; // recta mínima antes de la curva (m)
 const BOARD_TURN_IN = 260; // radio (m) a partir del cual consideramos que la curva empezó

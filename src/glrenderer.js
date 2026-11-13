@@ -25,6 +25,7 @@ import { TREE_FLOATS, treeMesh } from './trees.js';
 import { puffLook } from './smoke.js';
 import { SPONSORS, sponsorBanners } from './sponsors.js';
 import { fenceMesh } from './fences.js';
+import { BOARD_IMG, boardImage, boardMesh } from './boards.js';
 import {
   asphaltTexture,
   cloudNoise,
@@ -937,6 +938,31 @@ void main() {
   outColor = vec4(fog(c, vDepth), t.a * vAlpha);
 }`;
 
+// carteles de distancia (boards.js): el frente con su imagen (uv), lo demás de su color; con luz del sol
+const BOARD_VS = `#version 300 es
+in vec3 aPos, aNormal, aColor;
+in vec2 aUV;
+${PROJECT}
+out vec3 vNormal, vColor;
+out vec2 vUV;
+out float vDepth;
+void main() { vNormal = aNormal; vColor = aColor; vUV = aUV; gl_Position = project(aPos, vDepth); }`;
+const BOARD_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uTex;
+in vec3 vNormal, vColor;
+in vec2 vUV;
+in float vDepth;
+out vec4 outColor;
+${FOG}
+const vec3 SUN_DIR = normalize(vec3(${glsl(-SUN[0])}, ${glsl(-SUN[1])}, ${glsl(SUN[2])}));
+void main() {
+  vec3 base = vUV.x < 0.0 ? vColor : texture(uTex, vUV).rgb;
+  vec3 n = normalize(vNormal);
+  float light = 0.62 + 0.38 * max(0.0, dot(n, SUN_DIR)) + 0.12 * n.z;
+  outColor = vec4(fog(base * light, vDepth), 1.0);
+}`;
+
 // reja sobre el muro (fences.js): alambrado con transparencia; uv.x en metros a lo largo (la textura son 4 m, de
 // poste a poste), uv.y de arriba (0) a abajo (1)
 const FENCE_FS = `#version 300 es
@@ -1106,6 +1132,9 @@ export class GLRenderer {
     this.fenceProg = this.program(FLAT_VS, FENCE_FS);
     this.fenceTex = this.texture(fenceImage(), 256, 256, { mip: true });
     this.fenceMeshes = new WeakMap();
+    this.boardProg = this.program(BOARD_VS, BOARD_FS);
+    this.boardTex = this.texture(boardImage(), BOARD_IMG.w, BOARD_IMG.h, { mip: true, clamp: true });
+    this.boardMeshes = new WeakMap();
     this.puffTex = this.texture(puffImage(), 64, 64, { clamp: true, mip: true });
     this.smoke = null; // humo de las ruedas (Smoke de smoke.js), lo pone el juego
     this.skids = null; // marcas de goma (SkidMarks de skids.js), las pone el juego
@@ -1380,6 +1409,32 @@ export class GLRenderer {
     );
     gl.bindVertexArray(null);
     return true;
+  }
+
+  drawBoards(track, cam, dirX, dirY, horizon) {
+    const gl = this.gl,
+      bp = this.boardProg;
+    let mesh = this.boardMeshes.get(track);
+    if (!mesh) {
+      const v = boardMesh(track);
+      const vao = gl.createVertexArray();
+      gl.bindVertexArray(vao);
+      this.buffer(v);
+      this.attrib(bp, 'aPos', 3, 11, 0);
+      this.attrib(bp, 'aNormal', 3, 11, 3);
+      this.attrib(bp, 'aUV', 2, 11, 6);
+      this.attrib(bp, 'aColor', 3, 11, 8);
+      gl.bindVertexArray(null);
+      mesh = { vao, count: v.length / 11 };
+      this.boardMeshes.set(track, mesh);
+    }
+    if (!mesh.count) return;
+    gl.useProgram(bp.p);
+    this.camera(bp, cam, dirX, dirY, horizon);
+    this.bind(0, this.boardTex, bp, 'uTex');
+    gl.bindVertexArray(mesh.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+    gl.bindVertexArray(null);
   }
 
   drawFences(track, cam, dirX, dirY, horizon) {
@@ -1974,6 +2029,9 @@ export class GLRenderer {
       }
     }
 
+    // 3a) carteles de distancia, en 3D
+    this.drawBoards(track, cam, dirX, dirY, horizon);
+
     // 3b) árboles, en 3D (si las mallas ya están; si no, van como sprites)
     const trees3d = !!track.trees?.length && this.drawTrees(track, cam, dirX, dirY, horizon);
 
@@ -1986,7 +2044,7 @@ export class GLRenderer {
       ry = dirX;
     const groups = new Map();
     for (const s of sprites) {
-      if (s.tree && trees3d) continue; // los árboles van en 3D (drawTrees)
+      if ((s.tree && trees3d) || s.board) continue; // los árboles y los carteles van en 3D (drawTrees, drawBoards)
       const depth = (s.x - cam.x) * dirX + (s.y - cam.y) * dirY;
       if (depth < 0.3 || depth > MAX_DIST) continue; // con la bruma al FOG_MAX, todavía se ven un poco
       if (!groups.has(s.tex)) groups.set(s.tex, []);
