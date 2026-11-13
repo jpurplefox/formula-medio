@@ -107,10 +107,43 @@ export const TOP_SLOTS = {
 // La forma del auto de costado (x, z), para que los dibujos sigan sus líneas: lo alto de los pontones, de la
 // cubierta del motor (por el medio y por los hombros) y de la trompa
 export const LINES = {
-  pod: [[0.58, 0.56], [0.3, 0.69], [-0.3, 0.7], [-0.75, 0.6], [-1.15, 0.47], [-1.5, 0.36], [-1.8, 0.3], [-2.3, 0.27]],
-  cover: [[-0.42, 0.8], [-0.6, 0.97], [-0.95, 0.95], [-1.25, 0.86], [-1.55, 0.74], [-1.95, 0.56], [-2.3, 0.41]],
-  shoulder: [[-0.42, 0.775], [-0.6, 0.75], [-0.95, 0.62], [-1.25, 0.47], [-1.55, 0.36], [-1.95, 0.3], [-2.3, 0.28]],
-  nose: [[2.9, 0.138], [2.74, 0.209], [2.62, 0.259], [2.4, 0.345], [2.1, 0.448], [1.7, 0.557], [1.15, 0.635]],
+  pod: [
+    [0.58, 0.56],
+    [0.3, 0.69],
+    [-0.3, 0.7],
+    [-0.75, 0.6],
+    [-1.15, 0.47],
+    [-1.5, 0.36],
+    [-1.8, 0.3],
+    [-2.3, 0.27],
+  ],
+  cover: [
+    [-0.42, 0.8],
+    [-0.6, 0.97],
+    [-0.95, 0.95],
+    [-1.25, 0.86],
+    [-1.55, 0.74],
+    [-1.95, 0.56],
+    [-2.3, 0.41],
+  ],
+  shoulder: [
+    [-0.42, 0.775],
+    [-0.6, 0.75],
+    [-0.95, 0.62],
+    [-1.25, 0.47],
+    [-1.55, 0.36],
+    [-1.95, 0.3],
+    [-2.3, 0.28],
+  ],
+  nose: [
+    [2.9, 0.138],
+    [2.74, 0.209],
+    [2.62, 0.259],
+    [2.4, 0.345],
+    [2.1, 0.448],
+    [1.7, 0.557],
+    [1.15, 0.635],
+  ],
 };
 
 // Herramientas para dibujar una zona en metros: de costado (a, b) = (x, z) y desde arriba (a, b) = (x, y).
@@ -124,7 +157,9 @@ function zone(g, X, Y, m, slots, mirror = 1) {
     g.closePath();
   };
   const z = {
-    g, X, Y,
+    g,
+    X,
+    Y,
     poly(pts, fill) {
       path(pts);
       g.fillStyle = fill;
@@ -134,7 +169,15 @@ function zone(g, X, Y, m, slots, mirror = 1) {
       z.poly([...lo, ...[...hi].reverse()], fill);
     },
     rect(a0, b0, a1, b1, fill) {
-      z.poly([[a0, b0], [a1, b0], [a1, b1], [a0, b1]], fill);
+      z.poly(
+        [
+          [a0, b0],
+          [a1, b0],
+          [a1, b1],
+          [a0, b1],
+        ],
+        fill,
+      );
     },
     along(a0, a1, stops) {
       const gr = g.createLinearGradient(X(a0), 0, X(a1), 0);
@@ -168,14 +211,28 @@ export const shift = (line, dz) => line.map(([a, b]) => [a, b + dz]);
 function drawSide(g, row, color, design, number, mirror) {
   const S = LIVERY_S;
   const right = mirror ? [-1, 0, 0, 1] : [1, 0, 0, 1];
-  const z = zone(g, (x) => (x + HALF_L) * S, (h) => row + (TALL - h) * S, right, SIDE_SLOTS, mirror ? -1 : 1);
+  const z = zone(
+    g,
+    (x) => (x + HALF_L) * S,
+    (h) => row + (TALL - h) * S,
+    right,
+    SIDE_SLOTS,
+    mirror ? -1 : 1,
+  );
   g.fillStyle = color;
   g.fillRect(0, row, SIZE, TALL * S);
   design.side(z);
   // parte baja en negro, como el piso
   g.fillStyle = '#18181c';
   g.fillRect(0, z.Y(0.19), SIZE, 0.19 * S);
-  label(g, { t: number, c: design.number ?? '#ffffff', line: design.numberLine ?? '#111111' }, z.X(0.27), z.Y(0.47), 0.2, right);
+  label(
+    g,
+    { t: number, c: design.number ?? '#ffffff', line: design.numberLine ?? '#111111' },
+    z.X(0.27),
+    z.Y(0.47),
+    0.2,
+    right,
+  );
   for (const [slot, s] of Object.entries(design.sponsors.side)) z.text(slot, s);
 }
 
@@ -185,7 +242,13 @@ function drawTop(g, color, design, number) {
   const S = LIVERY_S;
   const up = [0, 1, -1, 0]; // texto girado: se lee desde atrás, mirando hacia adelante
   const down = [0, -1, 1, 0]; // y al revés: se lee desde adelante
-  const z = zone(g, (x) => (x + HALF_L) * S, (y) => TOP + (y + HALF_W) * S, up, TOP_SLOTS);
+  const z = zone(
+    g,
+    (x) => (x + HALF_L) * S,
+    (y) => TOP + (y + HALF_W) * S,
+    up,
+    TOP_SLOTS,
+  );
   g.fillStyle = color;
   g.fillRect(0, TOP, SIZE, 2 * HALF_W * S);
   design.top(z);
@@ -206,8 +269,21 @@ function drawTop(g, color, design, number) {
 // detalle de la trompa a la cola y un par de sponsors
 export const plainDesign = (color, accent) => ({
   side(z) {
-    z.band(shift(LINES.nose, -0.2).concat([[0.2, 0.31], [-1.0, 0.33], [-2.4, 0.3]]),
-      [[2.7, 0.25], [1.2, 0.33], [0.2, 0.37], [-1.0, 0.39], [-2.4, 0.35]], accent);
+    z.band(
+      shift(LINES.nose, -0.2).concat([
+        [0.2, 0.31],
+        [-1.0, 0.33],
+        [-2.4, 0.3],
+      ]),
+      [
+        [2.7, 0.25],
+        [1.2, 0.33],
+        [0.2, 0.37],
+        [-1.0, 0.39],
+        [-2.4, 0.35],
+      ],
+      accent,
+    );
     z.rect(-1.8, 0.56, -0.95, 0.41, accent);
     z.rect(-2.55, 1.0, -1.95, 0.76, accent);
   },
@@ -250,7 +326,8 @@ export function sidewallTexture(compound = '#e0262b') {
   const c = document.createElement('canvas');
   c.width = c.height = SIDEWALL_SIZE;
   const g = c.getContext('2d');
-  const m = SIDEWALL_SIZE / 2, S = SIDEWALL_S;
+  const m = SIDEWALL_SIZE / 2,
+    S = SIDEWALL_S;
   g.fillStyle = '#343438';
   g.fillRect(0, 0, SIDEWALL_SIZE, SIDEWALL_SIZE);
   g.strokeStyle = compound;
@@ -286,7 +363,7 @@ export function treadTexture() {
   c.width = c.height = N;
   const g = c.getContext('2d');
   let seed = 7;
-  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   // a lo ancho: hombros oscuros, banda más clara
   const across = g.createLinearGradient(0, 0, 0, N);
   across.addColorStop(0, '#202024');
@@ -299,12 +376,16 @@ export function treadTexture() {
   g.fillRect(0, 0, N, N);
   // marcas de goma a lo largo de la vuelta, más que nada sobre la zona que pisa
   for (let i = 0; i < 90; i++) {
-    const x = rand() * N, y = N * (0.22 + rand() * 0.56), len = 8 + rand() * 50, h = 1 + rand() * 3;
+    const x = rand() * N,
+      y = N * (0.22 + rand() * 0.56),
+      len = 8 + rand() * 50,
+      h = 1 + rand() * 3;
     g.fillStyle = rand() < 0.6 ? `rgba(70,70,76,${0.25 + rand() * 0.3})` : `rgba(14,14,16,${0.3 + rand() * 0.3})`;
     for (const dx of [0, -N]) g.fillRect(x + dx, y, len, h);
   }
   // grano fino
-  const img = g.getImageData(0, 0, N, N), d = img.data;
+  const img = g.getImageData(0, 0, N, N),
+    d = img.data;
   for (let i = 0; i < d.length; i += 4) {
     const k = (rand() - 0.5) * 10;
     d[i] += k;
@@ -318,7 +399,9 @@ export function treadTexture() {
 // Cara de la llanta, vista de costado y centrada: el borde del aro, diez rayos de metal en pares que salen del cubo
 // y, entre los rayos, el hueco oscuro con el disco de freno ranurado detrás.
 export function rimTexture() {
-  const N = RIM_SIZE, m = N / 2, S = RIM_S;
+  const N = RIM_SIZE,
+    m = N / 2,
+    S = RIM_S;
   const c = document.createElement('canvas');
   c.width = c.height = N;
   const g = c.getContext('2d');

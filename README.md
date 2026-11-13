@@ -220,7 +220,7 @@ abrirse (como el pie), así pisar en plena curva no suelta la cola de golpe.
    sólo el contorno). Con `?prueba` en la dirección, las teclas **1** a **9** rompen piezas (1–2 alerón delantero
    izquierdo/derecho, 3–4 trasero, 5–6 pontones, 7 pinchazo trasero izquierdo, 8 suspensión delantera derecha, 9
    dirección rota) y **0** arregla todo. Los umbrales se ajustaron con
-   `JUEGO=1 DANOS=real GOLPES=1 node rl/race_eval.js models/v5/fase7.json` (cuántos autos rompen algo por carrera
+   `JUEGO=1 DANOS=real GOLPES=1 node rl/race_eval.js models/v22/fase18.json` (cuántos autos rompen algo por carrera
    y qué tan fuertes son los golpes en cada pieza).
 
 Cambios, con la caja manual: **O** o **X** sube, **U** o **Z** baja (la caja, automática o manual, se elige en el menú y no se cambia en carrera). **C** alterna la vista de cabina y la exterior (cada carrera larga con la que elegiste en Opciones, cabina si no elegiste ninguna). **G** muestra u oculta la trazada ideal.
@@ -307,7 +307,7 @@ python3 -m venv rl/.venv && rl/.venv/bin/pip install torch stable-baselines3 gym
 3. Exportar la red a JSON: `rl/.venv/bin/python rl/export.py rl/runs/etapa1/model.zip models/etapa1.json`.
 4. Medirla contra la IA de siempre: `node rl/eval.js models/etapa1.json`.
 5. Verla en el juego: `http://localhost:8123/?ia=models/etapa1.json` (los rivales manejan con esa red). Sin `?ia`
-   manejan con la red elegida (`CURRENT_NET` en `src/main.js`, hoy `models/v5/fase7.json`); con `?ia=clasica`,
+   manejan con la red del juego (`GAME_NET` en `src/policy.js`); con `?ia=clasica`,
    con la IA de siempre (`src/ai.js`), que es también la que queda si la red no carga.
 
 Para que el entrenamiento no se desarme (PPO es inestable), la tasa de aprendizaje baja de a poco hasta 0, cada
@@ -315,7 +315,7 @@ actualización usa 32.768 pasos y las recompensas se normalizan; conviene igual 
 `rl/eval.js` y quedarse con el mejor. Cada episodio larga en cualquier punto de la vuelta, a veces parado o
 cruzado y con ruedas afuera, para que aprenda también a largar y a volver a la pista.
 
-Para medir en carrera: `node rl/race_eval.js models/etapa2.json` (22 autos, la mitad con la red y la mitad con la
+Para medir en carrera: `node rl/race_eval.js models/v22/fase18.json` (22 autos, la mitad con la red y la mitad con la
 IA de siempre; con `CARS=8` delante, 8 autos): posición media, toques y pasto.
 
 **Etapa 1** (`models/etapa1.json`, 60 millones de pasos, ~35 minutos): completa las vueltas en los 8 circuitos,
@@ -343,10 +343,15 @@ crítico 512×512), autos con potencia, agarre y frenos algo distintos y gomas q
 una cosa (manejar sola, no chocar, pasar, carreras completas) y después tres fases más dedicadas a manejar limpio.
 La fase 7 tocaba un 44 % menos que la fase 1. Dos intentos más (`models/v3/`, `models/v4/`) priorizaron manejar
 limpio antes que rápido, y el quinto (`models/v5/`, con el agarre por rueda y el pasto que frena) sumó ritmo en las
-largadas y una fase contra rivales más rápidos: **`models/v5/fase7.json` es la red del juego**, con un 36 % menos de
+largadas y una fase contra rivales más rápidos: `models/v5/fase7.json` fue la red del juego, con un 36 % menos de
 toques que la v4, un tercio del pasto y algo más rápida (en el juego los rivales llevan menos agarre y potencia).
 Para volver a entrenarla desde cero: `NOMBRE=v6 sh rl/curriculum.sh` (~3 h). Detalle, resultados y lo que salió
 mal en el camino: `rl/CURRICULO.md`.
+
+Después vino el entrenamiento en manada (22 autos con la red, desde la v8; receta en `rl/curriculum.sh`).
+La red del juego hoy es la que diga `GAME_NET` en `src/policy.js`. En `models/` queda sólo esa: las redes de las
+etapas y de los intentos anteriores (`models/etapa1.json`, `models/fase1.json` a `fase7.json`, `models/v3/` a
+`models/v21/`) están en el historial de git, en el commit e9ff553.
 
 ## Trazada ideal
 
@@ -465,3 +470,22 @@ Según cómo esté dibujado el circuito puede hacer falta:
 
 Para revisar que quedó bien conviene largar una carrera: si la vuelta del rival da un tiempo razonable y la
 grilla está sobre la recta, el trazado se reconoció entero.
+
+## Antes de refactorizar
+
+`npm test` corre los tests de `test/` (`node:test`, menos de un segundo): propiedades de la física (dynamics.js,
+lapsim.js, car.js: punta, frenada, alerones, altura, nafta, gomas), daños, choques, semáforo, equipos y grilla,
+sensores y una vuelta lanzada de la red del juego en Monza. Prueban propiedades con márgenes, no números exactos:
+siguen valiendo después de recalibrar el auto, y si un cambio a propósito los rompe, hay que revisar si el test
+sigue teniendo sentido.
+
+`npm install` una vez; `npm run lint` revisa errores (ESLint: variables sin uso, nombres sin definir, código
+inalcanzable) y formato (Prettier, sólo los `.js`), y `npm run format` formatea.
+El CI (`.github/workflows/check.yml`) corre el lint y la regresión en cada PR. La regresión corre en macOS arm64:
+en x64 las funciones matemáticas pueden dar distinto en el último decimal y la base no coincide, así que la base se
+guarda en una Mac con Apple Silicon.
+
+`node tools/regress.js` corre carreras con semilla fija (los escenarios del currículum y la carrera del juego con
+daños, con la red del juego) y las compara con `tools/regress.base.txt`: si un cambio toca la física, los sensores,
+los choques, los daños o la IA, aunque sea en el último decimal, salta (~45 s). Cuando el cambio es a propósito,
+`node tools/regress.js guardar` actualiza la base. No cubre lo que es sólo del navegador (cámara, HUD, menú, sonido).

@@ -46,10 +46,11 @@ import { NO_DAMAGE } from './damage.js';
 import { LIGHTS_OUT } from './lights.js';
 import { halfWidthAt, sampleField, stationAt } from './track.js';
 
-export const RAY_ANGLES = [-90, -60, -40, -28, -18, -11, -6, -3, -1, 0, 1, 3, 6, 11, 18, 28, 40, 60, 90]
-  .map((d) => (d * Math.PI) / 180);
+const RAY_ANGLES = [-90, -60, -40, -28, -18, -11, -6, -3, -1, 0, 1, 3, 6, 11, 18, 28, 40, 60, 90].map(
+  (d) => (d * Math.PI) / 180,
+);
 export const LOOK_AHEAD = [20, 40, 70, 100, 140, 180, 230, 290, 360, 450]; // m
-export const OPPONENTS = 6;
+const OPPONENTS = 6;
 const CAR_VALUES = 12;
 export const SETUP_VALUES = SETUP_KEYS.length + 1; // la variación del auto y el desgaste de las gomas
 export const SETUP_START = CAR_VALUES; // dónde empiezan (las redes viejas no los tienen)
@@ -64,9 +65,9 @@ export const LIMIT_VALUES = 5;
 export const DAMAGE_VALUES = 15;
 const MORE_OPPONENTS = 2; // el 7.º y el 8.º, al final
 const RIVAL_VALUES = 7; // acelerador, freno, volante, motor, agarre, daño y lado de la pista de cada rival
-export const ALL_OPPONENTS = OPPONENTS + MORE_OPPONENTS;
+const ALL_OPPONENTS = OPPONENTS + MORE_OPPONENTS;
 export const OPPONENT_INPUT_SIZE = MORE_OPPONENTS * OPPONENT_VALUES + ALL_OPPONENTS * RIVAL_VALUES;
-export const AHEAD_START = CAR_VALUES + SETUP_VALUES + POSITION_VALUES; // dónde empiezan los puntos de LOOK_AHEAD
+const AHEAD_START = CAR_VALUES + SETUP_VALUES + POSITION_VALUES; // dónde empiezan los puntos de LOOK_AHEAD
 export const OPPONENT_START = CAR_VALUES + SETUP_VALUES + POSITION_VALUES + LOOK_AHEAD.length + RAY_ANGLES.length;
 export const OPPONENT_SIZE = OPPONENTS * OPPONENT_VALUES; // dónde empiezan los rivales y cuántos valores son
 export const OPPONENT_INPUT_START = OPPONENT_START + OPPONENT_SIZE + WHEEL_VALUES + LIMIT_VALUES + DAMAGE_VALUES;
@@ -76,24 +77,26 @@ export const START_VALUES = 3;
 export const ACTIONS = 4;
 export const START_INPUT_START = OPPONENT_INPUT_START + OPPONENT_INPUT_SIZE;
 export const TYRE_VALUES = 10; // temperatura y desgaste de cada goma, nafta y reparto de frenos
-export const TYRE_INPUT_START = START_INPUT_START + START_VALUES;
-export const RISK_VALUES = 3; // por rival: zona de al lado, choque que pega el propio auto, choque que pega el otro
-export const RISK_INPUT_START = TYRE_INPUT_START + TYRE_VALUES;
+const TYRE_INPUT_START = START_INPUT_START + START_VALUES;
+const RISK_VALUES = 3; // por rival: zona de al lado, choque que pega el propio auto, choque que pega el otro
+const RISK_INPUT_START = TYRE_INPUT_START + TYRE_VALUES;
 export const RISK_INPUT_SIZE = ALL_OPPONENTS * RISK_VALUES;
 export const FAR_AHEAD = [560, 690, 840, 1010]; // m: tramos de 110, 130, 150 y 170 m, siguiendo a los de LOOK_AHEAD
-export const FAR_INPUT_START = RISK_INPUT_START + RISK_INPUT_SIZE;
+const FAR_INPUT_START = RISK_INPUT_START + RISK_INPUT_SIZE;
 export const OBS_SIZE = FAR_INPUT_START + FAR_AHEAD.length;
-export const RISK_HORIZON = 5; // s
+const RISK_HORIZON = 5; // s
 const RISK_STEP = 0.1; // s entre cada punto de la predicción
 const RISK_POINTS = Math.round(RISK_HORIZON / RISK_STEP);
 // la zona de al lado: el otro auto encimado a lo largo (centros a menos de un largo) y a menos de ZONE_MARGIN m de
 // costado entre carrocerías, en el marco del auto
 const ZONE_MARGIN = 0.5;
 export const inZone = (ahead, side) => Math.abs(ahead) < 2 * HALF_L && Math.abs(side) < 2 * HALF_W + ZONE_MARGIN;
-const TEMP_MID = (TEMP_LOW + TEMP_HIGH) / 2, TEMP_SCALE = 20; // °C: el medio de la ventana es 0, ±20 °C es ±1
+const TEMP_MID = (TEMP_LOW + TEMP_HIGH) / 2,
+  TEMP_SCALE = 20; // °C: el medio de la ventana es 0, ±20 °C es ±1
 const FUEL_SCALE = 50; // kg
 const DAMAGE_LEVEL = { off: 0, reduced: 0.5, real: 1 };
-const SLOW = 25, FAST = 70; // m/s: una curva lenta (90 km/h) y una rápida (250 km/h)
+const SLOW = 25,
+  FAST = 70; // m/s: una curva lenta (90 km/h) y una rápida (250 km/h)
 
 const RAY_MAX = 200; // m
 const OPPONENT_RANGE = 120; // m
@@ -111,7 +114,8 @@ function centerHeading(track) {
   let b = 0;
   for (let u = 0; u <= L; u++) {
     while (b < n - 1 && st[b + 1] < u) b++;
-    const a = (b + n - 2) % n, c = (b + 2) % n;
+    const a = (b + n - 2) % n,
+      c = (b + 2) % n;
     out[u] = Math.atan2(y[c] - y[a], x[c] - x[a]);
   }
   headings.set(track, out);
@@ -129,7 +133,9 @@ export function trackHeading(track, u) {
 // tan largos como la distancia al borde (el campo sdf la da en cada celda)
 function ray(track, x, y, a) {
   const { sdf, W, meters } = track;
-  const dx = Math.cos(a), dy = Math.sin(a), max = RAY_MAX / meters;
+  const dx = Math.cos(a),
+    dy = Math.sin(a),
+    max = RAY_MAX / meters;
   let t = 0;
   for (let k = 0; k < 64 && t < max; k++) {
     const d = sampleField(sdf, W, x + dx * t, y + dy * t);
@@ -141,7 +147,8 @@ function ray(track, x, y, a) {
 
 // velocidad del auto en el mundo (m/s), con el deslizamiento de costado
 function velocity(car) {
-  const ca = Math.cos(car.angle), sa = Math.sin(car.angle);
+  const ca = Math.cos(car.angle),
+    sa = Math.sin(car.angle);
   return [ca * car.speed - sa * car.slip, sa * car.speed + ca * car.slip];
 }
 
@@ -150,7 +157,9 @@ function velocity(car) {
 export function observe(track, car, u, others = [], out = new Float32Array(OBS_SIZE)) {
   const { meters, W } = track;
   let i = 0;
-  const put = (v) => { out[i++] = Number.isFinite(v) ? Math.max(-3, Math.min(3, v)) : 0; };
+  const put = (v) => {
+    out[i++] = Number.isFinite(v) ? Math.max(-3, Math.min(3, v)) : 0;
+  };
 
   // auto
   put(car.speed / TOP);
@@ -193,12 +202,14 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
   for (const a of RAY_ANGLES) put(ray(track, car.x, car.y, car.angle + a) / RAY_MAX);
 
   // rivales más cercanos, en el marco del auto (x adelante, y a la derecha)
-  const ca = Math.cos(car.angle), sa = Math.sin(car.angle);
+  const ca = Math.cos(car.angle),
+    sa = Math.sin(car.angle);
   const [vx, vy] = velocity(car);
   const near = [];
   for (const o of others) {
     if (o === car) continue;
-    const dx = (o.x - car.x) * meters, dy = (o.y - car.y) * meters;
+    const dx = (o.x - car.x) * meters,
+      dy = (o.y - car.y) * meters;
     const d = Math.hypot(dx, dy);
     if (d < OPPONENT_RANGE) near.push([d, o, dx, dy]);
   }
@@ -210,7 +221,8 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
     }
     const [, o, dx, dy] = n;
     const [ox, oy] = velocity(o);
-    const rvx = ox - vx, rvy = oy - vy;
+    const rvx = ox - vx,
+      rvy = oy - vy;
     const oa = wrapAngle(o.angle - car.angle);
     put(1);
     put((dx * ca + dy * sa) / 50);
@@ -292,19 +304,26 @@ export function observe(track, car, u, others = [], out = new Float32Array(OBS_S
 
 // Dónde va a estar un auto en los próximos RISK_HORIZON s si sigue con la misma velocidad (de frente y de costado,
 // en su marco) y el mismo giro: cada RISK_STEP s, x, y (m), rumbo y velocidad en el mundo (m/s), desde ahora (t = 0)
-const ownPath = new Float64Array((RISK_POINTS + 1) * 5), otherPath = new Float64Array((RISK_POINTS + 1) * 5);
+const ownPath = new Float64Array((RISK_POINTS + 1) * 5),
+  otherPath = new Float64Array((RISK_POINTS + 1) * 5);
 function predict(car, meters, out) {
-  let x = car.x * meters, y = car.y * meters, a = car.angle;
+  let x = car.x * meters,
+    y = car.y * meters,
+    a = car.angle;
   const { speed, slip, omega } = car;
   for (let k = 0; k <= RISK_POINTS; k++) {
-    const c = Math.cos(a), s = Math.sin(a), i = k * 5;
+    const c = Math.cos(a),
+      s = Math.sin(a),
+      i = k * 5;
     out[i] = x;
     out[i + 1] = y;
     out[i + 2] = a;
     out[i + 3] = c * speed - s * slip;
     out[i + 4] = s * speed + c * slip;
     // con el rumbo del medio del intervalo, así en las curvas no se acumula error
-    const am = a + (omega * RISK_STEP) / 2, cm = Math.cos(am), sm = Math.sin(am);
+    const am = a + (omega * RISK_STEP) / 2,
+      cm = Math.cos(am),
+      sm = Math.sin(am);
     x += (cm * speed - sm * slip) * RISK_STEP;
     y += (sm * speed + cm * slip) * RISK_STEP;
     a += omega * RISK_STEP;
@@ -314,10 +333,19 @@ function predict(car, meters, out) {
 
 // Si dos autos (rectángulos de 2·HALF_L × 2·HALF_W) con centro y rumbo se superponen (ejes separadores)
 function overlap(ax, ay, aa, bx, by, ba) {
-  const dx = bx - ax, dy = by - ay;
+  const dx = bx - ax,
+    dy = by - ay;
   if (dx * dx + dy * dy > 4 * (HALF_L * HALF_L + HALF_W * HALF_W)) return false;
-  const ca = Math.cos(aa), sa = Math.sin(aa), cb = Math.cos(ba), sb = Math.sin(ba);
-  for (const [ux, uy] of [[ca, sa], [-sa, ca], [cb, sb], [-sb, cb]]) {
+  const ca = Math.cos(aa),
+    sa = Math.sin(aa),
+    cb = Math.cos(ba),
+    sb = Math.sin(ba);
+  for (const [ux, uy] of [
+    [ca, sa],
+    [-sa, ca],
+    [cb, sb],
+    [-sb, cb],
+  ]) {
     // la mitad de cada auto proyectada sobre el eje
     const ra = HALF_L * Math.abs(ca * ux + sa * uy) + HALF_W * Math.abs(-sa * ux + ca * uy);
     const rb = HALF_L * Math.abs(cb * ux + sb * uy) + HALF_W * Math.abs(-sb * ux + cb * uy);
@@ -332,7 +360,9 @@ function crash(a, b) {
   for (let k = 0; k <= RISK_POINTS; k++) {
     const i = k * 5;
     if (!overlap(a[i], a[i + 1], a[i + 2], b[i], b[i + 1], b[i + 2])) continue;
-    const dx = b[i] - a[i], dy = b[i + 1] - a[i + 1], d = Math.hypot(dx, dy) || 1;
+    const dx = b[i] - a[i],
+      dy = b[i + 1] - a[i + 1],
+      d = Math.hypot(dx, dy) || 1;
     const towardB = (a[i + 3] * dx + a[i + 4] * dy) / d; // cuánto va el primero hacia el otro (m/s)
     const towardA = -(b[i + 3] * dx + b[i + 4] * dy) / d;
     return [1 - (k * RISK_STEP) / RISK_HORIZON, towardB >= towardA];
@@ -353,13 +383,17 @@ export function aheadFromCar(obs, out = new Float32Array(obs.length)) {
 }
 
 // Los límites del auto respecto del de referencia, más o menos entre -1 y 1 (se calculan una vez por límites)
-const refs = new WeakMap(), summaries = new WeakMap();
+const refs = new WeakMap(),
+  summaries = new WeakMap();
 function limitValues(car) {
   const lim = car.limits;
   if (summaries.has(lim)) return summaries.get(lim);
   if (!refs.has(car.profile)) refs.set(car.profile, carLimits(car.profile, DEFAULT_TUNE, SEA_AIR));
   const ref = refs.get(car.profile);
-  const balance = (l, v) => { const [f, r] = l.axles(v); return f / r - 1; };
+  const balance = (l, v) => {
+    const [f, r] = l.axles(v);
+    return f / r - 1;
+  };
   const out = [
     (lim.lateral(SLOW) / ref.lateral(SLOW) - 1) / 0.2,
     (lim.lateral(FAST) / ref.lateral(FAST) - 1) / 0.2,

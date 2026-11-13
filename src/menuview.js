@@ -21,7 +21,8 @@ function norm([x, y, z]) {
 let viewer; // el GLRenderer de las vistas (uno solo para todas), null si no hay WebGL
 export function drawCar(canvas, model, { yaw = 0.6, pitch = 0.32, zoom = 1 } = {}) {
   const dpr = Math.min(2, devicePixelRatio || 1);
-  const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+  const w = Math.round(canvas.clientWidth * dpr),
+    h = Math.round(canvas.clientHeight * dpr);
   if (!w || !h) return;
   if (canvas.width !== w || canvas.height !== h) Object.assign(canvas, { width: w, height: h });
   const g = canvas.getContext('2d');
@@ -40,15 +41,21 @@ export function drawCar(canvas, model, { yaw = 0.6, pitch = 0.32, zoom = 1 } = {
   }
 
   // ejes de la cámara: e (del auto hacia la cámara), r (derecha de la pantalla) y u (arriba)
-  const cp = Math.cos(pitch), sp = Math.sin(pitch), cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const cp = Math.cos(pitch),
+    sp = Math.sin(pitch),
+    cy = Math.cos(yaw),
+    sy = Math.sin(yaw);
   const e = [cp * sy, -cp * cy, sp];
   const r = [-cy, -sy, 0];
   const u = [-sp * sy, sp * cy, cp];
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-  const cx = w / 2, cz = h * 0.5, Z0 = 0.45; // Z0: altura del auto que queda en el centro (m)
+  const cx = w / 2,
+    cz = h * 0.5,
+    Z0 = 0.45; // Z0: altura del auto que queda en el centro (m)
   const project = ([x, y, z]) => {
     const p = [x, y, z - Z0];
-    const d = dot(p, e), f = DIST / (DIST - d);
+    const d = dot(p, e),
+      f = DIST / (DIST - d);
     return [cx + dot(p, r) * k * f, cz - dot(p, u) * k * f, d];
   };
 
@@ -71,12 +78,19 @@ export function drawCar(canvas, model, { yaw = 0.6, pitch = 0.32, zoom = 1 } = {
   const patterns = new Map();
   const pad = 0.6 * dpr; // cada cara se agranda un poco, así no quedan rayitas entre una y otra
   for (const { f, ps } of faces) {
-    let mx = 0, my = 0;
-    for (const p of ps) { mx += p[0]; my += p[1]; }
-    mx /= ps.length; my /= ps.length;
+    let mx = 0,
+      my = 0;
+    for (const p of ps) {
+      mx += p[0];
+      my += p[1];
+    }
+    mx /= ps.length;
+    my /= ps.length;
     g.beginPath();
     ps.forEach(([x, y], i) => {
-      const dx = x - mx, dy = y - my, l = Math.hypot(dx, dy) || 1;
+      const dx = x - mx,
+        dy = y - my,
+        l = Math.hypot(dx, dy) || 1;
       g[i ? 'lineTo' : 'moveTo'](x + (dx / l) * pad, y + (dy / l) * pad);
     });
     g.closePath();
@@ -97,7 +111,8 @@ export function drawCar(canvas, model, { yaw = 0.6, pitch = 0.32, zoom = 1 } = {
       g.fillStyle = light < 1 ? `rgba(0, 0, 0, ${1 - light})` : `rgba(255, 255, 255, ${(light - 1) * 0.6})`;
       g.fill();
     } else {
-      const c = f.color >>> 0, s = Math.min(1.25, light);
+      const c = f.color >>> 0,
+        s = Math.min(1.25, light);
       g.fillStyle = `rgb(${(c & 255) * s}, ${((c >> 8) & 255) * s}, ${((c >> 16) & 255) * s})`;
       g.fill();
     }
@@ -125,12 +140,20 @@ function shadow(g, project, k) {
 function affine(uv, ps) {
   const [[u0, v0], [u1, v1], [u2, v2]] = uv;
   const [[x0, y0], [x1, y1], [x2, y2]] = ps;
-  const du1 = u1 - u0, dv1 = v1 - v0, du2 = u2 - u0, dv2 = v2 - v0;
+  const du1 = u1 - u0,
+    dv1 = v1 - v0,
+    du2 = u2 - u0,
+    dv2 = v2 - v0;
   const det = du1 * dv2 - du2 * dv1;
   if (Math.abs(det) < 1e-6) return null;
-  const dx1 = x1 - x0, dy1 = y1 - y0, dx2 = x2 - x0, dy2 = y2 - y0;
-  const a = (dx1 * dv2 - dx2 * dv1) / det, c = (dx2 * du1 - dx1 * du2) / det;
-  const b = (dy1 * dv2 - dy2 * dv1) / det, d = (dy2 * du1 - dy1 * du2) / det;
+  const dx1 = x1 - x0,
+    dy1 = y1 - y0,
+    dx2 = x2 - x0,
+    dy2 = y2 - y0;
+  const a = (dx1 * dv2 - dx2 * dv1) / det,
+    c = (dx2 * du1 - dx1 * du2) / det;
+  const b = (dy1 * dv2 - dy2 * dv1) / det,
+    d = (dy2 * du1 - dy1 * du2) / det;
   return new DOMMatrix([a, b, c, d, x0 - a * u0 - c * v0, y0 - b * u0 - d * v0]);
 }
 
@@ -144,13 +167,24 @@ export async function trackShape(def) {
     // si la descarga falla (el servidor a veces corta alguna cuando se piden todas juntas), se reintenta una vez y,
     // si vuelve a fallar, no queda guardada: la próxima vez que se dibuje se pide de nuevo
     const get = () => fetch(def.layout).then((r) => r.json());
-    layouts.set(def.id, get().catch(get).then((layout) => {
-      const a = ((def.rotate ?? 0) * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
-      return { points: layout.points.map(([x, y]) => [x * c - y * s, x * s + y * c]), length: layout.lapLengthMeters };
-    }).catch((err) => {
-      layouts.delete(def.id);
-      throw err;
-    }));
+    layouts.set(
+      def.id,
+      get()
+        .catch(get)
+        .then((layout) => {
+          const a = ((def.rotate ?? 0) * Math.PI) / 180,
+            c = Math.cos(a),
+            s = Math.sin(a);
+          return {
+            points: layout.points.map(([x, y]) => [x * c - y * s, x * s + y * c]),
+            length: layout.lapLengthMeters,
+          };
+        })
+        .catch((err) => {
+          layouts.delete(def.id);
+          throw err;
+        }),
+    );
   }
   return layouts.get(def.id);
 }
@@ -161,20 +195,26 @@ const WIDE = 0.8;
 // points: [[x, y], ...]; dot (de 0 a 1): dónde va un punto que da la vuelta, si se quiere uno
 export function drawShape(canvas, points, { color = '#f2f2f2', dot = null, accent = '#ffd400', line = 1 } = {}) {
   const dpr = Math.min(2, devicePixelRatio || 1);
-  const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+  const w = Math.round(canvas.clientWidth * dpr),
+    h = Math.round(canvas.clientHeight * dpr);
   if (!w || !h) return;
   if (canvas.width !== w || canvas.height !== h) Object.assign(canvas, { width: w, height: h });
   const g = canvas.getContext('2d');
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, w, h);
   if (!points?.length) return;
-  const xs = points.map((p) => p[0]), ys = points.map((p) => p[1]);
-  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const xs = points.map((p) => p[0]),
+    ys = points.map((p) => p[1]);
+  const x0 = Math.min(...xs),
+    x1 = Math.max(...xs),
+    y0 = Math.min(...ys),
+    y1 = Math.max(...ys);
   const m = Math.max(8 * dpr, Math.min(w, h) * 0.08);
   // a lo ancho llega hasta WIDE del lugar: los trazados largos y finitos (Montreal), que se estiran de punta a punta,
   // si no se ven más grandes que los demás
   const k = Math.min((WIDE * (w - 2 * m)) / (x1 - x0 || 1), (h - 2 * m) / (y1 - y0 || 1));
-  const ox = (w - (x1 - x0) * k) / 2, oy = (h - (y1 - y0) * k) / 2;
+  const ox = (w - (x1 - x0) * k) / 2,
+    oy = (h - (y1 - y0) * k) / 2;
   const P = ([x, y]) => [ox + (x - x0) * k, oy + (y - y0) * k];
   const lw = Math.max(2, Math.min(w, h) * 0.022) * line;
   g.lineJoin = g.lineCap = 'round';
@@ -193,7 +233,8 @@ export function drawShape(canvas, points, { color = '#f2f2f2', dot = null, accen
 
   // largada: una franja a cuadros cruzando la pista, y una flecha corta con el sentido
   const at = (i) => P(points[((i % points.length) + points.length) % points.length]);
-  const [sx, sy] = at(0), [nx, ny] = at(3);
+  const [sx, sy] = at(0),
+    [nx, ny] = at(3);
   const a = Math.atan2(ny - sy, nx - sx);
   g.save();
   g.translate(sx, sy);
@@ -217,8 +258,11 @@ export function drawShape(canvas, points, { color = '#f2f2f2', dot = null, accen
   g.restore();
 
   if (dot != null) {
-    const f = dot * points.length, i = Math.floor(f), t = f - i;
-    const [ax, ay] = at(i), [bx, by] = at(i + 1);
+    const f = dot * points.length,
+      i = Math.floor(f),
+      t = f - i;
+    const [ax, ay] = at(i),
+      [bx, by] = at(i + 1);
     g.beginPath();
     g.arc(ax + (bx - ax) * t, ay + (by - ay) * t, lw * 1.1, 0, Math.PI * 2);
     g.fillStyle = accent;

@@ -1,8 +1,9 @@
 # Plan: red más grande y entrenamiento por currículum
 
-Plan para la ronda de la IA por refuerzo que vino después de la etapa 2, con cinco intentos de currículum. **La
-red del juego es `models/v5/fase7.json`** (quinto intento); para volver a entrenarla, ver "Cómo se
-corre" al final.
+Plan para la ronda de la IA por refuerzo que vino después de la etapa 2, con cinco intentos de currículum. La red
+del juego de ese plan fue `models/v5/fase7.json` (quinto intento); hoy es la que diga `GAME_NET` en `src/policy.js`,
+entrenada en manada (`rl/curriculum.sh`). Las redes de acá ya no están en `models/`: quedan en el historial de git
+(commit e9ff553).
 
 ## 1. Red más grande (experimento barato, primero)
 
@@ -294,7 +295,7 @@ NOMBRE=v5 sh rl/curriculum.sh 5      # rehace desde la fase 5 (usa rl/runs/v5fas
 
 Cada fase parte del modelo final de la anterior y se exporta a `models/$NOMBRE/faseN.json`. Al continuar un modelo,
 la tasa de aprendizaje de cada fase va de su valor inicial (`--lr`) a 0 dentro de esa fase. Al terminar mide la
-nueva contra la del juego en la carrera tipo juego; si es mejor, se cambia `CURRENT_NET` en `src/main.js`.
+nueva contra la del juego en la carrera tipo juego; si es mejor, se cambia `GAME_NET` en `src/policy.js`.
 
 Para cambiar la receta, lo que más pesa:
 - `--contact-budget` (fracción de los toques provocados de la fase 7 que se permiten) y `--contact-scale`.
@@ -315,8 +316,8 @@ el commit b3253db.
 ## Cómo se mide
 
 ```bash
-JUEGO=1 node rl/race_eval.js models/v5/fase7.json                   # carrera tipo juego: 21 redes y un "jugador"
-node rl/eval.js models/fase4.json                                   # vuelta lanzada sola, autos iguales
-node rl/scenario_eval.js models/etapa2.json models/fase4.json       # cada escenario, mismas carreras
-SPREAD=0.05 node rl/race_eval.js models/fase4.json                  # 22 autos distintos, con rotación
+JUEGO=1 node rl/race_eval.js models/v22/fase18.json                 # carrera tipo juego: 21 redes y un "jugador"
+node rl/eval.js models/v22/fase18.json                              # vuelta lanzada sola, autos iguales
+node rl/scenario_eval.js models/a.json models/b.json                # cada escenario, mismas carreras
+SPREAD=0.05 node rl/race_eval.js models/v22/fase18.json             # 22 autos distintos, con rotación
 ```

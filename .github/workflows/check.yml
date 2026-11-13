@@ -1,0 +1,37 @@
+# Revisa cada PR y cada push a main: ESLint y Prettier (npm run lint), los tests (npm test, en test/) y el chequeo
+# de regresión (tools/regress.js), que corre carreras con semilla fija y las compara con tools/regress.base.txt. Si
+# un cambio toca la física, la IA o los sensores a propósito, se actualiza la base con node tools/regress.js guardar
+# y se commitea con el cambio.
+name: Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-y-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+  # En macOS con Apple Silicon (arm64), como la máquina donde se guarda la base: en x64 las funciones matemáticas
+  # (Math.sin, Math.exp...) pueden dar distinto en el último decimal y la carrera se separa.
+  regress:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: npm run regress

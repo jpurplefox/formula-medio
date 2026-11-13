@@ -8,13 +8,47 @@
 // La resolución de la imagen es la de la pantalla (con un tope); las cuentas de cámara siguen en los mismos
 // "píxeles virtuales" de 960 de ancho que usa el resto del juego.
 
-import { DEFAULT_KERB, KERB_STYLE, MAX_KERB_COLORS, RIDGE, RIDGE_DEPTH, SAUSAGE_H, SAUSAGE_W, edgeReach, kerbAmount, stationAt } from './track.js';
+import {
+  DEFAULT_KERB,
+  KERB_STYLE,
+  MAX_KERB_COLORS,
+  RIDGE,
+  RIDGE_DEPTH,
+  SAUSAGE_H,
+  SAUSAGE_W,
+  edgeReach,
+  kerbAmount,
+  stationAt,
+} from './track.js';
 import { RUBBER_DARK } from './rubber.js';
 import { asphaltTexture, grassTexture, gravelTexture, macroNoise, wallTexture } from './textures.js';
 import {
-  FOG_END, FOG_START, GRASS_BAND, GRASS_TPC, GRAVEL_TPC, RUNOFF_LIGHT, GUIDE_W, KERB_H, LINE_W, MACRO_TPC, MAX_DIST, MODEL_NEAR, NEAR_RISE, PLANE_LEN,
-  BODY_PIVOT_Z, ROAD_TPC, SHADOW, SHADOW_SHIFT, SUN, WALL_H, WALL_STRIPE, WALL_T, Z_NEAR,
-  KERB_RUBBER_MAX, KERB_DIRT_MAX, WEAR_CELL,
+  FOG_END,
+  FOG_START,
+  GRASS_BAND,
+  GRASS_TPC,
+  GRAVEL_TPC,
+  RUNOFF_LIGHT,
+  GUIDE_W,
+  KERB_H,
+  LINE_W,
+  MACRO_TPC,
+  MAX_DIST,
+  MODEL_NEAR,
+  NEAR_RISE,
+  PLANE_LEN,
+  BODY_PIVOT_Z,
+  ROAD_TPC,
+  SHADOW,
+  SHADOW_SHIFT,
+  SUN,
+  WALL_H,
+  WALL_STRIPE,
+  WALL_T,
+  Z_NEAR,
+  KERB_RUBBER_MAX,
+  KERB_DIRT_MAX,
+  WEAR_CELL,
 } from './renderer.js';
 import { sampleField } from './track.js';
 import { lineFrame, pointAt } from './ai.js';
@@ -562,7 +596,10 @@ export class GLRenderer {
     // píxeles virtuales (los del resto del juego) y la resolución real de la imagen
     this.w = w;
     this.h = h;
-    this.scale = Math.min(MAX_SCALE, Math.max(1, Math.ceil((window.devicePixelRatio || 1) * (canvas.clientWidth || w) / w)));
+    this.scale = Math.min(
+      MAX_SCALE,
+      Math.max(1, Math.ceil(((window.devicePixelRatio || 1) * (canvas.clientWidth || w)) / w)),
+    );
     canvas.width = w * this.scale;
     canvas.height = h * this.scale;
     this.setZoom(1);
@@ -592,13 +629,21 @@ export class GLRenderer {
     this.attrib(this.sprites, 'aUV', 2, 5, 3);
     gl.bindVertexArray(null);
 
-    const repeatTex = (t) => this.texture(new Uint8Array(t.levels[0].buffer, t.levels[0].byteOffset, t.levels[0].byteLength), t.size, t.size, { mip: true });
+    const repeatTex = (t) =>
+      this.texture(new Uint8Array(t.levels[0].buffer, t.levels[0].byteOffset, t.levels[0].byteLength), t.size, t.size, {
+        mip: true,
+      });
     this.asphalt = repeatTex(asphaltTexture());
     this.grass = repeatTex(grassTexture());
     this.gravel = repeatTex(gravelTexture());
     this.wall = repeatTex(wallTexture());
     const macro = macroNoise();
-    this.macro = this.texture(Uint8Array.from(macro.data, (v) => Math.round(((v - 0.88) / 0.24) * 255)), macro.size, macro.size, { format: 'R8' });
+    this.macro = this.texture(
+      Uint8Array.from(macro.data, (v) => Math.round(((v - 0.88) / 0.24) * 255)),
+      macro.size,
+      macro.size,
+      { format: 'R8' },
+    );
 
     this.trackData = new WeakMap();
   }
@@ -635,25 +680,31 @@ export class GLRenderer {
   }
 
   buffer(data) {
-    const gl = this.gl, b = gl.createBuffer();
+    const gl = this.gl,
+      b = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, b);
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
     return b;
   }
 
   attrib(prog, name, size, stride, offset) {
-    const gl = this.gl, loc = ATTRIBS.indexOf(name);
+    const gl = this.gl,
+      loc = ATTRIBS.indexOf(name);
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride * 4, offset * 4);
   }
 
   // formatos: RGBA8 (por defecto), R8, RGBA16F (con filtro), R32F y RGBA32F (sin filtro, se leen con texelFetch)
   texture(data, w, h, { format = 'RGBA8', mip = false, nearest = false, clamp = false } = {}) {
-    const gl = this.gl, t = gl.createTexture();
+    const gl = this.gl,
+      t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
     const f = {
-      RGBA8: [gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE], R8: [gl.R8, gl.RED, gl.UNSIGNED_BYTE],
-      RGBA16F: [gl.RGBA16F, gl.RGBA, gl.FLOAT], R32F: [gl.R32F, gl.RED, gl.FLOAT], RGBA32F: [gl.RGBA32F, gl.RGBA, gl.FLOAT],
+      RGBA8: [gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE],
+      R8: [gl.R8, gl.RED, gl.UNSIGNED_BYTE],
+      RGBA16F: [gl.RGBA16F, gl.RGBA, gl.FLOAT],
+      R32F: [gl.R32F, gl.RED, gl.FLOAT],
+      RGBA32F: [gl.RGBA32F, gl.RGBA, gl.FLOAT],
     }[format];
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     if (data instanceof HTMLCanvasElement) gl.texImage2D(gl.TEXTURE_2D, 0, f[0], f[1], f[2], data);
@@ -701,11 +752,25 @@ export class GLRenderer {
   trackTextures(track) {
     let t = this.trackData.get(track);
     if (!t) {
-      const { W, H, height, sdf, lat, station, kerbLeft, kerbRight, sausageLeft, sausageRight, runoffLeft, runoffRight } = track;
+      const {
+        W,
+        H,
+        height,
+        sdf,
+        lat,
+        station,
+        kerbLeft,
+        kerbRight,
+        sausageLeft,
+        sausageRight,
+        runoffLeft,
+        runoffRight,
+      } = track;
       const reach = edgeReach(track.kerbStyle ?? KERB_STYLE);
       // por celda: altura, distancia al borde, distancia de costado a la línea central y cuánto piano hay (0..1);
       // aparte, cuánta salchicha
-      const f = new Float32Array(W * H * 4), sq = new Float32Array(W * H * 4);
+      const f = new Float32Array(W * H * 4),
+        sq = new Float32Array(W * H * 4);
       for (let i = 0; i < W * H; i++) {
         f[i * 4] = height[i];
         f[i * 4 + 1] = sdf[i];
@@ -718,12 +783,20 @@ export class GLRenderer {
           }
         }
       }
-      const n = kerbLeft.length, rows = Math.ceil(n / LINE_TEX_W);
+      const n = kerbLeft.length,
+        rows = Math.ceil(n / LINE_TEX_W);
       t = {
         field: this.texture(f, W, H, { format: 'RGBA16F', clamp: true }),
         sausage: this.texture(sq, W, H, { format: 'RGBA16F', clamp: true }),
         station: this.texture(Float32Array.from(station), W, H, { format: 'R32F', nearest: true, clamp: true }),
-        n, rows, kerbLeft, kerbRight, runoffLeft, runoffRight, offset: undefined, line: null,
+        n,
+        rows,
+        kerbLeft,
+        kerbRight,
+        runoffLeft,
+        runoffRight,
+        offset: undefined,
+        line: null,
         guide: this.texture(new Uint8Array(LINE_TEX_W * rows * 4), LINE_TEX_W, rows, { nearest: true, clamp: true }),
       };
       this.trackData.set(track, t);
@@ -743,7 +816,8 @@ export class GLRenderer {
       t.offset = offset;
     }
     if (this.guide) {
-      const gl = this.gl, c = this.guide.color;
+      const gl = this.gl,
+        c = this.guide.color;
       const rows = Math.ceil(Math.min(c.length, t.n) / LINE_TEX_W);
       const bytes = new Uint8Array(LINE_TEX_W * rows * 4);
       bytes.set(new Uint8Array(c.buffer, c.byteOffset, Math.min(c.length, t.n) * 4));
@@ -762,7 +836,8 @@ export class GLRenderer {
       this.screenOff = this.screenTex;
     }
     if (!canvas) return this.screenOff;
-    if (this.screenOff === this.screenTex) this.screenTex = this.texture(canvas, canvas.width, canvas.height, { clamp: true });
+    if (this.screenOff === this.screenTex)
+      this.screenTex = this.texture(canvas, canvas.width, canvas.height, { clamp: true });
     else {
       gl.bindTexture(gl.TEXTURE_2D, this.screenTex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
@@ -774,7 +849,13 @@ export class GLRenderer {
     let t = this.texCache.get(tex);
     if (!t) {
       if (tex.canvas) t = this.texture(tex.canvas, tex.w, tex.h, { mip: true, clamp: true });
-      else t = this.texture(new Uint8Array(tex.levels[0].buffer, tex.levels[0].byteOffset, tex.levels[0].byteLength), tex.size, tex.size, { mip: true });
+      else
+        t = this.texture(
+          new Uint8Array(tex.levels[0].buffer, tex.levels[0].byteOffset, tex.levels[0].byteLength),
+          tex.size,
+          tex.size,
+          { mip: true },
+        );
       this.texCache.set(tex, t);
     }
     return t;
@@ -792,7 +873,8 @@ export class GLRenderer {
     const wheels = [];
     const texs = {};
     let helmetStart = -1;
-    let neck = { x: 0, y: 0, z: 0 }, column = { x: 0, y: 0, z: 0, ax: 1, ay: 0, az: 0 };
+    let neck = { x: 0, y: 0, z: 0 },
+      column = { x: 0, y: 0, z: 0, ax: 1, ay: 0, az: 0 };
     const parts = [...model.filter((p) => p.tag !== 'helmet'), ...model.filter((p) => p.tag === 'helmet')];
     for (const part of parts) {
       if (part.tag === 'helmet' && helmetStart < 0) helmetStart = data.length / STRIDE;
@@ -841,7 +923,23 @@ export class GLRenderer {
           const [x, y, z] = part.verts[face.idx[a]];
           const uv = face.uv ? face.uv[a] : [0, 0];
           const wv = part.follow ? 11 + part.follow[face.idx[a]] : w;
-          data.push(x, y, z, face.n[0], face.n[1], face.n[2], r, gg, b, uv[0] / size, uv[1] / size, tid, wv, ...smooth[a], gloss);
+          data.push(
+            x,
+            y,
+            z,
+            face.n[0],
+            face.n[1],
+            face.n[2],
+            r,
+            gg,
+            b,
+            uv[0] / size,
+            uv[1] / size,
+            tid,
+            wv,
+            ...smooth[a],
+            gloss,
+          );
         };
         for (let a = 1; a < face.idx.length - 1; a++) {
           vert(0);
@@ -882,7 +980,8 @@ export class GLRenderer {
   async render(track, cam, sprites, models = []) {
     const gl = this.gl;
     this.setZoom(cam.zoom || 1);
-    const dirX = Math.cos(cam.angle), dirY = Math.sin(cam.angle);
+    const dirX = Math.cos(cam.angle),
+      dirY = Math.sin(cam.angle);
     const horizon = this.h / 2 + (cam.pitch || 0);
     const t = this.trackTextures(track);
 
@@ -912,7 +1011,10 @@ export class GLRenderer {
     gl.uniform1i(tp.u.uLineN, t.n);
     gl.uniform1f(tp.u.uRunoff, track.runoff);
     const kerb = (track.kerbColors ?? DEFAULT_KERB).slice(0, MAX_KERB_COLORS);
-    gl.uniform3fv(tp.u.uKerb, kerb.flatMap(([r, g, b]) => [r / 255, g / 255, b / 255]));
+    gl.uniform3fv(
+      tp.u.uKerb,
+      kerb.flatMap(([r, g, b]) => [r / 255, g / 255, b / 255]),
+    );
     gl.uniform1i(tp.u.uKerbN, kerb.length);
     const { line } = track;
     gl.uniform4f(tp.u.uStart, line.x, line.y, line.dx, line.dy);
@@ -924,7 +1026,10 @@ export class GLRenderer {
     }
     gl.uniform3f(tp.u.uCam, cam.x, cam.y, cam.z);
     gl.uniform1f(tp.u.uGround, cam.ground);
-    gl.uniform1f(tp.u.uZStart, Math.max(Z_NEAR, ((cam.z - cam.ground - NEAR_RISE) * this.P) / Math.max(1, this.h - horizon)));
+    gl.uniform1f(
+      tp.u.uZStart,
+      Math.max(Z_NEAR, ((cam.z - cam.ground - NEAR_RISE) * this.P) / Math.max(1, this.h - horizon)),
+    );
     gl.uniform1f(tp.u.uPlane, this.planeLen);
     gl.uniform1f(tp.u.uP, this.P);
     gl.uniform1f(tp.u.uHorizon, horizon);
@@ -950,11 +1055,15 @@ export class GLRenderer {
       gl.bindVertexArray(this.flatVao);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.dynamic);
       for (const m of shadowModels) {
-        const k = 1 / m.meters, ca = Math.cos(m.angle), sa = Math.sin(m.angle);
-        const ox = SHADOW_SHIFT * SUN[0] * k, oy = SHADOW_SHIFT * SUN[1] * k;
+        const k = 1 / m.meters,
+          ca = Math.cos(m.angle),
+          sa = Math.sin(m.angle);
+        const ox = SHADOW_SHIFT * SUN[0] * k,
+          oy = SHADOW_SHIFT * SUN[1] * k;
         const v = [];
         for (const [lx, ly] of SHADOW) {
-          const X = m.x + (ca * lx - sa * ly) * k + ox, Y = m.y + (sa * lx + ca * ly) * k + oy;
+          const X = m.x + (ca * lx - sa * ly) * k + ox,
+            Y = m.y + (sa * lx + ca * ly) * k + oy;
           v.push(X, Y, sampleField(track.height, track.W, X, Y) + 0.03 * k, 0, 0);
         }
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.DYNAMIC_DRAW);
@@ -989,16 +1098,53 @@ export class GLRenderer {
     const sprp = this.sprites;
     gl.useProgram(sprp.p);
     this.camera(sprp, cam, dirX, dirY, horizon);
-    const rx = -dirY, ry = dirX;
+    const rx = -dirY,
+      ry = dirX;
     const groups = new Map();
     for (const s of sprites) {
       const depth = (s.x - cam.x) * dirX + (s.y - cam.y) * dirY;
       if (depth < 0.3 || depth > FOG_END) continue;
       if (!groups.has(s.tex)) groups.set(s.tex, []);
       const v = groups.get(s.tex);
-      const hw = s.width / 2, z0 = s.z || 0, z1 = z0 + s.height;
-      const ax = s.x - rx * hw, ay = s.y - ry * hw, bx = s.x + rx * hw, by = s.y + ry * hw;
-      v.push(ax, ay, z0, 0, 1, bx, by, z0, 1, 1, bx, by, z1, 1, 0, ax, ay, z0, 0, 1, bx, by, z1, 1, 0, ax, ay, z1, 0, 0);
+      const hw = s.width / 2,
+        z0 = s.z || 0,
+        z1 = z0 + s.height;
+      const ax = s.x - rx * hw,
+        ay = s.y - ry * hw,
+        bx = s.x + rx * hw,
+        by = s.y + ry * hw;
+      v.push(
+        ax,
+        ay,
+        z0,
+        0,
+        1,
+        bx,
+        by,
+        z0,
+        1,
+        1,
+        bx,
+        by,
+        z1,
+        1,
+        0,
+        ax,
+        ay,
+        z0,
+        0,
+        1,
+        bx,
+        by,
+        z1,
+        1,
+        0,
+        ax,
+        ay,
+        z1,
+        0,
+        0,
+      );
     }
     gl.bindVertexArray(this.flatVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.dynamic);
@@ -1011,7 +1157,8 @@ export class GLRenderer {
 
     // 5) ayuda de trazada, semitransparente, al final
     if (this.guide) {
-      const gp = this.guides, mesh = this.guideMesh(track, this.guide);
+      const gp = this.guides,
+        mesh = this.guideMesh(track, this.guide);
       gl.useProgram(gp.p);
       this.camera(gp, cam, dirX, dirY, horizon);
       this.bind(0, t.guide, gp, 'uGuide');
@@ -1030,16 +1177,29 @@ export class GLRenderer {
   // un auto (m: { model, x, y, z, angle, pitch, roll, ... } como en render), con el programa de los autos ya en uso.
   // basis: [F, R, U] para orientarlo de cualquier forma (si no, sale de angle y pitch)
   drawModel(m, alpha = 1, basis = null) {
-    const gl = this.gl, mp = this.models;
+    const gl = this.gl,
+      mp = this.models;
     const g = this.modelGeometry(m.model);
-    const ca = Math.cos(m.angle || 0), sa = Math.sin(m.angle || 0);
-    const cp = Math.cos(m.pitch || 0), sp = Math.sin(m.pitch || 0);
-    const [F, R, U] = basis ?? [[ca * cp, sa * cp, sp], [-sa, ca, 0], [-ca * sp, -sa * sp, cp]];
+    const ca = Math.cos(m.angle || 0),
+      sa = Math.sin(m.angle || 0);
+    const cp = Math.cos(m.pitch || 0),
+      sp = Math.sin(m.pitch || 0);
+    const [F, R, U] = basis ?? [
+      [ca * cp, sa * cp, sp],
+      [-sa, ca, 0],
+      [-ca * sp, -sa * sp, cp],
+    ];
     gl.uniform3f(mp.u.uPos, m.x, m.y, m.z);
     gl.uniform3f(mp.u.uF, ...F);
     gl.uniform3f(mp.u.uR, ...R);
     gl.uniform3f(mp.u.uU, ...U);
-    gl.uniform4f(mp.u.uBody, Math.cos(m.roll || 0), Math.sin(m.roll || 0), Math.cos(m.dive || 0), Math.sin(m.dive || 0));
+    gl.uniform4f(
+      mp.u.uBody,
+      Math.cos(m.roll || 0),
+      Math.sin(m.roll || 0),
+      Math.cos(m.dive || 0),
+      Math.sin(m.dive || 0),
+    );
     gl.uniform1f(mp.u.uK, 1 / m.meters);
     gl.uniform2f(mp.u.uSpin, Math.cos(m.spin || 0), Math.sin(m.spin || 0));
     const st = m.steer || 0; // ángulo de las ruedas delanteras (rad)
@@ -1074,7 +1234,8 @@ export class GLRenderer {
   // (pitch), así se lo ve desde arriba sin cambiar la proyección del juego (que no cabecea). dist: de la cámara al
   // auto (m); P: distancia focal (píxeles). Devuelve cómo se proyecta un punto del auto, para dibujar su sombra.
   showcase(model, { yaw = 0, pitch = 0, dist = 14, P, z0 = 0.45 }, w, h) {
-    const gl = this.gl, mp = this.models;
+    const gl = this.gl,
+      mp = this.models;
     if (this.canvas.width !== w || this.canvas.height !== h) Object.assign(this.canvas, { width: w, height: h });
     gl.viewport(0, 0, w, h);
     gl.clearColor(0, 0, 0, 0);
@@ -1090,9 +1251,16 @@ export class GLRenderer {
     gl.uniform1f(mp.u.uHorizon, h / 2);
     gl.uniform2f(mp.u.uView, w, h);
     // girar alrededor del eje vertical y después inclinar la parte de arriba hacia la cámara (alrededor de y)
-    const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const cy = Math.cos(yaw),
+      sy = Math.sin(yaw),
+      cp = Math.cos(pitch),
+      sp = Math.sin(pitch);
     const tilt = ([x, y, z]) => [x * cp - z * sp, y, x * sp + z * cp];
-    const basis = [[cy, sy, 0], [-sy, cy, 0], [0, 0, 1]].map(tilt);
+    const basis = [
+      [cy, sy, 0],
+      [-sy, cy, 0],
+      [0, 0, 1],
+    ].map(tilt);
     // el punto z0 del auto (sobre su centro) queda en el centro de la imagen
     const c = tilt([0, 0, z0]);
     const pos = [dist - c[0], -c[1], -c[2]];
@@ -1100,7 +1268,8 @@ export class GLRenderer {
     gl.bindVertexArray(null);
     return ([x, y, z]) => {
       const [F, R, U] = basis;
-      const wx = pos[0] + F[0] * x + R[0] * y + U[0] * z, wy = pos[1] + F[1] * x + R[1] * y + U[1] * z;
+      const wx = pos[0] + F[0] * x + R[0] * y + U[0] * z,
+        wy = pos[1] + F[1] * x + R[1] * y + U[1] * z;
       const wz = pos[2] + F[2] * x + R[2] * y + U[2] * z;
       return [w / 2 + (wy * P) / wx, h / 2 - (wz * P) / wx];
     };
@@ -1110,14 +1279,19 @@ export class GLRenderer {
   guideMesh(track, line) {
     let mesh = this.guideMeshes.get(line);
     if (mesh) return mesh;
-    const gl = this.gl, f = lineFrame(track), L = line.offset.length;
+    const gl = this.gl,
+      f = lineFrame(track),
+      L = line.offset.length;
     const data = new Float32Array((L + 1) * 2 * 5);
     let o = 0;
     for (let k = 0; k <= L; k++) {
-      const u = k % L, p = pointAt(f, u, line.offset[u]);
-      const nx = f.nx[u % f.L], ny = f.ny[u % f.L];
+      const u = k % L,
+        p = pointAt(f, u, line.offset[u]);
+      const nx = f.nx[u % f.L],
+        ny = f.ny[u % f.L];
       for (const side of [-1, 1]) {
-        const x = p.x + nx * GUIDE_W * side, y = p.y + ny * GUIDE_W * side;
+        const x = p.x + nx * GUIDE_W * side,
+          y = p.y + ny * GUIDE_W * side;
         data.set([x, y, sampleField(track.height, track.W, x, y) + GUIDE_LIFT, k, side], o);
         o += 5;
       }

@@ -40,7 +40,10 @@ export function lineFrame(track) {
   if (frames.has(track)) return frames.get(track);
   const { n, x, y, st } = track.path;
   const L = Math.ceil(st[n]) + 1;
-  const cx = new Float32Array(L), cy = new Float32Array(L), nx = new Float32Array(L), ny = new Float32Array(L);
+  const cx = new Float32Array(L),
+    cy = new Float32Array(L),
+    nx = new Float32Array(L),
+    ny = new Float32Array(L);
   const wrap = (b) => ((b % n) + n) % n;
   let b = 0;
   for (let u = 0; u < L; u++) {
@@ -49,7 +52,8 @@ export function lineFrame(track) {
     const c = wrap(b + 1);
     cx[u] = x[b] + (x[c] - x[b]) * t;
     cy[u] = y[b] + (y[c] - y[b]) * t;
-    const dx = x[wrap(b + 2)] - x[wrap(b - 2)], dy = y[wrap(b + 2)] - y[wrap(b - 2)];
+    const dx = x[wrap(b + 2)] - x[wrap(b - 2)],
+      dy = y[wrap(b + 2)] - y[wrap(b - 2)];
     const len = Math.hypot(dx, dy) || 1;
     nx[u] = -dy / len;
     ny[u] = dx / len;
@@ -73,7 +77,8 @@ export function rescue(track, line, car, u) {
 
 // Grilla de largada detrás de la línea: de a dos, alternando de costado, cada puesto 8 m más atrás
 export function gridSlots(track, count) {
-  const f = lineFrame(track), M = track.meters;
+  const f = lineFrame(track),
+    M = track.meters;
   const slots = [];
   for (let i = 0; i < count; i++) {
     const back = (12 + i * 8) / M;
@@ -97,7 +102,8 @@ export class Driver {
   // Decide los pedales y el volante. me/others: { car, st, lat } con st y lat en celdas.
   drive(dt, track, line, me, others) {
     const { car } = me;
-    const f = lineFrame(track), M = track.meters;
+    const f = lineFrame(track),
+      M = track.meters;
     const L = line.offset.length;
     const v = Math.max(0, car.speed);
     this.time += dt;
@@ -113,14 +119,17 @@ export class Driver {
     const racing = line.offset[u | 0] * M + wobble; // por dónde va la trazada acá (m de costado)
     const myLat = me.lat * M;
     const lapM = f.length * M;
-    let lo = -half, hi = half, cap = Infinity;
+    let lo = -half,
+      hi = half,
+      cap = Infinity;
     let aheadAlongside = Infinity; // velocidad del auto a la par que va un poco adelante
     for (const o of others) {
       let ds = (o.st - u) * M;
       if (ds < -lapM / 2) ds += lapM;
       if (ds > lapM / 2) ds -= lapM;
       if (ds < -ALONGSIDE || ds > SEE_AHEAD) continue;
-      const ol = o.lat * M, ov = Math.max(0, o.car.speed);
+      const ol = o.lat * M,
+        ov = Math.max(0, o.car.speed);
       if (ds < ALONGSIDE) {
         // a la par: cada uno se queda de su lado hasta que uno pase al otro
         if (myLat >= ol) lo = Math.max(lo, ol + PASS_GAP);
@@ -159,9 +168,12 @@ export class Driver {
     const chord = Math.max(-CHORD_MAX, Math.min(CHORD_MAX, ((look * M) ** 2 * this.curv) / 8));
     const sideAhead = Math.max(-half, Math.min(half, line.offset[ua | 0] * M + wobble + this.shift - chord)) / M;
     const target = pointAt(f, ua, sideAhead);
-    const dx = target.x - car.x, dy = target.y - car.y;
-    const ca = Math.cos(car.angle), sa = Math.sin(car.angle);
-    const fwd = dx * ca + dy * sa, right = -dx * sa + dy * ca;
+    const dx = target.x - car.x,
+      dy = target.y - car.y;
+    const ca = Math.cos(car.angle),
+      sa = Math.sin(car.angle);
+    const fwd = dx * ca + dy * sa,
+      right = -dx * sa + dy * ca;
     const dist = Math.hypot(dx, dy) * M || 1;
     const curv = (2 * Math.sin(Math.atan2(right, fwd))) / dist; // curvatura para llegar al punto (1/m)
     this.curv += (curv - this.curv) * Math.min(1, dt * 5);
@@ -180,7 +192,10 @@ export class Driver {
     // (y sin pasar del pedal que bloquea las ruedas: a menos velocidad hay menos carga y hay que pisar menos)
     let brake = Math.max(0, Math.min(1, (v - wantV - 0.3) / BRAKE_FULL)) * BRAKE_USE * car.pedalLimit;
     // arrancando, a fondo aunque la trazada sea lenta
-    if (v < 3 && wantV > 3) { throttle = true; brake = 0; }
+    if (v < 3 && wantV > 3) {
+      throttle = true;
+      brake = 0;
+    }
 
     // si se quedó trabado (contra un muro o un auto), vuelve a la pista sobre la trazada
     this.stuck = v < 1.5 ? this.stuck + dt : 0;
@@ -191,7 +206,9 @@ export class Driver {
     }
     // (need: cuántas veces más empuja el motor a fondo de lo que aguantan las de atrás en ese momento: en las marchas
     // bajas, varias; en el pasto, más todavía)
-    const lim = car.limits, need = (lim.engine(v) + lim.coast(v) - lim.drag(v) - lim.rolling) / Math.max(car.traction || lim.traction(v), 1e-3);
+    const lim = car.limits,
+      need =
+        (lim.engine(v) + lim.coast(v) - lim.drag(v) - lim.rolling) / Math.max(car.traction || lim.traction(v), 1e-3);
     const room = Math.sqrt(1 - Math.min(1, Math.abs(steer)) ** 2); // lo que les queda a las de atrás para empujar
     const dose = Math.min(1, (THROTTLE_USE * Math.max(EXIT_THROTTLE, room)) / need);
     return { throttle: throttle ? dose : 0, brake, steer };

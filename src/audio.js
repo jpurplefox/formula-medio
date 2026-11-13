@@ -26,7 +26,8 @@ const THROTTLE_TIME = 0.15; // lo que tarda el sonido en pasar de acelerando a r
 const BLIP_GAP = 0.2; // entre dos rebajes seguidos (frenando) no se repite el acelerón (s)
 
 function softClip(amount) {
-  const n = 1024, curve = new Float32Array(n);
+  const n = 1024,
+    curve = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const x = (i / (n - 1)) * 2 - 1;
     curve[i] = Math.tanh(amount * x) / Math.tanh(amount);
@@ -43,7 +44,9 @@ function noiseBuffer(ctx, seconds) {
 
 // Onda del tono de las explosiones: armónicos que bajan de a poco, con más cuerpo alrededor del 3º-5º
 function engineWave(ctx) {
-  const n = 40, real = new Float32Array(n), imag = new Float32Array(n);
+  const n = 40,
+    real = new Float32Array(n),
+    imag = new Float32Array(n);
   for (let k = 1; k < n; k++) imag[k] = (1 / k ** 0.85) * (1 + 0.7 * Math.exp(-((k - 4) ** 2) / 5));
   return ctx.createPeriodicWave(real, imag);
 }
@@ -69,22 +72,55 @@ class Voice {
       setup?.(n);
       return n;
     };
-    const gain = (v) => node(ctx.createGain, (g) => { g.gain.value = v; });
+    const gain = (v) =>
+      node(ctx.createGain, (g) => {
+        g.gain.value = v;
+      });
 
     // cadena: mezcla → saturación → resonancias del escape → filtro → volumen (distancia) → envolvente (cortes) → paneo
     this.mix = gain(1);
-    const shaper = node(ctx.createWaveShaper, (s) => { s.curve = kit.drive; s.oversample = '2x'; });
-    const body1 = node(ctx.createBiquadFilter, (f) => { f.type = 'peaking'; f.frequency.value = 450; f.Q.value = 1.2; f.gain.value = 6; });
-    const body2 = node(ctx.createBiquadFilter, (f) => { f.type = 'peaking'; f.frequency.value = 1600; f.Q.value = 1.5; f.gain.value = 4; });
-    this.filter = node(ctx.createBiquadFilter, (f) => { f.type = 'lowpass'; f.Q.value = 1.4; });
+    const shaper = node(ctx.createWaveShaper, (s) => {
+      s.curve = kit.drive;
+      s.oversample = '2x';
+    });
+    const body1 = node(ctx.createBiquadFilter, (f) => {
+      f.type = 'peaking';
+      f.frequency.value = 450;
+      f.Q.value = 1.2;
+      f.gain.value = 6;
+    });
+    const body2 = node(ctx.createBiquadFilter, (f) => {
+      f.type = 'peaking';
+      f.frequency.value = 1600;
+      f.Q.value = 1.5;
+      f.gain.value = 4;
+    });
+    this.filter = node(ctx.createBiquadFilter, (f) => {
+      f.type = 'lowpass';
+      f.Q.value = 1.4;
+    });
     this.level = gain(0);
     this.env = gain(1);
     this.pan = ctx.createStereoPanner();
-    this.mix.connect(shaper).connect(body1).connect(body2).connect(this.filter).connect(this.level).connect(this.env).connect(this.pan).connect(out);
+    this.mix
+      .connect(shaper)
+      .connect(body1)
+      .connect(body2)
+      .connect(this.filter)
+      .connect(this.level)
+      .connect(this.env)
+      .connect(this.pan)
+      .connect(out);
 
     // irregularidad: ruido muy lento que mueve el tono unos pocos cents
-    const wobble = node(ctx.createBufferSource, (s) => { s.buffer = kit.noise; s.loop = true; });
-    const slow = node(ctx.createBiquadFilter, (f) => { f.type = 'lowpass'; f.frequency.value = 12; });
+    const wobble = node(ctx.createBufferSource, (s) => {
+      s.buffer = kit.noise;
+      s.loop = true;
+    });
+    const slow = node(ctx.createBiquadFilter, (f) => {
+      f.type = 'lowpass';
+      f.frequency.value = 12;
+    });
     const depth = gain(25);
     wobble.connect(slow).connect(depth);
     wobble.start(0, Math.random() * 2);
@@ -100,13 +136,31 @@ class Voice {
     };
     this.oscs = [
       osc((o) => o.setPeriodicWave(kit.wave), 1, 0.32),
-      osc((o) => { o.type = 'sine'; }, 1 / 3, 0.3), // el cigüeñal
-      osc((o) => { o.type = 'triangle'; }, 0.5, 0.12), // medio tono
+      osc(
+        (o) => {
+          o.type = 'sine';
+        },
+        1 / 3,
+        0.3,
+      ), // el cigüeñal
+      osc(
+        (o) => {
+          o.type = 'triangle';
+        },
+        0.5,
+        0.12,
+      ), // medio tono
     ];
 
     // aspereza: ruido por un pasabanda que sigue al tono, que late con una cuadrada al ritmo de las explosiones
-    const rasp = node(ctx.createBufferSource, (s) => { s.buffer = kit.noise; s.loop = true; });
-    this.raspBand = node(ctx.createBiquadFilter, (f) => { f.type = 'bandpass'; f.Q.value = 0.9; });
+    const rasp = node(ctx.createBufferSource, (s) => {
+      s.buffer = kit.noise;
+      s.loop = true;
+    });
+    this.raspBand = node(ctx.createBiquadFilter, (f) => {
+      f.type = 'bandpass';
+      f.Q.value = 0.9;
+    });
     this.raspGain = gain(0);
     const pulse = ctx.createOscillator();
     pulse.type = 'square';
@@ -119,8 +173,14 @@ class Voice {
     pulse.start();
 
     // turbo: soplido agudo, después del filtro (no se apaga con él)
-    const turbo = node(ctx.createBufferSource, (s) => { s.buffer = kit.noise; s.loop = true; });
-    this.turboBand = node(ctx.createBiquadFilter, (f) => { f.type = 'bandpass'; f.Q.value = 8; });
+    const turbo = node(ctx.createBufferSource, (s) => {
+      s.buffer = kit.noise;
+      s.loop = true;
+    });
+    this.turboBand = node(ctx.createBiquadFilter, (f) => {
+      f.type = 'bandpass';
+      f.Q.value = 8;
+    });
     this.turboGain = gain(0);
     turbo.connect(this.turboBand).connect(this.turboGain).connect(this.level);
     turbo.start(0, Math.random() * 2);
@@ -136,7 +196,8 @@ class Voice {
   // f: tono (Hz), level: volumen, bright: apertura del filtro (Hz), pan: -1 izquierda … 1 derecha,
   // thr: acelerador (0..1), rpm
   set(f, level, bright, pan, thr, rpm) {
-    const t = this.ctx.currentTime, k = 0.03; // los cambios se suavizan en ~30 ms
+    const t = this.ctx.currentTime,
+      k = 0.03; // los cambios se suavizan en ~30 ms
     for (const [o, mult] of this.oscs) o.frequency.setTargetAtTime(f * mult, t, k);
     this.pulse.frequency.setTargetAtTime(f, t, k);
     this.raspBand.frequency.setTargetAtTime(f * 3, t, k);
@@ -152,7 +213,8 @@ class Voice {
 
   // un golpe de ruido corto: tipo de filtro y frecuencia, volumen, duración (s) y cuándo (s desde ahora)
   burst(type, freq, vol, dur, delay = 0) {
-    const ctx = this.ctx, t = ctx.currentTime + delay;
+    const ctx = this.ctx,
+      t = ctx.currentTime + delay;
     const src = ctx.createBufferSource();
     src.buffer = this.kit.burst;
     const f = ctx.createBiquadFilter();
@@ -280,7 +342,8 @@ class Rumble {
   }
 
   set({ kerb = 0, green = 0, speed = 0, ridge = 1.6, jolt = 0 }) {
-    const t = this.ctx.currentTime, v = Math.abs(speed);
+    const t = this.ctx.currentTime,
+      v = Math.abs(speed);
     const rate = Math.max(4, Math.min(80, v / ridge)); // escalones por segundo
     this.lfo.frequency.setTargetAtTime(rate, t, 0.03);
     this.tone.frequency.setTargetAtTime(rate * 2, t, 0.03);
@@ -294,8 +357,10 @@ class Rumble {
   }
 
   thump(k) {
-    const ctx = this.ctx, t = ctx.currentTime;
-    const o = ctx.createOscillator(), g = ctx.createGain();
+    const ctx = this.ctx,
+      t = ctx.currentTime;
+    const o = ctx.createOscillator(),
+      g = ctx.createGain();
     o.type = 'sine';
     o.frequency.setValueAtTime(110, t);
     o.frequency.exponentialRampToValueAtTime(40, t + 0.25);
@@ -304,7 +369,8 @@ class Rumble {
     o.connect(g).connect(this.out);
     o.start(t);
     o.stop(t + 0.32);
-    const n = ctx.createBufferSource(), ng = ctx.createGain();
+    const n = ctx.createBufferSource(),
+      ng = ctx.createGain();
     n.buffer = this.kit.burst;
     ng.gain.setValueAtTime(0.5 * k, t);
     ng.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
@@ -325,7 +391,8 @@ export class EngineAudio {
   setVolumes(volumes) {
     Object.assign(this.volumes, volumes);
     if (!this.ctx) return;
-    const t = this.ctx.currentTime, { master, engines, music } = this.volumes;
+    const t = this.ctx.currentTime,
+      { master, engines, music } = this.volumes;
     this.master.gain.setTargetAtTime(MASTER * master, t, 0.03);
     this.engines.gain.setTargetAtTime(engines, t, 0.03);
     this.musicBus.gain.setTargetAtTime(music, t, 0.03);
@@ -386,11 +453,16 @@ export class EngineAudio {
   // (cabina), que suena "adentro": fuerte, al centro y sin Doppler
   update(cars, ear, inside = -1) {
     if (!this.ctx) return;
-    const rx = -Math.sin(ear.angle), ry = Math.cos(ear.angle); // derecha de la cámara
-    const fx = Math.cos(ear.angle), fy = Math.sin(ear.angle);
+    const rx = -Math.sin(ear.angle),
+      ry = Math.cos(ear.angle); // derecha de la cámara
+    const fx = Math.cos(ear.angle),
+      fy = Math.sin(ear.angle);
     // cada voz sigue a un auto mientras esté entre los más cercanos; si sale, la toma otro (empieza de cero)
-    const near = cars.map((c, i) => [i === inside ? -1 : Math.hypot(c.x - ear.x, c.y - ear.y), i])
-      .sort((a, b) => a[0] - b[0]).slice(0, MAX_VOICES).map(([, i]) => i);
+    const near = cars
+      .map((c, i) => [i === inside ? -1 : Math.hypot(c.x - ear.x, c.y - ear.y), i])
+      .sort((a, b) => a[0] - b[0])
+      .slice(0, MAX_VOICES)
+      .map(([, i]) => i);
     while (this.voices.length < near.length) this.voices.push(new Voice(this.kit, this.engines));
     const taken = new Set(this.voices.map((v) => v.car));
     const free = near.filter((i) => !taken.has(i));
@@ -401,7 +473,8 @@ export class EngineAudio {
       v.throttle = 0;
     }
     this.voices.forEach((v) => {
-      const i = v.car, c = cars[i];
+      const i = v.car,
+        c = cars[i];
       if (!c) {
         v.mute();
         return;
@@ -417,7 +490,8 @@ export class EngineAudio {
       let level = (0.62 + 0.38 * s) * 0.22;
       let pan = 0;
       if (i !== inside) {
-        const dx = c.x - ear.x, dy = c.y - ear.y;
+        const dx = c.x - ear.x,
+          dy = c.y - ear.y;
         const d = Math.hypot(dx, dy) || 1;
         level /= 1 + (d / NEAR) ** 2;
         pan = Math.max(-0.9, Math.min(0.9, (dx * rx + dy * ry) / d));
@@ -425,7 +499,8 @@ export class EngineAudio {
         if ((dx * fx + dy * fy) / d < 0) bright *= 0.6;
         bright /= 1 + d / 150;
         // Doppler: velocidad con la que se aleja (positiva) o se acerca (negativa)
-        const vx = Math.cos(c.angle) * c.speed - ear.vx, vy = Math.sin(c.angle) * c.speed - ear.vy;
+        const vx = Math.cos(c.angle) * c.speed - ear.vx,
+          vy = Math.sin(c.angle) * c.speed - ear.vy;
         const away = (vx * dx + vy * dy) / d;
         f *= SOUND_SPEED / (SOUND_SPEED + Math.max(-150, Math.min(150, away)));
       } else {
