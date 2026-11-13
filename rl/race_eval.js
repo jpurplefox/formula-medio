@@ -1,4 +1,4 @@
-// Mide una red en carrera: 22 autos desde la grilla, la mitad con la red y la mitad con la IA de siempre
+// Mide una red en carrera: 22 autos desde la grilla, la mitad con la red y la mitad con la IA clásica
 // (ritmos de Difícil), intercalados. Cuando el primero completa las vueltas se ordenan por distancia recorrida.
 //
 //   node rl/race_eval.js models/v22/fase18.json [circuitos separados por coma] [vueltas]
@@ -9,10 +9,10 @@
 // en el pasto (con dos ruedas o más; aparte, con una sola rueda afuera). Para ver cómo larga: cuánto más lenta que su
 // mejor vuelta es la primera de cada auto de la red (desde que cruza la línea; en fila india se pierden segundos).
 //
-// Con JUEGO=1 es la carrera del juego: todos los autos con la red salvo uno, la IA de siempre al ritmo más alto de
+// Con JUEGO=1 es la carrera del juego: todos los autos con la red salvo uno, la IA clásica al ritmo más alto de
 // Difícil, que hace de jugador (largando del medio). Informa toques por auto de la red, cuántos provocó, pasto y en
 // cuánto tiempo terminó el primero las vueltas (el ritmo). Con DIFICULTAD (facil, normal, dificil, experto) las redes
-// llevan el agarre y la potencia de esa dificultad en el juego (src/teams.js) y el jugador, su ritmo más alto.
+// llevan el agarre y la potencia de esa dificultad en el juego (src/race/teams.js) y el jugador, su ritmo más alto.
 //
 // Con DANOS (reduced o real) los golpes rompen (damage.js): informa además abandonos y piezas rotas por carrera.
 // Con TOQUES=1 informa dónde se dan los toques de la red: en qué vuelta (la suya), en los primeros segundos de la
@@ -24,22 +24,22 @@
 // suerte con los autos. Las gomas se gastan como en el juego (del todo al terminar la carrera).
 
 import { readFileSync } from 'node:fs';
-import { Driver, gridSlots } from '../src/ai.js';
-import { Car, FUEL_PER_KM, isSolid, LAUNCH_WINDOW, limitsOn, slipstream, TRACTION_CONTROL } from '../src/car.js';
+import { Driver } from '../src/drivers/ai.js';
+import { gridSlots } from '../src/race/grid.js';
+import { Car, FUEL_PER_KM, limitsOn, TRACTION_CONTROL } from '../src/sim/car.js';
+import { randomSetup, rng } from './env.js';
+import { logHits } from '../src/sim/collision.js';
+import { NeuralDriver, Policy } from '../src/drivers/policy.js';
+import { racingLine } from '../src/sim/racingline.js';
+import { trackHeading } from '../src/drivers/sensors.js';
+import { loadTrack, TRACK_IDS } from './tracks.js';
+import { RubberMap } from '../src/sim/rubber.js';
+import { Race } from '../src/race/race.js';
+import { DIFFICULTIES, rivalSetups } from '../src/race/teams.js';
+import { damaged, setDamageRandom, zoneAt } from '../src/sim/damage.js';
 
 const NET_TC = TRACTION_CONTROL[process.env.TC ?? 'low']; // TC=off|low|high: control de tracción de los autos de la red
 const NET_ABS = process.env.ABS !== '0'; // ABS=0: sin ABS
-import { LIGHTS_OUT, lightsAt, lightsDuration, randomHold } from '../src/lights.js';
-import { randomSetup, rng } from './env.js';
-import { collideCars, logHits } from '../src/collision.js';
-import { NeuralDriver, Policy } from '../src/policy.js';
-import { racingLine } from '../src/racingline.js';
-import { trackHeading } from '../src/sensors.js';
-import { sampleField, stationAt } from '../src/track.js';
-import { loadTrack, TRACK_IDS } from './tracks.js';
-import { RubberMap } from '../src/rubber.js';
-import { DIFFICULTIES, rivalSetups } from '../src/teams.js';
-import { damaged, setDamageRandom, zoneAt } from '../src/damage.js';
 
 const [file, ids, lapsArg] = process.argv.slice(2);
 const policy = new Policy(JSON.parse(readFileSync(file, 'utf8')));
@@ -73,7 +73,6 @@ function race(track, seed, swap) {
   const setups = Array.from({ length: CARS }, () => randomSetup(rand, SPREAD));
   const line = racingLine(track, limitsOn(profile, track), { brakeUse: 0.93 });
   const slots = gridSlots(track, CARS);
-  const L = track.length;
   let ai = 0;
   const entries = slots.map((s, k) => {
     const car = new Car(s.x, s.y, s.angle, profile);
@@ -91,9 +90,7 @@ function race(track, seed, swap) {
       net,
       grid: k,
       driver: net ? new NeuralDriver(policy) : new Driver(pace, k + 1),
-      u: stationAt(track, car.x, car.y),
-      dist: -s.back,
-      cross: [],
+      cross: [], // cuándo cruzó la línea: al largar y al terminar cada vuelta
       where: [],
       lastTouch: -1e9,
       hits: 0,
@@ -102,85 +99,18 @@ function race(track, seed, swap) {
       wheel: 0,
     };
   });
-  const cars = entries.map((e) => e.car);
-  // la goma, como en el juego: arranca con la franja de otra categoría y la carrera la marca (y agarra según cuánta haya)
+  // la carrera del juego (src/race/race.js): grilla, semáforo, largadas, goma, vueltas y orden, igual que en main.js
   const rubber = new RubberMap(track, line.offset);
-  for (const c of cars) c.rubber = rubber;
-  // el semáforo, como en el juego (main.js): la IA de siempre (y las redes que no lo ven) sube hasta sus vueltas y
-  // larga con su reacción; las redes que lo ven suben y bajan las vueltas ellas y largan al acelerar
-  const total = lightsDuration(randomHold(rand));
-  const sees = (e) => e.net && policy.lights;
-  const rest = (e) => entries.filter((o) => o !== e);
-  for (const e of entries)
-    Object.assign(e, { revTarget: LAUNCH_WINDOW[0] - 300 + rand() * 1500, react: 0.12 + rand() * 0.22 });
-  for (let c = 0; c < total; c += DT) {
-    const lights = lightsAt(c, total);
-    for (const e of entries) {
-      if (sees(e)) {
-        e.car.lights = lights;
-        const inp = e.driver.grid(DT, track, e, rest(e));
-        e.car.revBy(DT, inp.revUp, inp.revDown);
-        e.car.throttle = inp.throttle;
-      } else e.car.rev(DT, e.car.rpm < e.revTarget);
-    }
-  }
-  for (const e of entries) {
-    if (!sees(e)) continue;
-    Object.assign(e.car, { lights: LIGHTS_OUT });
-    e.react = 0;
-    if (e.driver.input.throttle > 0) e.car.launch();
-    else e.wait = true;
-  }
-  // antes de largar: la IA reacciona; la red que no venía acelerando, larga cuando acelera
-  const started = (e) => {
-    if (e.react > 0) {
-      e.react -= DT;
-      e.car.rev(DT, e.car.rpm < e.revTarget);
-      if (e.react <= 0) e.car.launch();
-      return false;
-    }
-    if (e.wait) {
-      if (e.driver.grid(DT, track, e, rest(e)).throttle <= 0) {
-        e.car.rev(DT, false);
-        return false;
-      }
-      e.car.launch();
-      e.wait = false;
-    }
-    return true;
-  };
-  let t = 0;
-  for (; t < 600; t += DT) {
-    const states = entries.map((e) => ({
-      car: e.car,
-      st: e.u,
-      lat: sampleField(track.lat, track.W, e.car.x, e.car.y),
-    }));
-    const racing = cars.filter((c) => !c.gone); // los que abandonaron y ya sacaron no están más en la pista
-    for (const c of racing) c.draft = slipstream(c, racing, track.meters);
-    entries.forEach(
-      (e, i) =>
-        e.car.gone ||
-        !started(e) ||
-        e.car.update(
-          DT,
-          e.driver.drive(
-            DT,
-            track,
-            line,
-            states[i],
-            states.filter((_, j) => j !== i && !entries[j].car.gone),
-          ),
-          track,
-        ),
-    );
-    rubber.update(DT, states);
-    const before = cars.map((c) => c.bump);
-    collideCars(racing, track, isSolid);
-    let leader = 0;
+  for (const e of entries) e.car.rubber = rubber;
+  const r = new Race({ track, entries, laps: LAPS, line, rubber, random: rand });
+  while (!r.started) r.step(DT);
+  for (; r.time < 600 && !r.finished.length;) {
+    const bump = entries.map((e) => e.car.bump);
+    for (const ev of r.step(DT)) if (ev.type === 'start' || ev.type === 'lap') ev.entry.cross.push(r.time);
+    const t = r.time;
     entries.forEach((e, i) => {
       // un toque es un contacto que empieza después de medio segundo sin tocarse (un roce largo cuenta una vez)
-      const touch = e.car.bump > before[i] + 0.05,
+      const touch = e.carHit > 0,
         fresh = touch && t - e.lastTouch > 0.5;
       if (touch) e.lastTouch = t;
       if (fresh) {
@@ -192,25 +122,15 @@ function race(track, seed, swap) {
             dist = (o) => Math.hypot(o.car.x - e.car.x, o.car.y - e.car.y) * M;
           const near = entries.filter((o) => o !== e && dist(o) < 30).length;
           const other = entries.filter((o) => o !== e).reduce((a, o) => (dist(o) < dist(a) ? o : a));
-          e.where.push({ lap: e.cross.length, t, player: !other.net, near, hit: e.car.bump - before[i] });
+          e.where.push({ lap: e.cross.length, t, player: !other.net, near, hit: e.car.bump - bump[i] });
         }
       }
       if (e.car.onGrass) e.grass += DT;
       else if (e.car.grass > 0) e.wheel += DT;
-      const u = stationAt(track, e.car.x, e.car.y);
-      if (u < 0) return;
-      let du = u - e.u;
-      if (du < -L / 2) du += L;
-      else if (du > L / 2) du -= L;
-      e.u = u;
-      e.dist += du * track.meters;
-      // cuándo cruza la línea en cada vuelta
-      while (e.dist >= e.cross.length * L * track.meters) e.cross.push(t);
-      leader = Math.max(leader, e.dist);
     });
-    if (leader >= LAPS * L * track.meters) break;
   }
-  const order = [...entries].sort((a, b) => b.dist - a.dist);
+  const t = r.time;
+  const order = r.order();
   order.forEach((e, p) => (e.pos = p + 1));
   const group = (net) => entries.filter((e) => e.net === net);
   const avg = (xs, f) => xs.reduce((a, e) => a + f(e), 0) / xs.length;
@@ -267,7 +187,7 @@ function atFault(track, e, entries) {
     c = e.car,
     ca = Math.cos(c.angle),
     sa = Math.sin(c.angle);
-  const h = trackHeading(track, e.u),
+  const h = trackHeading(track, e.st),
     nx = -Math.sin(h),
     ny = Math.cos(h);
   const lat = (k) => {

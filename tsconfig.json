@@ -1,0 +1,17 @@
+{
+  // TypeScript sólo como verificador de los tipos que dicen los comentarios JSDoc (como mypy con los type hints):
+  // no compila nada. Revisa el dominio (sim, race, drivers); se corre con npm run types (y npm run lint).
+  // "dom" está por fetch y atob, que también existen en Node: que el dominio no use el navegador lo cuida ESLint.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "es2022",
+    "module": "es2022",
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "dom"],
+    "strict": false,
+    "skipLibCheck": true
+  },
+  "include": ["src/sim/**/*.js", "src/race/**/*.js", "src/drivers/**/*.js"]
+}

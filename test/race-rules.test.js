@@ -1,7 +1,7 @@
 // Las reglas de la carrera: el semáforo de largada (lights.js) y los equipos, rivales y grilla (teams.js).
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { LIGHT_FIRST, lightsAt, lightsDuration, randomHold } from '../src/lights.js';
+import { LIGHT_FIRST, lightsAt, lightsDuration, randomHold } from '../src/sim/lights.js';
 import {
   car,
   DEFAULT_RIVALS,
@@ -12,7 +12,7 @@ import {
   rivalSetups,
   RIVAL_OPTIONS,
   TEAMS,
-} from '../src/teams.js';
+} from '../src/race/teams.js';
 import { rng } from '../rl/env.js';
 
 describe('semáforo', () => {

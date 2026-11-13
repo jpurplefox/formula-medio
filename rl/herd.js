@@ -1,10 +1,10 @@
 // Carreras en manada (currículo v8, rl/CURRICULO.md): todos los autos de la carrera son agentes con la misma red,
 // que aprende. Así se entrena el comportamiento de grupo que se ve en el juego (21 redes iguales), por ejemplo la
-// fila india en la largada, que con rivales de la IA de siempre no aparecía.
+// fila india en la largada, que con rivales de la IA clásica no aparecía.
 //
 // Escenarios (cuánto duran sale de la vuelta de la trazada del circuito):
 //   solo     agentes repartidos por la pista, lanzados, dos vueltas (repaso de la fase 1)
-//   grid     largada desde parado con semáforo (src/lights.js), dos vueltas: la grilla del circuito o una al azar
+//   grid     largada desde parado con semáforo (src/sim/lights.js), dos vueltas: la grilla del circuito o una al azar
 //            antes de una curva. Con las luces prendidas la red sube y baja las vueltas con sus dos salidas de rpm
 //            (car.revBy); al apagarse, si viene acelerando suelta el embrague con las que tenga (car.launch: ahogado o
 //            patinando si no están en la ventana) o, si no, cuando acelere
@@ -41,16 +41,15 @@
 //   - el castigo, como lo que avanzaría en esos segundos a la velocidad media de la trazada
 // Y sin escala: - muro, quedarse quieto, rescate, abandono, ir lento con la pista libre (piso de ritmo)
 
-import { gridSlots } from '../src/ai.js';
-import { isSolid, slipstream } from '../src/car.js';
-import { collideCars } from '../src/collision.js';
-import { ACTIONS, inZone, stationAt } from '../src/sensors.js';
-import { halfWidthAt, sampleField } from '../src/track.js';
-import { NO_DAMAGE } from '../src/damage.js';
+import { gridSlots } from '../src/race/grid.js';
+import { stepCars } from '../src/sim/traffic.js';
+import { ACTIONS, inZone, stationAt } from '../src/drivers/sensors.js';
+import { halfWidthAt, sampleField } from '../src/sim/track.js';
+import { NO_DAMAGE } from '../src/sim/damage.js';
 import { randomSetup, randomTune, randomTyres, TUNE_SPREAD } from './env.js';
 import { getTrack, mod, RaceSim, recordPace, wrap } from './race.js';
-import { LIGHT_FIRST, lightsAt, lightsDuration, randomHold } from '../src/lights.js';
-import { RubberMap } from '../src/rubber.js';
+import { LIGHT_FIRST, lightsAt, lightsDuration, randomHold } from '../src/sim/lights.js';
+import { RubberMap } from '../src/sim/rubber.js';
 
 const DT = 1 / 60,
   SUBSTEPS = 3,
@@ -79,7 +78,7 @@ const ZONE_TIME = 0.4,
 const CHASE_HANDICAP = [0.2, 0.08];
 // vueltas de cada escenario y margen de tiempo (la vuelta de la trazada × SLACK, más unos segundos)
 // (start: lo que suele durar, en vueltas, para repartir los pasos de la mezcla y cortar si nadie llega)
-const HERD_SCENARIOS = { solo: 2, grid: 2, rolling: 2, chase: 1, flying: 1, start: 0.25 };
+export const HERD_SCENARIOS = { solo: 2, grid: 2, rolling: 2, chase: 1, flying: 1, start: 0.25 };
 const START_MARGIN = 10; // m antes del comienzo de la frenada donde termina el arranque
 const SLACK = 1.25,
   EXTRA = 25; // con una grilla de 16 los últimos tardan en completar las dos vueltas
@@ -339,29 +338,23 @@ export class HerdSim extends RaceSim {
       e.input = { steer, throttle: Math.max(0, pedal), brake: Math.max(0, -pedal) };
     });
     for (let s = 0; s < SUBSTEPS; s++) {
-      for (const c of all) c.draft = slipstream(c, all, M);
-      for (const e of cars) {
+      const { wall, hit } = stepCars(track, all, DT, (k) => {
+        const e = cars[k];
         if (e.waiting) {
           // se apagaron las luces y no venía acelerando: larga cuando acelera
-          if (e.input.throttle > 0) {
-            e.car.launch();
-            e.waiting = false;
-          } else {
+          if (e.input.throttle <= 0) {
             e.car.rev(DT, 0);
-            e.wallHit = 0;
-            continue;
+            return null;
           }
+          e.car.launch();
+          e.waiting = false;
         }
-        const bump = e.car.bump;
-        e.car.update(DT, e.input, track);
-        e.wallHit = e.car.bump > bump + 0.05 ? e.car.bump - bump : 0;
-      }
-      const before = all.map((c) => c.bump);
-      collideCars(all, track, isSolid);
+        return e.input;
+      });
       this.time += DT;
       cars.forEach((e, k) => {
-        const carHit = e.car.bump > before[k] + 0.05 ? e.car.bump - before[k] : 0;
-        rewards[k] -= WALL_PENALTY * e.wallHit;
+        const carHit = hit[k];
+        rewards[k] -= WALL_PENALTY * wall[k];
         if (carHit) {
           const fresh = this.time - e.lastTouch > CONTACT_GAP;
           e.lastTouch = e.lastHit = this.time;
@@ -406,7 +399,7 @@ export class HerdSim extends RaceSim {
       );
     }
     const dt = DT * SUBSTEPS;
-    // la zona de al lado (inZone, src/sensors.js: la misma que ve la red)
+    // la zona de al lado (inZone, src/drivers/sensors.js: la misma que ve la red)
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
         const [ahead, side] = this.rel(cars[i], cars[j]);

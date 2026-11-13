@@ -1,5 +1,5 @@
 // Fases 2 a 4: carreras con varios autos. Algunos autos aprenden (los "agentes", todos con la misma red: compite
-// contra sí misma) y los demás son rivales que no aprenden: la IA de siempre (ai.js) con ritmos distintos o redes
+// contra sí misma) y los demás son rivales que no aprenden: la IA clásica (ai.js) con ritmos distintos o redes
 // ya entrenadas (versiones anteriores).
 //
 // Cada carrera es un escenario (rl/CURRICULO.md), elegido al azar según la mezcla de la fase:
@@ -41,15 +41,15 @@
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Driver } from '../src/ai.js';
-import { Car, DEFAULT_PROFILE, isSolid, limitsOn, RIVAL_AIDS, SAME_SETUP, slipstream } from '../src/car.js';
-import { collideCars } from '../src/collision.js';
-import { NeuralDriver, Policy } from '../src/policy.js';
-import { racingLine } from '../src/racingline.js';
-import { ACTIONS, OBS_SIZE, observe, stationAt, trackHeading } from '../src/sensors.js';
-import { halfWidthAt, sampleField } from '../src/track.js';
+import { Driver } from '../src/drivers/ai.js';
+import { Car, DEFAULT_PROFILE, limitsOn, RIVAL_AIDS, SAME_SETUP } from '../src/sim/car.js';
+import { stepCars } from '../src/sim/traffic.js';
+import { NeuralDriver, Policy } from '../src/drivers/policy.js';
+import { racingLine } from '../src/sim/racingline.js';
+import { ACTIONS, OBS_SIZE, observe, stationAt, trackHeading } from '../src/drivers/sensors.js';
+import { halfWidthAt, sampleField } from '../src/sim/track.js';
 import { pointOnCenter, randomSetup, randomTune, randomTyres, rng, TUNE_SPREAD } from './env.js';
-import { NO_DAMAGE, randomDamage } from '../src/damage.js';
+import { NO_DAMAGE, randomDamage } from '../src/sim/damage.js';
 import { loadTrack } from './tracks.js';
 
 const DT = 1 / 60;
@@ -209,7 +209,7 @@ export class RaceSim {
     this.tuneSpread = tuneSpread;
     this.damage = damage;
     this.damagedStarts = damagedStarts;
-    // boost: los rivales con esa fracción más de agarre y potencia, y la IA de siempre a más ritmo (de 1 a 1,1):
+    // boost: los rivales con esa fracción más de agarre y potencia, y la IA clásica a más ritmo (de 1 a 1,1):
     // para seguir mejorando el ritmo detrás de autos más rápidos que uno mismo
     this.boost = boost;
     this.rewards = { progress: 1, pass: 1, paceFloor: 0, paceAlways: 0, paceCrowd: 0, crowd: 1, launch: 0, ...rewards };
@@ -255,7 +255,7 @@ export class RaceSim {
     return v[Math.floor(mod(u, this.track.length)) % v.length];
   }
 
-  // rival de la IA de siempre (pace: fracción de la trazada ideal) o, a veces, una red ya entrenada
+  // rival de la IA clásica (pace: fracción de la trazada ideal) o, a veces, una red ya entrenada
   bot(k, pace = this.boost ? 1 + 0.1 * this.rand() : 0.9 + 0.18 * this.rand(), neural = 0) {
     if (this.opponents.length && this.rand() < neural)
       return new NeuralDriver(this.opponents[Math.floor(this.rand() * this.opponents.length)]);
@@ -406,7 +406,7 @@ export class RaceSim {
       };
       if (s.kind === 'bot') {
         e.driver = s.driver;
-        // la IA de siempre no sabe de su auto: con menos agarre, menos ritmo (la velocidad en curva va con su raíz)
+        // la IA clásica no sabe de su auto: con menos agarre, menos ritmo (la velocidad en curva va con su raíz)
         if (e.driver.pace) e.driver.pace *= Math.sqrt(Math.min(1, car.setup.grip));
       } else {
         this.newEpisode(e);
@@ -488,32 +488,25 @@ export class RaceSim {
     });
     const states = cars.map((e) => ({ car: e.car, st: e.u, lat: sampleField(track.lat, track.W, e.car.x, e.car.y) }));
     for (let s = 0; s < SUBSTEPS; s++) {
-      for (const c of all) c.draft = slipstream(c, all, M);
-      cars.forEach((e, i) => {
-        const input =
-          e.kind === 'agent'
-            ? e.input
-            : e.driver.drive(
-                DT,
-                track,
-                line,
-                states[i],
-                states.filter((_, j) => j !== i),
-              );
-        const bump = e.car.bump;
-        e.car.update(DT, input, track);
-        e.wallHit = e.car.bump > bump + 0.05 ? e.car.bump - bump : 0;
-      });
-      const before = all.map((c) => c.bump);
-      collideCars(all, track, isSolid);
+      const { wall, hit } = stepCars(track, all, DT, (i) =>
+        cars[i].kind === 'agent'
+          ? cars[i].input
+          : cars[i].driver.drive(
+              DT,
+              track,
+              line,
+              states[i],
+              states.filter((_, j) => j !== i),
+            ),
+      );
       this.time += DT;
       cars.forEach((e, i) => {
         const k = this.agentsList.indexOf(e);
-        const carHit = e.car.bump > before[i] + 0.05 ? e.car.bump - before[i] : 0;
+        const carHit = hit[i];
         if (carHit) e.lastHit = this.time;
         if (e.car.onGrass) e.lastGrass = this.time;
         if (k >= 0) {
-          rewards[k] -= WALL_PENALTY * e.wallHit;
+          rewards[k] -= WALL_PENALTY * wall[i];
           if (carHit) {
             const fault = this.hitAhead(e) || this.squeezed(e);
             const crowd = this.crowded(e) ? this.rewards.crowd : 1;

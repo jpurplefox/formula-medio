@@ -10,11 +10,11 @@
 //   node tools/lapcompare.js [circuitos separados por coma] [salida.html]
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { Car, limitsOn } from '../src/car.js';
-import { GAME_NET, Policy, NeuralDriver } from '../src/policy.js';
-import { racingLine } from '../src/racingline.js';
-import { stationAt } from '../src/track.js';
-import { gridSlots } from '../src/ai.js';
+import { Car, limitsOn } from '../src/sim/car.js';
+import { GAME_NET, Policy, NeuralDriver } from '../src/drivers/policy.js';
+import { racingLine } from '../src/sim/racingline.js';
+import { stationAt } from '../src/sim/track.js';
+import { gridSlots } from '../src/race/grid.js';
 import { loadTrack, TRACK_IDS } from '../rl/tracks.js';
 import { TRACKS } from '../tracks/index.js';
 import { realLap } from './openf1.js';

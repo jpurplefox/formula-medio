@@ -19,8 +19,8 @@ import {
   edgeReach,
   kerbAmount,
   stationAt,
-} from './track.js';
-import { RUBBER_DARK } from './rubber.js';
+} from '../sim/track.js';
+import { RUBBER_DARK } from '../sim/rubber.js';
 import { asphaltTexture, grassTexture, gravelTexture, macroNoise, wallTexture } from './textures.js';
 import {
   FOG_END,
@@ -50,8 +50,8 @@ import {
   KERB_DIRT_MAX,
   WEAR_CELL,
 } from './renderer.js';
-import { sampleField } from './track.js';
-import { lineFrame, pointAt } from './ai.js';
+import { sampleField } from '../sim/track.js';
+import { lineFrame, pointAt } from '../sim/lineframe.js';
 
 const FAR = MAX_DIST + 10; // lo más lejos que se guarda en el z-buffer (en celdas)
 const MAX_SCALE = 1.5; // como mucho, 1,5 veces los píxeles virtuales (1440×810): más no se nota y calienta la máquina

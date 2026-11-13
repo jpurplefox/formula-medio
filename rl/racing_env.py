@@ -29,7 +29,7 @@ class Worker:
         )
         hello = json.loads(self.proc.stdout.readline())
         self.obs_size = hello["obs_size"]
-        self.actions = hello.get("actions", 2)  # salidas de la red (src/sensors.js, ACTIONS)
+        self.actions = hello.get("actions", 2)  # salidas de la red (src/drivers/sensors.js, ACTIONS)
         self.n = hello["envs"]  # agentes en total
 
     def _read(self, count: int) -> np.ndarray:

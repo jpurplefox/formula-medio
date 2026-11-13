@@ -2,12 +2,12 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
-import { isSolid, limitsOn, RIVAL_AIDS } from '../src/car.js';
-import { collideCars } from '../src/collision.js';
-import { GAME_NET, NeuralDriver, Policy } from '../src/policy.js';
-import { racingLine } from '../src/racingline.js';
-import { ACTIONS, OBS_SIZE, observe } from '../src/sensors.js';
-import { stationAt } from '../src/track.js';
+import { isSolid, limitsOn, RIVAL_AIDS } from '../src/sim/car.js';
+import { collideCars } from '../src/sim/collision.js';
+import { GAME_NET, NeuralDriver, Policy } from '../src/drivers/policy.js';
+import { racingLine } from '../src/sim/racingline.js';
+import { ACTIONS, OBS_SIZE, observe } from '../src/drivers/sensors.js';
+import { stationAt } from '../src/sim/track.js';
 import { carOnGrid, DT, PROFILE, track } from './helpers.js';
 
 const t = track('monza');

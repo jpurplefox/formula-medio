@@ -1,5 +1,5 @@
 // Mide redes en los escenarios del currículum (rl/race.js), siempre con las mismas carreras: misma semilla,
-// mismos circuitos, mismos autos y rivales de la IA de siempre. Así la diferencia entre redes es de manejo y no
+// mismos circuitos, mismos autos y rivales de la IA clásica. Así la diferencia entre redes es de manejo y no
 // de suerte con el auto que les tocó.
 //
 //   node rl/scenario_eval.js models/a.json [models/b.json ...]
@@ -10,8 +10,8 @@
 // ESCENARIOS (sólo esos, separados por comas).
 
 import { readFileSync } from 'node:fs';
-import { Policy } from '../src/policy.js';
-import { ACTIONS } from '../src/sensors.js';
+import { Policy } from '../src/drivers/policy.js';
+import { ACTIONS } from '../src/drivers/sensors.js';
 import { RaceSim, SCENARIOS } from './race.js';
 import { TRACK_IDS } from './tracks.js';
 

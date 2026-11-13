@@ -21,13 +21,13 @@
 # fase parte del modelo final de la anterior y se exporta a models/$NOMBRE/faseN.json. Apenas termina una fase se
 # mide en segundo plano mientras entrena la siguiente (en manada, sola y en la carrera tipo juego) y queda en
 # rl/runs/$NOMBRE-tabla.log; al final, la última y la del juego con daños. No pisa la red del juego: si una nueva es
-# mejor, se cambia a mano GAME_NET en src/policy.js.
+# mejor, se cambia a mano GAME_NET en src/drivers/policy.js.
 #
 #   sh rl/curriculum.sh [primera fase]      (por defecto 1)
 #   NOMBRE=v9 sh rl/curriculum.sh           (carpeta de los modelos y prefijo de rl/runs; por defecto "nueva")
 #
-# Hace falta rl/.venv (README, "IA por refuerzo"); los circuitos de F1 salen de tracks/*.layout.json. El currículo
-# anterior, con rivales de la IA de siempre (rl/race.js), está en el historial de git (commit 47f1b3f).
+# Hace falta rl/.venv (docs/ia.md, "Cómo se entrena"); los circuitos de F1 salen de tracks/*.layout.json. El currículo
+# anterior, con rivales de la IA clásica (rl/race.js), está en el historial de git (commit 47f1b3f).
 set -e
 cd "$(dirname "$0")/.."
 PY=rl/.venv/bin/python
@@ -36,7 +36,7 @@ N=${NOMBRE:-nueva}
 OUT=models/$N
 RUNS=rl/runs
 TABLE=$RUNS/$N-tabla.log
-ACTUAL=$(sed -n "s/^export const GAME_NET = '\(.*\)';/\1/p" src/policy.js)  # la del juego
+ACTUAL=$(sed -n "s/^export const GAME_NET = '\(.*\)';/\1/p" src/drivers/policy.js)  # la del juego
 mkdir -p "$OUT" $RUNS
 
 # 22 autos por carrera, como en el juego, una carrera por proceso (176 agentes en total), autos de -15 % a +20 %

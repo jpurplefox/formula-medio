@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { TRACKS } from '../tracks/index.js';
-import { buildTrackFromLayout, buildTrackFromMask } from '../src/track.js';
+import { buildTrackFromLayout, buildTrackFromMask } from '../src/sim/track.js';
 import { unpackMask } from './mask.js';
 
 const root = (p) => fileURLToPath(new URL('../' + p, import.meta.url));

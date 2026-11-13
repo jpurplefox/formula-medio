@@ -14,7 +14,7 @@ import {
   wheelDrag,
   wheelGrip,
   zoneAt,
-} from '../src/damage.js';
+} from '../src/sim/damage.js';
 import { rng } from '../rl/env.js';
 
 // puntos del auto (m desde el centro; x adelante, y a la derecha)

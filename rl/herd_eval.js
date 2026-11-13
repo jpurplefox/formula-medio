@@ -17,9 +17,9 @@
 
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { Policy } from '../src/policy.js';
-import { ACTIONS } from '../src/sensors.js';
-import { setDamageRandom } from '../src/damage.js';
+import { Policy } from '../src/drivers/policy.js';
+import { ACTIONS } from '../src/drivers/sensors.js';
+import { setDamageRandom } from '../src/sim/damage.js';
 import { rng } from './env.js';
 import { HerdSim } from './herd.js';
 import { TRACK_IDS } from './tracks.js';

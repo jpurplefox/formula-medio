@@ -1,9 +1,15 @@
-solo   4800 pasos 0921b26726c67908
-pack   600 pasos c75f0876ef4b463d
-start  1000 pasos 1391adb3469e75e2
-chase  1200 pasos cfb6f769565b0f90
-race   4800 pasos 10e031f8519f2f17
-monza        toques por auto 6.0 (provocados 4.9) · pasto por auto 2.2 s (una rueda 0.3 s) · 1.ª vuelta +1.6 s · ganó en 169.7 s · el jugador terminó 15.º
-interlagos   toques por auto 5.5 (provocados 4.5) · pasto por auto 2.6 s (una rueda 0.4 s) · 1.ª vuelta +-0.3 s · ganó en 159.0 s · el jugador terminó 7.º
-daños por carrera: 14.50 autos con algo roto · 0.50 con un alerón destrozado · 0.00 pinchazos · 0.00 abandonos
-total: toques por auto 5.74 (provocados 4.69) · pasto por auto 2.43 s (una rueda 0.35 s) · 1.ª vuelta +0.68 s (jugador +0.00 s) · tiempo del ganador 164.35 s · jugador 11.00.º
+solo          4800 pasos 0921b26726c67908
+pack          600 pasos c75f0876ef4b463d
+start         1000 pasos 1391adb3469e75e2
+chase         1200 pasos cfb6f769565b0f90
+race          4800 pasos 10e031f8519f2f17
+manada solo   600 pasos 6f4a2d04200956d9
+manada grid   600 pasos a2c4ba38ae2bc2c0
+manada rolling 600 pasos e297169b57e56903
+manada chase  600 pasos dad7282f3615320b
+manada flying 600 pasos 3489b9269b927f4b
+manada start  267 pasos 2e66e043d98d772f
+monza        toques por auto 9.0 (provocados 7.7) · pasto por auto 4.6 s (una rueda 0.6 s) · 1.ª vuelta +-0.1 s · ganó en 171.1 s · el jugador terminó 22.º
+interlagos   toques por auto 7.4 (provocados 6.0) · pasto por auto 3.0 s (una rueda 0.5 s) · 1.ª vuelta +1.0 s · ganó en 161.0 s · el jugador terminó 9.º
+daños por carrera: 18.00 autos con algo roto · 3.00 con un alerón destrozado · 1.00 pinchazos · 0.50 abandonos
+total: toques por auto 8.21 (provocados 6.86) · pasto por auto 3.83 s (una rueda 0.55 s) · 1.ª vuelta +0.45 s (jugador +0.00 s) · tiempo del ganador 166.05 s · jugador 15.50.º

@@ -18,7 +18,7 @@ import {
   TYRE_VALUES,
   WHEEL_VALUES,
 } from './sensors.js';
-import { stationAt } from './track.js';
+import { stationAt } from '../sim/track.js';
 
 // La red con la que manejan los rivales en el juego (rl/CURRICULO.md). Es la única referencia: la usan también el
 // chequeo de regresión, la calibración y rl/curriculum.sh, así que para cambiar de red alcanza con cambiarla acá.
@@ -52,7 +52,7 @@ export class Policy {
     this.fromCar = obs_size < OBS_SIZE;
     this.scratch = new Float32Array(OBS_SIZE);
     // si ve el semáforo y sube y baja las rpm ella (dos salidas más): si no, larga con las vueltas y la reacción de la IA
-    // de siempre
+    // clásica
     this.lights = obs_size >= START_INPUT_START + START_VALUES && layers.at(-1).out >= 4;
     this.layers = layers.map((l) => {
       const w = floats(l.w);
@@ -114,11 +114,16 @@ export class NeuralDriver {
     this.input = { throttle: 0, brake: 0, steer: 0 };
   }
 
+  // si la red ve el semáforo (sensors.js): entonces maneja su largada (race/race.js)
+  get seesLights() {
+    return !!this.policy.lights;
+  }
+
   // Misma forma que Driver.drive de ai.js: me y others son { car, ... }
   drive(dt, track, line, { car }, others = []) {
     const u = stationAt(track, car.x, car.y);
     if (u >= 0) this.u = u;
-    // trabada (contra un muro o en un amontonamiento): vuelve a la pista, como la IA de siempre. Al entrenar
+    // trabada (contra un muro o en un amontonamiento): vuelve a la pista, como la IA clásica. Al entrenar
     // también se la rescata, pero a los 6 s: acá se le da la mitad para que no frene la carrera
     this.stuck = Math.abs(car.speed) < 1 ? this.stuck + dt : 0;
     // perdida en el pasto: al entrenar se la rescata a los 6 s, así que nunca aprendió a volver de lejos (y en el

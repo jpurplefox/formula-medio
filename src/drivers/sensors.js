@@ -23,7 +23,7 @@
 //               agarre tiene su auto que el propio, cuánto tiene roto (la pieza más rota) y de qué lado de la pista
 //               va. Al final, por lo mismo
 //   semáforo    en la grilla: cuántas luces rojas hay prendidas, cuánto hace que se prendió la última y si ya se
-//               apagaron (src/lights.js), para llevar el motor a las vueltas de largar. En carrera, apagadas. Al
+//               apagaron (src/sim/lights.js), para llevar el motor a las vueltas de largar. En carrera, apagadas. Al
 //               final, por lo mismo
 //   gomas y peso la temperatura y el desgaste de cada goma (DI, DD, TI, TD), la nafta que lleva encima y el reparto
 //               de frenos de la puesta a punto: el agarre de las gomas frías, pasadas o gastadas se nota en el de cada
@@ -39,12 +39,12 @@
 // Todo va más o menos entre -1 y 1. Las distancias de la pista se miden en metros, así sirve en cualquier
 // circuito sin importar el tamaño de sus celdas.
 
-import { SETUP_KEYS, TEMP_HIGH, TEMP_LOW } from './car.js';
-import { BRAKE_TUNE_MAX, carLimits, DEFAULT_TUNE, SEA_AIR } from './dynamics.js';
-import { HALF_L, HALF_W } from './collision.js';
-import { NO_DAMAGE } from './damage.js';
-import { LIGHTS_OUT } from './lights.js';
-import { halfWidthAt, sampleField, stationAt } from './track.js';
+import { SETUP_KEYS, TEMP_HIGH, TEMP_LOW } from '../sim/car.js';
+import { BRAKE_TUNE_MAX, carLimits, DEFAULT_TUNE, SEA_AIR } from '../sim/dynamics.js';
+import { HALF_L, HALF_W } from '../sim/collision.js';
+import { NO_DAMAGE } from '../sim/damage.js';
+import { LIGHTS_OUT } from '../sim/lights.js';
+import { halfWidthAt, sampleField, stationAt } from '../sim/track.js';
 
 const RAY_ANGLES = [-90, -60, -40, -28, -18, -11, -6, -3, -1, 0, 1, 3, 6, 11, 18, 28, 40, 60, 90].map(
   (d) => (d * Math.PI) / 180,

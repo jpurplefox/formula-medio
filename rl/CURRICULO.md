@@ -1,7 +1,7 @@
 # Plan: red más grande y entrenamiento por currículum
 
 Plan para la ronda de la IA por refuerzo que vino después de la etapa 2, con cinco intentos de currículum. La red
-del juego de ese plan fue `models/v5/fase7.json` (quinto intento); hoy es la que diga `GAME_NET` en `src/policy.js`,
+del juego de ese plan fue `models/v5/fase7.json` (quinto intento); hoy es la que diga `GAME_NET` en `src/drivers/policy.js`,
 entrenada en manada (`rl/curriculum.sh`). Las redes de acá ya no están en `models/`: quedan en el historial de git
 (commit e9ff553).
 
@@ -58,7 +58,7 @@ Como la etapa 1 se re-entrena igual con la red grande, las entradas nuevas van d
 
 ### Fase 3: pasar
 
-- El de adelante es la IA de siempre con ritmo 0,85–0,95 (menos agarre y velocidad punta, maneja normal; no
+- El de adelante es la IA clásica con ritmo 0,85–0,95 (menos agarre y velocidad punta, maneja normal; no
   frena de golpe).
 - En recta: diferencia chica (~0,95) y que el rebufo haga el resto. En curva: más diferencia y largar cerca.
 - Más adelante, rivales que defienden (cierran el interior).
@@ -68,7 +68,7 @@ Como la etapa 1 se re-entrena igual con la red grande, las entradas nuevas van d
 ### Fase 4: consolidar
 
 - Carreras completas con el mismo premio que los escenarios (si cambia, calentar el crítico).
-- Rivales variados: IA de siempre a distintos ritmos, copias de la red y versiones anteriores de cada fase
+- Rivales variados: IA clásica a distintos ritmos, copias de la red y versiones anteriores de cada fase
   (evita que aprenda cosas que solo sirven contra sí misma).
 - Si algo empeora (por ejemplo toques en la largada), subir el peso de ese escenario en el repaso.
 - Con autos distintos, las pasadas (auto mejor) y las defensas (auto peor) aparecen solas.
@@ -101,7 +101,7 @@ Como la etapa 1 se re-entrena igual con la red grande, las entradas nuevas van d
 - **Cambios**: castigo por peligro a un tercio (como mucho 0,6 por segundo); trabado, en el pasto o para atrás ya
   no termina el episodio: se lo rescata con un castigo de 4 y además paga 1 por segundo quieto; la medición por
   escenario muestra metros recorridos y rescates (una red miedosa choca poco pero avanza menos); la red también se
-  rescata sola en el juego y en `rl/race_eval.js`, como la IA de siempre.
+  rescata sola en el juego y en `rl/race_eval.js`, como la IA clásica.
 - **Segundo intento**: ya no se traba (posición media en 22 autos 14,2 → 9,5) y es la más limpia: en 8 autos la
   mitad de toques que la fase 1 (33 contra 56), menos zigzag y menos toques en largadas y pelotón. Pero sigue
   quedando detrás de la fase 1 en carrera de 22 (9,5 contra 7,1): pasa menos (0,24 pasadas por carrera contra
@@ -120,7 +120,7 @@ trataba como si le hubieran pegado (25 %): apretar al de al lado salía barato. 
 - **Fase 7**: el peligro de costado también a 1 s.
 
 Toques por carrera (cuadros de contacto de los autos con la red; promedio de las carreras con autos iguales y con
-autos distintos rotando), pasto y posición media contra la IA de siempre en Difícil:
+autos distintos rotando), pasto y posición media contra la IA clásica en Difícil:
 
 | Red | Toques, 22 autos | Toques, 8 autos | Pasto, 22 autos | Posición, 22 autos |
 |---|---|---|---|---|
@@ -131,9 +131,9 @@ autos distintos rotando), pasto y posición media contra la IA de siempre en Dif
 | **fase 7** | **249** | **38** | **41 s** | 9,7 |
 
 - La fase 7 tiene **44 % menos toques que la fase 1** y el menor tiempo en el pasto. Los toques de costado entre
-  redes bajaron de 1031 a 206; lo que queda es casi todo con la IA de siempre, que no aprendió a cuidarse.
+  redes bajaron de 1031 a 206; lo que queda es casi todo con la IA clásica, que no aprendió a cuidarse.
 - Persecuciones: la que más pasa (0,60 por persecución) sin que la pasen. Vuelta sola: 0,942 (fase 1: 0,928).
-- El costo: queda a mitad de tabla contra la IA de siempre (que choca más y no levanta).
+- El costo: queda a mitad de tabla contra la IA clásica (que choca más y no levanta).
 - `rl/race_eval.js` ahora informa cuántos toques provocó la red (le pegó al de adelante o apretó al de al lado).
 
 ## Tercer intento: limpio primero, velocidad después
@@ -164,7 +164,7 @@ con la fase 7. La idea: aprender primero a manejar limpio y recién después a i
 ### Resultados del tercer intento
 
 Toques por carrera (promedio con autos iguales y con autos distintos rotando), provocados por la red, pasto y
-posición media contra la IA de siempre en Difícil; vuelta sola con `rl/eval.js` (más bajo es más rápido):
+posición media contra la IA clásica en Difícil; vuelta sola con `rl/eval.js` (más bajo es más rápido):
 
 | Red | Toques, 22 autos | Provocados, 22 | Toques, 8 autos | Pasto, 22 | Posición, 22 | Posición, 8 | Vuelta sola |
 |---|---|---|---|---|---|---|---|
@@ -175,7 +175,7 @@ posición media contra la IA de siempre en Difícil; vuelta sola con `rl/eval.js
 | v3 fase 6 (integrar) | 194 | 128 | 23 | 49 s | 14,9 | 5,9 | 0,965 |
 
 - **Más limpia**: la fase 6 toca un 22 % menos que la fase 7 en 22 autos (provoca un 34 % menos) y un 40 % menos en 8.
-- **Pero mucho más lenta**: pierde unos 5 puestos por carrera contra la IA de siempre y en 8 autos casi siempre
+- **Pero mucho más lenta**: pierde unos 5 puestos por carrera contra la IA clásica y en 8 autos casi siempre
   terminan las 4 redes detrás de las 4 IA. Sola, su vuelta es un 3 % más lenta que la de su propia fase 1 (0,932).
 - **Por qué**: el presupuesto (la mitad de los toques de la fase 7) fue demasiado exigente. La escala del castigo
   llegó al tope (5) en la fase 2 y no bajó nunca: durante todo el currículum lo que más pesaba era no tocar, y con
@@ -207,7 +207,7 @@ La escala del castigo terminó en 0,9 en la fase 5 (dentro del presupuesto) y en
 
 ### Resultados del cuarto intento
 
-Contra la IA de siempre, igual que la tabla anterior:
+Contra la IA clásica, igual que la tabla anterior:
 
 | Red | Toques, 22 autos | Provocados, 22 | Toques, 8 autos | Pasto, 22 | Posición, 22 | Posición, 8 | Vuelta sola |
 |---|---|---|---|---|---|---|---|
@@ -217,7 +217,7 @@ Contra la IA de siempre, igual que la tabla anterior:
 | v4 fase 5 | 125 | 82 | 20 | 84 s | 16,2 | 5,6 | 0,971 |
 | v4 fase 6 | **107** | **68** | **18** | 73 s | 16,3 | 5,8 | 0,969 |
 
-Carrera tipo juego (`JUEGO=1`: 21 autos con la red y uno de la IA de siempre al ritmo más alto de Difícil
+Carrera tipo juego (`JUEGO=1`: 21 autos con la red y uno de la IA clásica al ritmo más alto de Difícil
 haciendo de jugador; los 8 circuitos), por auto de la red:
 
 | Red | Toques | Provocados | Pasto | Tiempo del ganador | El jugador termina |
@@ -243,7 +243,7 @@ Escenarios (`rl/scenario_eval.js`, toques provocados por km):
 - **Ritmo**: en tráfico de redes, el ganador es 1 % más rápido que con la v3 y 3 % más lento que con la fase 7.
   Sola, la vuelta es un 2–3 % más lenta que la de la fase 7: se compensa en el juego con más agarre.
 - **Pasto**: sigue más alto que en la fase 7; en 22 autos se abre para no tocar.
-- Contra la IA de siempre sigue perdiendo puestos: la IA de siempre es más agresiva y la red le cede lugar.
+- Contra la IA clásica sigue perdiendo puestos: la IA clásica es más agresiva y la red le cede lugar.
 
 ## Quinto intento (v5): agarre por rueda y ritmo en las largadas
 
@@ -263,15 +263,15 @@ Carrera tipo juego (`JUEGO=1`, Difícil de entonces, con el rescate en el pasto 
 | v5 fase 6 | 6,7 | 4,9 | 2,9 s | 240,3 s | 4,9.º |
 | v5 fase 7 | 6,7 | 5,0 | **2,7 s** | **239,8 s** | 6,9.º |
 
-- **La fase 1 sola ya es más rápida** que la v4 y la IA de siempre: 1 a 5 s por vuelta según el circuito.
+- **La fase 1 sola ya es más rápida** que la v4 y la IA clásica: 1 a 5 s por vuelta según el circuito.
 - **Las fases 5–7 cambian limpieza por ritmo**: la 4 es la que menos toca; la 7 la más rápida (6–8 s por carrera
   más que la v4 con el mismo auto), con los mismos toques que la 6. En el juego se compensa con menos agarre y
-  potencia para los rivales (`setups` en `src/teams.js`, de 0,83 en Fácil a 1,02 en Experto).
+  potencia para los rivales (`setups` en `src/race/teams.js`, de 0,83 en Fácil a 1,02 en Experto).
 - **Largadas**: la fase 6 avanza un 8 % más que la v4 con los mismos toques provocados; la 7 vuelve a tocar algo más.
 - **Lo que salió mal: autos perdidos en el pasto.** Medido sin cambios, la v5 pasaba 23–27 s por auto en el pasto,
   pero no por cortar curvas (con una sola rueda afuera casi nunca va): 2 a 6 autos por carrera se quedaban minutos
   dando vueltas ahí. Al entrenar se la rescata a los 6 s en el pasto, así que nunca aprendió a volver de lejos, y
-  en el juego sólo se la rescataba quieta (en el pasto anda a ~90 km/h). Ahora `NeuralDriver` (`src/policy.js`)
+  en el juego sólo se la rescataba quieta (en el pasto anda a ~90 km/h). Ahora `NeuralDriver` (`src/drivers/policy.js`)
   también la rescata a los 6 s en el pasto, igual que al entrenar.
 
 ## Métricas por fase
@@ -285,8 +285,8 @@ Carrera tipo juego (`JUEGO=1`, Difícil de entonces, con el rescate en el pasto 
 
 `rl/curriculum.sh` entrena desde cero la receta de la red del juego: las fases 1–4 del tercer intento, las 5–6
 del cuarto y una 7 de ritmo contra rivales más rápidos (~3 h). En la fase 7 los rivales llevan 8 % más de agarre y
-potencia (`--rivals-boost 0.08`) y la IA de siempre corre a 1–1,1 de ritmo: entre redes iguales el ritmo sólo
-mejora hasta el del de adelante, así que hace falta tener adelante autos más rápidos. Hace falta `rl/.venv` y los circuitos exportados en `rl/tracks/` (README, "IA por refuerzo").
+potencia (`--rivals-boost 0.08`) y la IA clásica corre a 1–1,1 de ritmo: entre redes iguales el ritmo sólo
+mejora hasta el del de adelante, así que hace falta tener adelante autos más rápidos. Hace falta `rl/.venv` y los circuitos exportados en `rl/tracks/` (docs/ia.md, "Cómo se entrena").
 
 ```bash
 NOMBRE=v5 sh rl/curriculum.sh        # modelos en models/v5/, logs y checkpoints en rl/runs/v5faseN
@@ -295,7 +295,7 @@ NOMBRE=v5 sh rl/curriculum.sh 5      # rehace desde la fase 5 (usa rl/runs/v5fas
 
 Cada fase parte del modelo final de la anterior y se exporta a `models/$NOMBRE/faseN.json`. Al continuar un modelo,
 la tasa de aprendizaje de cada fase va de su valor inicial (`--lr`) a 0 dentro de esa fase. Al terminar mide la
-nueva contra la del juego en la carrera tipo juego; si es mejor, se cambia `GAME_NET` en `src/policy.js`.
+nueva contra la del juego en la carrera tipo juego; si es mejor, se cambia `GAME_NET` en `src/drivers/policy.js`.
 
 Para cambiar la receta, lo que más pesa:
 - `--contact-budget` (fracción de los toques provocados de la fase 7 que se permiten) y `--contact-scale`.
@@ -303,7 +303,7 @@ Para cambiar la receta, lo que más pesa:
   `rl/env.js`). `paceCrowd` (desde el quinto intento de la receta, 0,6): el piso de ritmo también amontonado, más
   bajo, para que en las largadas meterse en fila levantando el pie cueste tiempo y convenga seguir a la par.
 - `--spread`: cuánto varían los autos (de −15 % a +20 % hoy). Pasar de ±20 % obliga a cambiar `SETUP_SPREAD` en
-  `src/sensors.js` y a reescalar las redes viejas con `rl/rescale_setup.py`.
+  `src/drivers/sensors.js` y a reescalar las redes viejas con `rl/rescale_setup.py`.
 - La desventaja del de adelante en las persecuciones: `CHASE_HANDICAP` en `rl/race.js`.
 
 Los scripts de los intentos anteriores (`curriculum.sh` de 7 fases, `curriculum3.sh`, `curriculum4.sh`) están en

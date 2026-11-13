@@ -1,7 +1,7 @@
 // Prueba de manejo sin pantalla, para ajustar la física de las gomas (car.js):
 //   skidpad  en un círculo de radio fijo, sobre asfalto plano, el volante a fondo y la velocidad justa: cuánto dobla
 //            el auto (aceleración lateral) comparado con lo que dice dynamics.js (lim.lateral). Tiene que dar ~1.
-//   vueltas  la IA de siempre (ai.js) solo en cada circuito, 3 vueltas: mejor vuelta, tiempo en el pasto, golpes y
+//   vueltas  la IA clásica (ai.js) solo en cada circuito, 3 vueltas: mejor vuelta, tiempo en el pasto, golpes y
 //            trompos (giro de más de 90° entre la trompa y para dónde va).
 //
 //   node tools/handling.js [circuitos separados por coma | skidpad [volante 0..1]]
@@ -9,10 +9,11 @@
 //   PACE=1.06 (ritmo de la IA)  TUNE='{"front":10,"rear":1,"balance":5}' (puesta a punto)
 
 import { readFileSync } from 'node:fs';
-import { Driver, gridSlots } from '../src/ai.js';
-import { Car, keyboardSteer, limitsOn, TRACTION_CONTROL } from '../src/car.js';
-import { racingLine } from '../src/racingline.js';
-import { sampleField, stationAt } from '../src/track.js';
+import { Driver } from '../src/drivers/ai.js';
+import { gridSlots } from '../src/race/grid.js';
+import { Car, keyboardSteer, limitsOn, TRACTION_CONTROL } from '../src/sim/car.js';
+import { racingLine } from '../src/sim/racingline.js';
+import { sampleField, stationAt } from '../src/sim/track.js';
 import { loadTrack, TRACK_IDS } from '../rl/tracks.js';
 
 const profile = JSON.parse(readFileSync(new URL('../cars/f1-2025.json', import.meta.url), 'utf8'));

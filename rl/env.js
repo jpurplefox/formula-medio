@@ -16,11 +16,11 @@
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Car, DEFAULT_PROFILE, FUEL_PER_KM, limitsOn, RIVAL_AIDS, SETUP_KEYS } from '../src/car.js';
-import { airDensity, BRAKE_TUNE_MAX, WING_MAX, WING_MIN } from '../src/dynamics.js';
-import { racingLine } from '../src/racingline.js';
-import { halfWidthAt } from '../src/track.js';
-import { OBS_SIZE, observe, stationAt, trackHeading } from '../src/sensors.js';
+import { Car, DEFAULT_PROFILE, FUEL_PER_KM, limitsOn, RIVAL_AIDS, SETUP_KEYS } from '../src/sim/car.js';
+import { airDensity, BRAKE_TUNE_MAX, WING_MAX, WING_MIN } from '../src/sim/dynamics.js';
+import { racingLine } from '../src/sim/racingline.js';
+import { halfWidthAt } from '../src/sim/track.js';
+import { OBS_SIZE, observe, stationAt, trackHeading } from '../src/drivers/sensors.js';
 import { loadTrack } from './tracks.js';
 
 const PHYSICS_DT = 1 / 60;
@@ -109,7 +109,7 @@ export function randomTyres(car, rand, track) {
 
 export class RaceEnv {
   // rewards: escala del castigo por pasto y por muro (la fase 1 del tercer intento los hace más caros); damage: los
-  // daños (src/damage.js: 'off', 'reduced', 'real' o 'mix', uno de los tres al azar en cada episodio). Con daños,
+  // daños (src/sim/damage.js: 'off', 'reduced', 'real' o 'mix', uno de los tres al azar en cada episodio). Con daños,
   // un golpe fuerte contra el muro rompe el auto y si abandona termina el episodio
   constructor({ trackIds, seed = 1, spread = 0.02, rewards = {}, tuneSpread = TUNE_SPREAD, damage = 'off' }) {
     this.tuneSpread = tuneSpread;

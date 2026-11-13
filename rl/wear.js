@@ -1,13 +1,14 @@
-// Calibra el desgaste de las gomas (WEAR_USE en src/car.js): la IA de siempre da una vuelta en cada circuito
+// Calibra el desgaste de las gomas (WEAR_USE en src/sim/car.js): la IA clásica da una vuelta en cada circuito
 // con wearRate = 1 / largo de la vuelta; si la calibración está bien, termina cada vuelta con desgaste ≈ 1.
 //
 //   node rl/wear.js
 
 import { readFileSync } from 'node:fs';
-import { Driver, gridSlots } from '../src/ai.js';
-import { Car, limitsOn } from '../src/car.js';
-import { racingLine } from '../src/racingline.js';
-import { sampleField, stationAt } from '../src/track.js';
+import { Driver } from '../src/drivers/ai.js';
+import { gridSlots } from '../src/race/grid.js';
+import { Car, limitsOn } from '../src/sim/car.js';
+import { racingLine } from '../src/sim/racingline.js';
+import { sampleField, stationAt } from '../src/sim/track.js';
 import { loadTrack, TRACK_IDS } from './tracks.js';
 
 const profile = JSON.parse(readFileSync(new URL('../cars/f1-2025.json', import.meta.url), 'utf8'));

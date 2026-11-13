@@ -18,7 +18,7 @@
 //   2 = ajustes de las carreras: le siguen 4 bytes con el largo y un JSON, por ejemplo { contactScale, progress }
 //       (rl/race.js). No responde.
 
-import { ACTIONS, OBS_SIZE } from '../src/sensors.js';
+import { ACTIONS, OBS_SIZE } from '../src/drivers/sensors.js';
 import { RaceEnv } from './env.js';
 import { RaceSim } from './race.js';
 import { HerdSim } from './herd.js';

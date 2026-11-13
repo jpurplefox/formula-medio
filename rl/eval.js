@@ -1,14 +1,15 @@
 // Mide una red exportada (rl/export.py): larga desde la grilla de cada circuito y da 3 vueltas, como en una
-// contrarreloj. Para comparar, también corre la IA de siempre (ai.js) con el ritmo de Difícil más rápido.
+// contrarreloj. Para comparar, también corre la IA clásica (ai.js) con el ritmo de Difícil más rápido.
 //
 //   node rl/eval.js models/v22/fase18.json [circuitos separados por coma]
 
 import { readFileSync } from 'node:fs';
-import { Driver, gridSlots } from '../src/ai.js';
-import { Car, DEFAULT_PROFILE, limitsOn, RIVAL_AIDS } from '../src/car.js';
-import { Policy, NeuralDriver } from '../src/policy.js';
-import { racingLine } from '../src/racingline.js';
-import { sampleField, stationAt } from '../src/track.js';
+import { Driver } from '../src/drivers/ai.js';
+import { gridSlots } from '../src/race/grid.js';
+import { Car, DEFAULT_PROFILE, limitsOn, RIVAL_AIDS } from '../src/sim/car.js';
+import { Policy, NeuralDriver } from '../src/drivers/policy.js';
+import { racingLine } from '../src/sim/racingline.js';
+import { sampleField, stationAt } from '../src/sim/track.js';
 import { loadTrack, TRACK_IDS } from './tracks.js';
 
 const [file, ids] = process.argv.slice(2);

@@ -4,14 +4,16 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "lint": "eslint . && prettier --check .",
+    "lint": "eslint . && prettier --check . && tsc -p tsconfig.json",
     "format": "prettier --write .",
+    "types": "tsc -p tsconfig.json",
     "regress": "node tools/regress.js"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "eslint": "10.14.0",
     "globals": "17.14.0",
-    "prettier": "3.10.0"
+    "prettier": "3.10.0",
+    "typescript": "7.0.2"
   }
 }
