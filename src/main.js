@@ -98,6 +98,8 @@ if (!renderer) {
 }
 // dónde hay césped y dónde tierra (textures/grass-mask.png); mientras carga, todo césped
 loadGrassMask().then((mask) => mask && renderer.setGrassMask(mask));
+// los árboles en 3D se arman en un worker mientras está el menú (sólo con WebGL)
+renderer.treeModels?.();
 // encima, en un canvas aparte, lo que se dibuja en 2D: el volante y el semáforo
 const overlay = document.getElementById('overlay');
 overlay.width = VIEW_W;
@@ -770,7 +772,8 @@ function ghostAt(ghost, u) {
 // árboles y carteles del circuito, como sprites (tamaños en metros, pasados a celdas)
 function trackSprites(track) {
   const M = track.meters;
-  const sprites = track.trees.map((t) => ({ x: t.x, y: t.y, z: t.z, width: (4 * t.scale) / M, height: (8 * t.scale) / M, tex: treeTex }));
+  // (con WebGL los árboles van en 3D y estos sprites se saltean: tree)
+  const sprites = track.trees.map((t) => ({ x: t.x, y: t.y, z: t.z, width: (4 * t.scale) / M, height: (8 * t.scale) / M, tex: treeTex, tree: true }));
   // carteles de frenada: 3,2 m de ancho por 2,7 m de alto (tablero sobre patas), grandes para leerlos a tiempo
   for (const b of track.boards) sprites.push({ x: b.x, y: b.y, z: b.z, width: 3.2 / M, height: 2.7 / M, tex: boardTex.get(b.meters) });
   return sprites;

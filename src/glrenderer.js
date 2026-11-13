@@ -10,6 +10,7 @@
 
 import { DEFAULT_KERB, KERB_STYLE, MAX_KERB_COLORS, RIDGE, RIDGE_DEPTH, SAUSAGE_H, SAUSAGE_W, edgeReach, kerbAmount, stationAt } from './track.js';
 import { RUBBER_DARK, WEAR_REACH } from './rubber.js';
+import { TREE_FLOATS, treeMesh } from './trees.js';
 import { asphaltTexture, cloudNoise, dirtTexture, grassTexture, gravelTexture, macroNoise, wallTexture } from './textures.js';
 import {
   DIRT_DEEP, DIRT_TPC, GRASS_MASK_CELLS, GRASS_STRIPE, WEAR_DIRT, FOG_MAX, GL_FOG_START, GRASS_BAND, GRASS_TPC, GRAVEL_TPC, RUNOFF_LIGHT, GUIDE_W, KERB_H, LINE_W, MACRO_TPC, GL_MAX_DIST as MAX_DIST, MODEL_NEAR, NEAR_RISE, PLANE_LEN,
@@ -24,7 +25,7 @@ const MAX_SCALE = 1.5; // como mucho, 1,5 veces los píxeles virtuales (1440×81
 const LINE_TEX_W = 1024; // ancho de las texturas con datos por celda de la línea central
 const GUIDE_LIFT = 0.1; // cuánto flota la ayuda de trazada sobre la pista (celdas; el lomo de los pianos es KERB_H)
 const GUIDE_ALPHA = 0.6; // opacidad de la ayuda de trazada en el centro
-const ATTRIBS = ['aPos', 'aUV', 'aNormal', 'aColor', 'aTex', 'aWheel', 'aSmooth', 'aGloss'];
+const ATTRIBS = ['aPos', 'aUV', 'aNormal', 'aColor', 'aTex', 'aWheel', 'aSmooth', 'aGloss', 'iPos', 'iRot'];
 const STRIDE = 17; // floats por vértice de los autos
 const CREASE = 0.7; // coseno del ángulo hasta el que las caras vecinas se suavizan para el reflejo (~45°)
 
@@ -734,6 +735,133 @@ uniform float uAlpha;
 out vec4 outColor;
 void main() { outColor = vec4(0.0, 0.0, 0.0, uAlpha); }`;
 
+// ---------- árboles (trees.js): mallas instanciadas ----------
+// por árbol: iPos = dónde (celdas) y escala (celdas por metro); iRot = coseno y seno del giro, tono (-1..1) y
+// fundido entre niveles de detalle (ver drawTrees). aGloss: cuánto se mueve con el viento ese vértice (0 en el
+// tronco, 1 en la punta)
+const TREE_VS = `#version 300 es
+in vec3 aPos, aNormal, aColor;
+in float aGloss, aTex;
+in vec4 iPos, iRot;
+uniform float uTime;
+${PROJECT}
+out vec3 vColor, vNormal, vObj, vAround;
+out float vDepth, vWood;
+flat out float vFade;
+void main() {
+  vec3 p = aPos;
+  vFade = iRot.w;
+  vObj = aPos;
+  vWood = aTex;
+  // el viento: la copa se mece, más arriba y con ráfagas que no van parejas entre árboles
+  float phase = fract(sin(dot(iPos.xy, vec2(12.9898, 78.233))) * 43758.5453) * 20.0;
+  float t = uTime * 1.6 + phase;
+  float gust = 0.6 + 0.4 * sin(uTime * 0.37 + phase * 0.5);
+  p.xy += vec2(sin(t), cos(t * 0.83) * 0.6) * 0.16 * gust * aGloss;
+  p.xy += vec2(sin(t * 3.1 + p.z), cos(t * 2.7 + p.x)) * 0.04 * aGloss;
+  vec2 cs = iRot.xy;
+  vec3 r = vec3(p.x * cs.x - p.y * cs.y, p.x * cs.y + p.y * cs.x, p.z);
+  vNormal = vec3(aNormal.x * cs.x - aNormal.y * cs.y, aNormal.x * cs.y + aNormal.y * cs.x, aNormal.z);
+  // alrededor del tronco (tangente horizontal), ya girado como el árbol: para el relieve de la corteza
+  vec2 ar = normalize(vec2(-aPos.y, aPos.x) + 1e-5);
+  vAround = vec3(ar.x * cs.x - ar.y * cs.y, ar.x * cs.y + ar.y * cs.x, 0.0);
+  // tono propio de cada árbol: algunos más secos, otros más oscuros
+  vColor = aColor * (1.0 + 0.12 * iRot.z) + vec3(0.03, 0.02, -0.01) * max(0.0, iRot.z);
+  gl_Position = project(iPos.xyz + r * iPos.w, vDepth);
+}`;
+const TREE_FS = `#version 300 es
+precision highp float;
+in vec3 vColor, vNormal, vObj, vAround;
+in float vDepth, vWood;
+flat in float vFade;
+out vec4 outColor;
+${FOG}
+const vec3 SUN_DIR = normalize(vec3(${glsl(-SUN[0])}, ${glsl(-SUN[1])}, ${glsl(SUN[2])}));
+float hash3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+float vnoise3(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(hash3(i), hash3(i + vec3(1, 0, 0)), f.x), mix(hash3(i + vec3(0, 1, 0)), hash3(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(hash3(i + vec3(0, 0, 1)), hash3(i + vec3(1, 0, 1)), f.x), mix(hash3(i + vec3(0, 1, 1)), hash3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+// corteza: surcos verticales que se cortan en placas, leídos sobre el cilindro del tronco (ruido 3D con el ángulo
+// como coseno y seno: da toda la vuelta sin costura). 1 = placa, 0 = grieta
+float bark(float a, float z) {
+  vec3 q = vec3(cos(a) * 4.5, sin(a) * 4.5, z * 1.4);
+  float n = vnoise3(q) * 0.6 + vnoise3(q * vec3(2.1, 2.1, 2.6) + 7.0) * 0.4;
+  return smoothstep(0.38, 0.47, n);
+}
+void main() {
+  // fundido entre niveles de detalle: cada píxel es de uno o del otro, según un tramado (vFade < 2: el que entra,
+  // se ve donde el tramado es menor que vFade; vFade >= 2: el que sale, donde es mayor o igual que vFade - 2)
+  float dither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  if (vFade < 2.0 ? dither >= vFade : dither < vFade - 2.0) discard;
+  vec3 n = normalize(vNormal);
+  vec3 base = vColor;
+  if (vWood > 0.5) {
+    // de cerca, la corteza con relieve (la grieta, más oscura y hundida); de lejos se va a un tono parejo
+    float a = atan(vObj.y, vObj.x), e = 0.03;
+    float b = bark(a, vObj.z);
+    float near = 1.0 - clamp((vDepth - 25.0) / 60.0, 0.0, 1.0);
+    float slope = (bark(a + e, vObj.z) - bark(a - e, vObj.z)) / (2.0 * e);
+    n = normalize(n - vAround * clamp(slope * 0.06, -1.2, 1.2) * near);
+    float grain = vnoise3(vec3(cos(a) * 14.0, sin(a) * 14.0, vObj.z * 9.0));
+    base *= mix(0.82, mix(0.38, 1.15, b) * (0.8 + 0.4 * grain), near);
+  } else if (vDepth < 70.0) {
+    // hojas, de cerca: manojos más claros y más oscuros, y un relieve fino que corta los brillos parejos
+    float near = 1.0 - clamp((vDepth - 30.0) / 40.0, 0.0, 1.0);
+    vec3 q = vObj * 3.2;
+    float l0 = vnoise3(q), e = 0.25;
+    vec3 g = vec3(vnoise3(q + vec3(e, 0, 0)), vnoise3(q + vec3(0, e, 0)), vnoise3(q + vec3(0, 0, e))) - l0;
+    n = normalize(n - g * 2.2 * near);
+    float bunch = vnoise3(vObj * 1.3 + 3.0);
+    base *= mix(1.0, (0.78 + 0.4 * l0) * (0.85 + 0.3 * bunch), near);
+  }
+  // luz envolvente (las hojas dejan pasar algo de luz) y cielo desde arriba
+  float sun = max(0.0, (dot(n, SUN_DIR) + 0.35) / 1.35);
+  float sky = 0.7 + 0.3 * n.z;
+  vec3 c = base * (vec3(1.0, 0.97, 0.9) * sun * 1.05 + vec3(0.55, 0.62, 0.75) * sky * 0.65);
+  outColor = vec4(fog(c, vDepth), 1.0);
+}`;
+// sombra de un árbol en el piso: un óvalo suave (la textura uTex), estirado lejos del sol
+const SOFT_SHADOW_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uTex;
+uniform float uAlpha;
+in vec2 vUV;
+in float vDepth;
+out vec4 outColor;
+void main() {
+  float a = texture(uTex, vUV).a * uAlpha * (1.0 - clamp((vDepth - 60.0) / 200.0, 0.0, 1.0));
+  outColor = vec4(0.0, 0.0, 0.0, a);
+}`;
+
+// la sombra de un árbol: un óvalo suave, más oscuro cerca del pie (u: a lo ancho, v: del pie hacia lejos del sol)
+function treeShadowImage(n = 64) {
+  const data = new Uint8Array(n * n * 4);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const u = (x + 0.5) / n - 0.5, v = (y + 0.5) / n;
+    const r = Math.hypot(u / 0.42, (v - 0.55) / 0.43);
+    const a = Math.max(0, Math.min(1, (1 - r) / 0.45)) * (0.75 + 0.25 * (1 - v));
+    data[(y * n + x) * 4 + 3] = Math.round(255 * a * a * (3 - 2 * a));
+  }
+  return data;
+}
+
+// árboles: qué especie, giro, tono y fase del viento le toca a cada uno (siempre lo mismo para el mismo lugar)
+const TREE_KINDS = [{ kind: 'pine', seed: 1 }, { kind: 'broadleaf', seed: 1 }, { kind: 'broadleaf', seed: 2 }]; // dos variantes de copa
+const TREE_LODS = [{ cell: 0.2, upTo: 40 }, { cell: 0.32, upTo: 80 }, { cell: 0.5, upTo: 150 }, { cell: 0.65, upTo: Infinity }]; // celdas de distancia
+const TREE_SIZE = 1.6; // escala de las mallas respecto del "scale" de cada árbol del circuito: pinos de 13 a 24 m, copas de 9 a 16 m
+function treeLooks(trees) {
+  return trees.map((t) => {
+    const h = (k) => { const v = Math.sin(t.x * 12.9898 + t.y * 78.233 + k * 37.719) * 43758.5453; return v - Math.floor(v); };
+    const a = h(1) * Math.PI * 2;
+    const k = h(2);
+    return { kind: k < 0.5 ? 0 : k < 0.75 ? 1 : 2, cos: Math.cos(a), sin: Math.sin(a), tint: h(3) * 2 - 1 };
+  });
+}
+const TREE_BLEND = 0.25; // fracción de cada distancia de cambio de detalle en la que se funden los dos niveles
+
 export class GLRenderer {
   // devuelve null si el navegador no tiene WebGL 2 (o algo falla): ahí se usa el renderer de siempre.
   // modelsOnly: sólo para mostrar autos sueltos (showcase), sin circuito y con el fondo transparente
@@ -770,6 +898,11 @@ export class GLRenderer {
     this.models = this.program(MODEL_VS, MODEL_FS);
     this.sprites = this.program(FLAT_VS, SPRITE_FS);
     this.shadows = this.program(FLAT_VS, SHADOW_FS);
+    this.treeProg = this.program(TREE_VS, TREE_FS);
+    this.softShadows = this.program(FLAT_VS, SOFT_SHADOW_FS);
+    this.treeShadowTex = this.texture(treeShadowImage(), 64, 64, { clamp: true });
+    this.trees = null; // las mallas se arman en el primer cuadro con árboles (treeModels)
+    this.treeShadowMeshes = new WeakMap();
     this.guides = this.program(GUIDE_VS, GUIDE_FS);
     this.guideMeshes = new WeakMap();
     this.aniso = gl.getExtension('EXT_texture_filter_anisotropic');
@@ -882,6 +1015,144 @@ export class GLRenderer {
       if (this.aniso) gl.texParameterf(gl.TEXTURE_2D, this.aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
     }
     return t;
+  }
+
+  // las mallas de los árboles (trees.js): cada especie en cada nivel de detalle, con su lugar para los datos de
+  // cada árbol (que cambian en cada cuadro: sólo los que se ven, en el nivel que les toca por la distancia). Se
+  // arman en un worker (tardan casi un segundo); mientras tanto los árboles se dibujan como antes, de cartón.
+  // Devuelve las mallas, o null si todavía no están
+  treeModels() {
+    if (this.trees) return this.trees;
+    if (this.treeParts) return null;
+    const parts = this.treeParts = TREE_KINDS.map(() => TREE_LODS.map(() => null));
+    let left = TREE_KINDS.length * TREE_LODS.length;
+    const add = (k, l, data, index) => {
+      parts[k][l] = this.treeMeshGL(data, index);
+      if (--left === 0) this.trees = parts;
+    };
+    const kinds = TREE_KINDS, cells = TREE_LODS.map((d) => d.cell);
+    try {
+      const worker = new Worker(new URL('./treeworker.js', import.meta.url), { type: 'module' });
+      worker.onmessage = ({ data: m }) => {
+        add(m.k, m.l, m.data, m.index);
+        if (!left) worker.terminate();
+      };
+      worker.onerror = () => { worker.terminate(); this.buildTreesHere(add, kinds, cells); };
+      worker.postMessage({ kinds, cells });
+    } catch {
+      this.buildTreesHere(add, kinds, cells);
+    }
+    return null;
+  }
+
+  // sin worker: de a una malla por cuadro, para no trabar
+  buildTreesHere(add, kinds, cells) {
+    const jobs = [];
+    kinds.forEach(({ kind, seed }, k) => cells.forEach((cell, l) => jobs.push([k, l, kind, seed, cell])));
+    const next = () => {
+      const job = jobs.shift();
+      if (!job) return;
+      const [k, l, kind, seed, cell] = job, m = treeMesh(kind, cell, seed);
+      add(k, l, m.data, m.index);
+      setTimeout(next, 0);
+    };
+    next();
+  }
+
+  treeMeshGL(data, index) {
+    const gl = this.gl, F = 4;
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    this.buffer(data);
+    const B = TREE_FLOATS * F, at = (name, size, off) => {
+      const loc = ATTRIBS.indexOf(name);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, size, gl.FLOAT, false, B, off * F);
+    };
+    at('aPos', 3, 0);
+    at('aNormal', 3, 3);
+    at('aColor', 3, 6);
+    at('aGloss', 1, 9);
+    at('aTex', 1, 10);
+    const ib = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, index, gl.STATIC_DRAW);
+    const inst = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, inst);
+    for (const [name, off] of [['iPos', 0], ['iRot', 4]]) {
+      const loc = ATTRIBS.indexOf(name);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, 8 * F, off * F);
+      gl.vertexAttribDivisor(loc, 1);
+    }
+    gl.bindVertexArray(null);
+    return { vao, inst, count: index.length, type: index instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT };
+  }
+
+  // los árboles que se ven, cada uno en su nivel de detalle
+  drawTrees(track, cam, dirX, dirY, horizon) {
+    const gl = this.gl, tp = this.treeProg, models = this.treeModels(), M = track.meters;
+    if (!models) return false;
+    if (!this.treeLooks || this.treeLooks.trees !== track.trees) this.treeLooks = { trees: track.trees, looks: treeLooks(track.trees) };
+    const looks = this.treeLooks.looks;
+    const lists = TREE_KINDS.map(() => TREE_LODS.map(() => []));
+    const rx = -dirY, ry = dirX, wide = this.planeLen * 1.15;
+    track.trees.forEach((t, i) => {
+      const dx = t.x - cam.x, dy = t.y - cam.y;
+      const depth = dx * dirX + dy * dirY, side = dx * rx + dy * ry, k = (TREE_SIZE * t.scale) / M;
+      if (depth < -4 * k || depth > MAX_DIST || Math.abs(side) > Math.max(0, depth) * wide + 4 * k) return;
+      const l = looks[i], lod = TREE_LODS.findIndex((d) => depth < d.upTo), list = lists[l.kind];
+      // cerca del cambio de nivel se dibujan los dos, cada uno en parte de los píxeles (se van pasando de a poco)
+      const upTo = TREE_LODS[lod].upTo, band = upTo * TREE_BLEND;
+      if (depth > upTo - band && lod + 1 < TREE_LODS.length) {
+        const f = (depth - (upTo - band)) / band;
+        list[lod].push(t.x, t.y, t.z, k, l.cos, l.sin, l.tint, 2 + f);
+        list[lod + 1].push(t.x, t.y, t.z, k, l.cos, l.sin, l.tint, f);
+      } else list[lod].push(t.x, t.y, t.z, k, l.cos, l.sin, l.tint, 1);
+    });
+    gl.useProgram(tp.p);
+    this.camera(tp, cam, dirX, dirY, horizon);
+    gl.uniform1f(tp.u.uTime, this.time ?? (performance.now() / 1000) % 100000);
+    models.forEach((levels, kind) => levels.forEach((m, lod) => {
+      const v = lists[kind][lod];
+      if (!v.length) return;
+      gl.bindVertexArray(m.vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, m.inst);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.DYNAMIC_DRAW);
+      gl.drawElementsInstanced(gl.TRIANGLES, m.count, m.type, 0, v.length / 8);
+    }));
+    gl.bindVertexArray(null);
+    return true;
+  }
+
+  // las sombras de los árboles: un óvalo suave por árbol, estirado lejos del sol, apoyado en el piso (en tramos,
+  // para seguir las lomas). Se arma una vez por circuito
+  treeShadows(track) {
+    if (this.treeShadowMeshes.has(track)) return this.treeShadowMeshes.get(track);
+    const gl = this.gl, M = track.meters, v = [];
+    const sl = Math.hypot(SUN[0], SUN[1]), sx = SUN[0] / sl, sy = SUN[1] / sl, px = -sy, py = sx;
+    const reach = sl / SUN[2]; // cuánto se estira la sombra por cada metro de alto
+    const z = (x, y) => sampleField(track.height, track.W, x, y) + 0.04;
+    const N = 4;
+    for (const t of track.trees) {
+      const k = (TREE_SIZE * t.scale) / M, w = 2.3 * k, back = 1.2 * k, len = 8.5 * k * reach + 2 * k;
+      for (let i = 0; i < N; i++) {
+        const a0 = -back + ((len + back) * i) / N, a1 = -back + ((len + back) * (i + 1)) / N;
+        const v0 = i / N, v1 = (i + 1) / N;
+        const P = (a, b) => { const X = t.x + sx * a + px * b, Y = t.y + sy * a + py * b; return [X, Y, z(X, Y)]; };
+        const A = P(a0, -w), B = P(a0, w), C = P(a1, w), D = P(a1, -w);
+        v.push(...A, 0, v0, ...B, 1, v0, ...C, 1, v1, ...A, 0, v0, ...C, 1, v1, ...D, 0, v1);
+      }
+    }
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    this.buffer(new Float32Array(v));
+    this.attrib(this.softShadows, 'aPos', 3, 5, 0);
+    this.attrib(this.softShadows, 'aUV', 2, 5, 3);
+    gl.bindVertexArray(null);
+    const mesh = { vao, count: v.length / 5 };
+    this.treeShadowMeshes.set(track, mesh);
+    return mesh;
   }
 
   // textura 3D de dos canales (r, g) que se repite, con mipmaps (para las nubes)
@@ -1214,6 +1485,26 @@ export class GLRenderer {
       gl.depthMask(true);
     }
 
+    // 2b) sombras de los árboles
+    if (track.trees?.length) {
+      const sp = this.softShadows, mesh = this.treeShadows(track);
+      gl.useProgram(sp.p);
+      this.camera(sp, cam, dirX, dirY, horizon);
+      this.bind(0, this.treeShadowTex, sp, 'uTex');
+      gl.uniform1f(sp.u.uAlpha, 0.42);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.depthMask(false);
+      gl.enable(gl.POLYGON_OFFSET_FILL);
+      gl.polygonOffset(-2, -8);
+      gl.bindVertexArray(mesh.vao);
+      gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+      gl.bindVertexArray(null);
+      gl.disable(gl.POLYGON_OFFSET_FILL);
+      gl.disable(gl.BLEND);
+      gl.depthMask(true);
+    }
+
     // 3) autos: primero los sólidos y al final los semitransparentes (el fantasma)
     const mp = this.models;
     gl.useProgram(mp.p);
@@ -1233,13 +1524,18 @@ export class GLRenderer {
       }
     }
 
-    // 4) árboles y carteles: rectángulos de frente a la cámara, agrupados por textura
+    // 3b) árboles, en 3D (si las mallas ya están; si no, van como sprites)
+    const trees3d = !!track.trees?.length && this.drawTrees(track, cam, dirX, dirY, horizon);
+
+    // 4) carteles (y los árboles viejos, si alguno viene como sprite): rectángulos de frente a la cámara, agrupados
+    // por textura
     const sprp = this.sprites;
     gl.useProgram(sprp.p);
     this.camera(sprp, cam, dirX, dirY, horizon);
     const rx = -dirY, ry = dirX;
     const groups = new Map();
     for (const s of sprites) {
+      if (s.tree && trees3d) continue; // los árboles van en 3D (drawTrees)
       const depth = (s.x - cam.x) * dirX + (s.y - cam.y) * dirY;
       if (depth < 0.3 || depth > MAX_DIST) continue; // con la bruma al FOG_MAX, todavía se ven un poco
       if (!groups.has(s.tex)) groups.set(s.tex, []);
